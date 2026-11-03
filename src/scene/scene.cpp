@@ -60,6 +60,11 @@ constexpr double focusBorderWidth = 2;
 	color.alpha *= opacity;
 	return color;
 }
+
+/// @brief Label color for text that has no author-supplied foreground.
+[[nodiscard]] auto themeLabel(Theme theme) -> Color {
+	return theme == Theme::dark ? Color::white() : Color::black();
+}
 } // namespace
 
 namespace detail {
@@ -98,10 +103,12 @@ void Document::paint(NodeId identity, SceneSnapshot &scene, double opacity) {
 			std::max(0.0, bounds.size.width - node->padding.leading - node->padding.trailing);
 		bounds.size.height =
 			std::max(0.0, bounds.size.height - node->padding.top - node->padding.bottom);
+		const Color foreground =
+			node->isForegroundExplicit ? node->foreground : themeLabel(environment_.theme);
 		scene.commands.push_back(
 			{.kind = PaintKind::text,
 				.bounds = bounds,
-				.color = withOpacity(node->foreground, opacity),
+				.color = withOpacity(foreground, opacity),
 				.text = node->text,
 				.font = font}
 		);

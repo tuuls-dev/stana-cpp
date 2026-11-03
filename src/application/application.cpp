@@ -107,6 +107,15 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 					.resize = [document](double width, double height) -> void {
 						document->resize({.width = width, .height = height});
 					},
+					.appearance = [document](bool isDark) -> void {
+						auto environment = document->environment();
+						const auto theme = isDark ? Theme::dark : Theme::light;
+						if (environment.theme == theme) {
+							return;
+						}
+						environment.theme = theme;
+						document->setEnvironment(environment);
+					},
 					.pointerDown = [document](double x, double y) -> void {
 						document->pointerDown({.x = x, .y = y});
 					},

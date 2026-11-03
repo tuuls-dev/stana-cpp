@@ -141,7 +141,7 @@ struct Node {
 		padding{}; ///< Resolved content insets; leading/trailing remain logical until arrangement.
 	Frame frame{}; ///< Resolved explicit axis sizing and min/max constraints.
 	Font font{};   ///< Unscaled system-font request shared by measurement and scene text commands.
-	Color foreground = Color::black();	///< Resolved text color copied into scene commands.
+	Color foreground = Color::black();	///< Text color used when isForegroundExplicit is set.
 	Color background = Color::clear();	///< Resolved fill behind this occurrence and descendants.
 	Color borderColor = Color::clear(); ///< Resolved outline color when borderWidth is positive.
 	double borderWidth = 0;				///< Nonnegative outline width in logical points.
@@ -155,7 +155,9 @@ struct Node {
 	Visibility visibility =
 		Visibility::visible; ///< Paint/layout eligibility without scope disposal.
 	bool clip = false;		 ///< Whether this occurrence clips descendant painting to its bounds.
-	bool isEnabled = true;	 ///< Local interaction gate; ancestor policy is checked separately.
+	bool isForegroundExplicit =
+		false;			   ///< False paints the theme label color instead of the stored foreground.
+	bool isEnabled = true; ///< Local interaction gate; ancestor policy is checked separately.
 	bool inert =
 		false; ///< Blocks descendant focus and input without forcing a disabled paint style.
 	bool checked = false; ///< Latest boolean binding value of a Toggle occurrence.

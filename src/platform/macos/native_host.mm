@@ -85,6 +85,7 @@ struct WindowState {
 
 void requestFrame(const std::shared_ptr<WindowState> &state);
 void installSurface(const std::shared_ptr<WindowState> &state);
+void publishAppearance(const std::shared_ptr<WindowState> &state);
 
 namespace {
 constexpr std::size_t bytesPerPixel = 4;
@@ -367,6 +368,22 @@ void installSurface(const std::shared_ptr<WindowState> &state) {
 	[CATransaction flush];
 }
 
+/// @brief Copies the view's effective light or dark appearance into the document.
+/// Call after the view is installed in a window, and again when AppKit changes it.
+/// An unset callback leaves the document on its existing theme.
+void publishAppearance(const std::shared_ptr<WindowState> &state) {
+	if (state->isClosed || !state->callbacks.appearance) {
+		return;
+	}
+	NSView *const view = state->view;
+	if (view == nil) {
+		return;
+	}
+	NSAppearanceName const matched = [view.effectiveAppearance
+		bestMatchFromAppearancesWithNames:@[ NSAppearanceNameDarkAqua, NSAppearanceNameAqua ]];
+	state->callbacks.appearance([matched isEqualToString:NSAppearanceNameDarkAqua]);
+}
+
 /// @brief Coalesces scene publication and resize demand into a hosted-layer repaint.
 /// AppKit does not drive drawRect for a layer-hosting view. Dispatching explicitly
 /// also ensures the initial drawable is requested after attachment/show completes.
@@ -442,6 +459,13 @@ void requestFrame(const std::shared_ptr<WindowState> &state) {
 		++state_->surfaceEpoch;
 		state_->resetPresentation();
 		stana::native::requestFrame(state_);
+	}
+}
+
+- (void)viewDidChangeEffectiveAppearance {
+	[super viewDidChangeEffectiveAppearance];
+	if (state_ && !state_->isClosed) {
+		stana::native::publishAppearance(state_);
 	}
 }
 
@@ -677,6 +701,7 @@ auto run(std::vector<Window> windows) -> std::expected<int, std::string> {
 			window.delegate = delegate;
 			[delegates addObject:delegate];
 			[nativeWindows addObject:window];
+			publishAppearance(state);
 			const auto weakState = std::weak_ptr{state};
 			state->callbacks.ready([weakState] -> void {
 				if (const auto current = weakState.lock(); current && !current->isClosed) {

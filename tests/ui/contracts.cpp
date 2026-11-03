@@ -176,6 +176,65 @@ void keyedRowsAreAtomic() {
 	);
 }
 
+[[nodiscard]] auto findText(const stana::SceneSnapshot &scene, const std::string &text)
+	-> const stana::PaintCommand & {
+	const auto found =
+		std::ranges::find_if(scene.commands, [&](const stana::PaintCommand &command) -> bool {
+			return command.kind == stana::PaintKind::text && command.text == text;
+		});
+	if (found == scene.commands.end()) {
+		throw std::runtime_error("Missing text command: " + text);
+	}
+	return *found;
+}
+
+[[nodiscard]] auto findFill(const stana::SceneSnapshot &scene) -> const stana::PaintCommand & {
+	const auto found =
+		std::ranges::find(scene.commands, stana::PaintKind::fillRect, &stana::PaintCommand::kind);
+	if (found == scene.commands.end()) {
+		throw std::runtime_error("Missing fill command");
+	}
+	return *found;
+}
+
+/// @brief Default labels follow the document theme; explicit colors and buttons stay put.
+void themeDefaultsFollowEnvironment() {
+	using namespace stana;
+	constexpr Color marked = Color::rgb(0.2, 0.4, 0.6);
+	TestHost host;
+	host.mount(
+		VStack{
+			.children = children(
+				Text{.text = "Count"},
+				Text{.text = "Marked", .textStyle = {.foreground = marked}},
+				Button{.text = "Increment", .onClick = [] -> void {}}
+			)
+		}
+	);
+	const auto mounts = host.metrics().mounts;
+	const auto light = host.scene();
+	require(static_cast<bool>(light), "light scene published");
+	require(light->background == Color::white(), "light viewport");
+	require(findText(*light, "Count").color == Color::black(), "light label");
+	require(findText(*light, "Marked").color == marked, "explicit foreground");
+	require(findText(*light, "Increment").color == Color::white(), "button label");
+	require(findFill(*light).color == Color::accent(), "button fill");
+
+	auto environment = Environment{};
+	environment.theme = Theme::dark;
+	host.setEnvironment(environment);
+	const auto dark = host.scene();
+	require(
+		static_cast<bool>(dark) && host.metrics().mounts == mounts,
+		"theme does not remount"
+	);
+	require(dark->background == Color::black(), "dark viewport");
+	require(findText(*dark, "Count").color == Color::white(), "dark label");
+	require(findText(*dark, "Marked").color == marked, "explicit foreground survives theme");
+	require(findText(*dark, "Increment").color == Color::white(), "button label survives theme");
+	require(findFill(*dark).color == Color::accent(), "button fill survives theme");
+}
+
 /// @brief Removal marks handles dead before cleanup can reenter document closure.
 void disposalMayCloseTheDocument() {
 	using namespace stana;
@@ -211,6 +270,7 @@ auto main() -> int {
 		counterRetainsIdentity();
 		branchesDisposeLocalState();
 		keyedRowsAreAtomic();
+		themeDefaultsFollowEnvironment();
 		disposalMayCloseTheDocument();
 		return 0;
 	} catch (const std::exception &error) {

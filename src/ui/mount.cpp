@@ -47,6 +47,7 @@ void applyTextStyle(const TextProperties &properties, NodeId identity, MountCont
 			*properties.foreground,
 			[](Node &node, Color value) -> void {
 				node.foreground = value;
+				node.isForegroundExplicit = true;
 			}
 		);
 	}

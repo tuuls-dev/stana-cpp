@@ -74,6 +74,8 @@ struct Window {
 	double height = 0;	 ///< Initial content height in logical points.
 	std::function<std::shared_ptr<const Scene>()> scene{}; ///< Produces an owning current scene.
 	std::function<void(double, double)> resize{};		   ///< Reflows the retained viewport.
+	std::function<void(bool isDark)>
+		appearance{}; ///< Reports whether the current system appearance is dark.
 	std::function<void(double, double)> pointerDown{}; ///< Dispatches a logical-coordinate press.
 	std::function<void(double, double)> pointerUp{};   ///< Dispatches logical-coordinate release.
 	std::function<void(double, double, double)> scroll{}; ///< Dispatches vertical scrolling.

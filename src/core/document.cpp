@@ -80,6 +80,7 @@ auto Document::createNode(NodeKind kind, NodeId parent) -> NodeId {
 		node->cornerRadius = defaultCornerRadius;
 		node->background = Color::accent();
 		node->foreground = Color::white();
+		node->isForegroundExplicit = true;
 	}
 	if (parent.serial != 0) {
 		auto *parentNode = find(parent);

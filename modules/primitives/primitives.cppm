@@ -136,7 +136,8 @@ enum class Visibility : std::uint8_t {
 	collapsed ///< Retains state but contributes no layout footprint or paint.
 };
 /// @brief Document appearance selection used by scene defaults.
-/// Set through Environment; this enum does not create a native application or window.
+/// Native macOS sessions copy the system appearance into Environment::theme.
+/// The enum itself does not create a native application or window.
 enum class Theme : std::uint8_t {
 	light, ///< Uses the light document appearance defaults.
 	dark   ///< Uses the dark document appearance defaults.
@@ -311,8 +312,10 @@ struct NodeId {
 /// @brief Window/document-wide inputs used when resolving component presentation.
 /// TestHost and native sessions own a copy. Direction affects logical layout and
 /// textScale affects measurement; changing environment does not remount components.
+/// A macOS session updates theme when the system appearance changes.
 struct Environment {
-	Theme theme = Theme::light; ///< Document appearance used by scene defaults.
+	Theme theme =
+		Theme::light; ///< Light or dark scene defaults. Native sessions follow the system.
 	Direction direction =
 		Direction::leftToRight; ///< Logical direction used to resolve layout edges and row order.
 	double textScale = 1;		///< Nonnegative multiplier applied to requested system-font sizes.
