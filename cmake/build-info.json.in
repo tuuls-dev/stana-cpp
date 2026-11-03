@@ -1,0 +1,14 @@
+{
+	"name": "stana",
+	"version": "@PROJECT_VERSION@",
+	"configuration": "@CMAKE_BUILD_TYPE@",
+	"system": "@CMAKE_SYSTEM_NAME@",
+	"system_version": "@CMAKE_SYSTEM_VERSION@",
+	"architecture": "@CMAKE_SYSTEM_PROCESSOR@",
+	"compiler": "@CMAKE_CXX_COMPILER_ID@",
+	"compiler_version": "@CMAKE_CXX_COMPILER_VERSION@",
+	"compiler_frontend": "@CMAKE_CXX_COMPILER_FRONTEND_VARIANT@",
+	"macos_deployment_target": "@CMAKE_OSX_DEPLOYMENT_TARGET@",
+	"cxx_standard": 23,
+	"bmi_policy": "Rebuilt from installed module interface by consumer; no portable PCM files"
+}

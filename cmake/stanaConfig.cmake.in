@@ -1,0 +1,26 @@
+@PACKAGE_INIT@
+if(CMAKE_VERSION VERSION_LESS "4.4" OR NOT CMAKE_GENERATOR STREQUAL "Ninja")
+	message(FATAL_ERROR "stana modules require CMake 4.4+ and Ninja.")
+endif()
+if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
+	 NOT CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL "@STANA_LLVM_VERSION@")
+	message(FATAL_ERROR "This stana package requires Clang @STANA_LLVM_VERSION@ and its recorded standard-library ABI.")
+endif()
+if(APPLE AND (NOT CMAKE_OSX_DEPLOYMENT_TARGET OR
+	CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS "@CMAKE_OSX_DEPLOYMENT_TARGET@"))
+	message(FATAL_ERROR "This stana package requires a macOS deployment target of @CMAKE_OSX_DEPLOYMENT_TARGET@ or newer. Configure the consumer with -DCMAKE_OSX_DEPLOYMENT_TARGET=@CMAKE_OSX_DEPLOYMENT_TARGET@.")
+endif()
+include("${CMAKE_CURRENT_LIST_DIR}/Dependencies.cmake")
+stana_find_icu()
+include("${CMAKE_CURRENT_LIST_DIR}/stanaTargets.cmake")
+if(APPLE)
+	if(NOT CMAKE_OSX_SYSROOT)
+		execute_process(COMMAND xcrun --show-sdk-path OUTPUT_VARIABLE stana_consumer_sdk
+			OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+	else()
+		set(stana_consumer_sdk "${CMAKE_OSX_SYSROOT}")
+	endif()
+	target_compile_options(stana::stana INTERFACE -nostdinc++)
+	target_include_directories(stana::stana SYSTEM INTERFACE "${stana_consumer_sdk}/usr/include/c++/v1")
+endif()
+check_required_components(stana)

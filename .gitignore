@@ -1,0 +1,14 @@
+/build/
+/.tools/
+/dist/
+/CMakeUserPresets.json
+/compile_commands.json
+/.cache/
+/.DS_Store
+__pycache__/
+*.pyc
+.vscode
+.idea
+.zed
+.notes
+threads.txt

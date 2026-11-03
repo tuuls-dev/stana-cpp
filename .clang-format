@@ -1,0 +1,32 @@
+BasedOnStyle: LLVM
+Standard: Latest
+ColumnLimit: 100
+UseTab: Always
+TabWidth: 4
+IndentWidth: 4
+SortIncludes: CaseSensitive
+# Wrapped calls and braced lists indent one level with a tab.
+# Each item gets its own line. The closing token sits on its own line.
+AlignAfterOpenBracket: false
+BreakAfterOpenBracketBracedList: true
+BreakAfterOpenBracketFunction: true
+BreakBeforeCloseBracketBracedList: true
+BreakBeforeCloseBracketFunction: true
+BinPackArguments: false
+BinPackLongBracedList: false
+BinPackParameters: OnePerLine
+AllowAllArgumentsOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: false
+AlignOperands: DontAlign
+PackConstructorInitializers: CurrentLine
+
+# Prefer breaking the argument list over breaking `object->member`.
+PenaltyBreakBeforeFirstCallParameter: 0
+PenaltyBreakBeforeMemberAccess: 500
+
+# A lambda with a statement gets a body. In-class one-liners stay one line.
+AllowShortLambdasOnASingleLine: Empty
+AllowShortFunctionsOnASingleLine: InlineOnly
+
+# One blank line between function, class, and enum definitions.
+SeparateDefinitionBlocks: Always

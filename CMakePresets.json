@@ -1,0 +1,120 @@
+{
+	"version": 6,
+	"cmakeMinimumRequired": {
+		"major": 4,
+		"minor": 4,
+		"patch": 0
+	},
+	"configurePresets": [
+		{
+			"name": "base",
+			"hidden": true,
+			"generator": "Ninja",
+			"binaryDir": "${sourceDir}/build/${presetName}",
+			"toolchainFile": "${sourceDir}/cmake/clang.cmake",
+			"cacheVariables": {
+				"CMAKE_EXPORT_COMPILE_COMMANDS": true
+			}
+		},
+		{
+			"name": "debug",
+			"inherits": "base",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Debug"
+			}
+		},
+		{
+			"name": "release",
+			"inherits": "base",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Release"
+			}
+		},
+		{
+			"name": "asan",
+			"inherits": "debug",
+			"cacheVariables": {
+				"STANA_SANITIZER": "address"
+			}
+		},
+		{
+			"name": "asan-ubsan",
+			"inherits": "debug",
+			"condition": {
+				"type": "notEquals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			},
+			"cacheVariables": {
+				"STANA_SANITIZER": "address-undefined"
+			}
+		}
+	],
+	"buildPresets": [
+		{
+			"name": "debug",
+			"configurePreset": "debug"
+		},
+		{
+			"name": "release",
+			"configurePreset": "release"
+		},
+		{
+			"name": "asan",
+			"configurePreset": "asan"
+		},
+		{
+			"name": "asan-ubsan",
+			"configurePreset": "asan-ubsan"
+		}
+	],
+	"testPresets": [
+		{
+			"name": "debug",
+			"configurePreset": "debug",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error"
+			}
+		},
+		{
+			"name": "release",
+			"configurePreset": "release",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error"
+			}
+		},
+		{
+			"name": "asan",
+			"configurePreset": "asan",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error"
+			},
+			"environment": {
+				"ASAN_OPTIONS": "halt_on_error=1:abort_on_error=1"
+			}
+		},
+		{
+			"name": "asan-ubsan",
+			"configurePreset": "asan-ubsan",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error"
+			},
+			"environment": {
+				"ASAN_OPTIONS": "halt_on_error=1:abort_on_error=1",
+				"UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
+			}
+		}
+	]
+}

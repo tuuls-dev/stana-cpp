@@ -1,0 +1,12 @@
+# Keep dependency discovery identical for source builds and installed consumers.
+function(stana_find_icu)
+	if(APPLE AND NOT ICU_ROOT AND NOT DEFINED ENV{ICU_ROOT})
+		foreach(prefix IN ITEMS /opt/homebrew/opt/icu4c@78 /usr/local/opt/icu4c@78)
+			if(EXISTS "${prefix}/include/unicode/uvernum.h")
+				set(ICU_ROOT "${prefix}")
+				break()
+			endif()
+		endforeach()
+	endif()
+	find_package(ICU 78.3 EXACT REQUIRED COMPONENTS uc i18n data)
+endfunction()

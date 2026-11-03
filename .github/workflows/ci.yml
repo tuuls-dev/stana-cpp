@@ -1,0 +1,106 @@
+name: Build, analyze, test and release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: ${{ matrix.target }} / ${{ matrix.preset }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {target: linux-x64, os: ubuntu-24.04, preset: debug}
+          - {target: linux-x64, os: ubuntu-24.04, preset: release}
+          - {target: linux-x64, os: ubuntu-24.04, preset: asan-ubsan}
+          - {target: windows-x64, os: windows-2022, preset: debug}
+          - {target: windows-x64, os: windows-2022, preset: release}
+          - {target: windows-x64, os: windows-2022, preset: asan}
+          - {target: macos-x64, os: macos-26-intel, preset: debug}
+          - {target: macos-x64, os: macos-26-intel, preset: release}
+          - {target: macos-x64, os: macos-26-intel, preset: asan-ubsan}
+          - {target: macos-arm64, os: macos-26, preset: debug}
+          - {target: macos-arm64, os: macos-26, preset: release}
+          - {target: macos-arm64, os: macos-26, preset: asan-ubsan}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.13'
+      - name: Install build tools
+        run: python -m pip install 'cmake==4.4.4' 'ninja==1.13.0'
+      - name: Install Linux SDK dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y g++-14 libtinfo6
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .tools/llvm
+          key: llvm-22.1.8-${{ matrix.target }}-${{ hashFiles('tools/bootstrap_llvm.py') }}
+      - name: Install verified LLVM / initialize compiler environment
+        run: python tools/bootstrap_llvm.py --github-env
+      - name: Select GCC 14 standard library
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          echo 'CXXFLAGS=--gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/14' >> "$GITHUB_ENV"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .tools/icu
+          key: icu-78.3-${{ matrix.target }}-${{ hashFiles('tools/bootstrap_icu.py') }}
+      - name: Install verified ICU
+        run: python tools/bootstrap_icu.py --github-env
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+      - name: Build (mandatory source policy and clang-tidy)
+        run: cmake --build --preset ${{ matrix.preset }} --parallel 3
+      - name: Formatting
+        run: cmake --build build/${{ matrix.preset }} --target format-check
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
+      - name: Package checked build
+        if: startsWith(github.ref, 'refs/tags/v') && (matrix.preset == 'debug' || matrix.preset == 'release')
+        run: python tools/release.py package --build build/${{ matrix.preset }} --output dist
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: startsWith(github.ref, 'refs/tags/v') && (matrix.preset == 'debug' || matrix.preset == 'release')
+        with:
+          name: stana-${{ matrix.target }}-${{ matrix.preset }}
+          path: dist/*.zip
+          if-no-files-found: error
+
+  publish:
+    name: Publish verified GitHub release
+    needs: verify
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: stana-*
+          path: dist
+          merge-multiple: true
+      - name: Create source archives and checksums
+        run: |
+          python3 tools/release.py source --output dist
+          python3 tools/release.py checksums --output dist
+      - name: Publish all assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" dist/* --verify-tag --generate-notes --title "Stana $RELEASE_TAG"
