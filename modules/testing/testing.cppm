@@ -4,6 +4,7 @@ module;
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -54,7 +55,7 @@ class TestHost {
 	/// @brief Registers a synthetic frame; optional acknowledgement is explicit test evidence.
 	[[nodiscard]] auto render(bool acknowledge = true) -> PresentationAttempt {
 		flush();
-		const auto scene = document_->scene();
+		const auto scene = document_->renderSnapshot();
 		if (!scene) {
 			throw std::logic_error("No scene has been published");
 		}
@@ -82,6 +83,30 @@ class TestHost {
 	/// @brief Simulates a submission deadline without creating positive display evidence.
 	void abandonPresentation(PresentationAttempt attempt) {
 		document_->abandonPresentation(attempt);
+	}
+
+	/// @brief Invalidates production caches to provide a semantic oracle for reuse tests.
+	void forceFullRecompute() { document_->forceFullRecompute(); }
+
+	/// @brief Admits a synthetic composite and gates its changed old/new geometry.
+	[[nodiscard]] auto renderComposite(std::span<const TileId> tiles) -> PresentationAttempt {
+		flush();
+		const auto snapshot = document_->renderSnapshot();
+		if (!snapshot) {
+			throw std::logic_error("No published scene");
+		}
+		const auto attempt =
+			document_->beginPresentation(presentationEpoch_, snapshot->revision, tiles);
+		if (!attempt) {
+			throw std::runtime_error("Composite admission failed");
+		}
+		document_->gatePendingPresentation(*attempt);
+		return *attempt;
+	}
+
+	/// @brief Supplies typed synthetic evidence, never actual native display proof.
+	void reportTilePresentation(PresentationAttempt attempt, TilePresentation observation) {
+		static_cast<void>(document_->reportPresentation(attempt, observation));
 	}
 
 	void flush() {

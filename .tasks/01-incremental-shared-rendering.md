@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 ---
 # Incremental core, shared raster buffers, and tiled Metal presentation
 
@@ -9,8 +9,37 @@ not sketches and not claims that these capabilities already exist. Implement the
 ownership, ordering, cache, failure, and verification rules together; do not replace
 them with a second UI runtime or an undocumented drawable-preservation assumption.
 
-**Execution status:** planning only. No renderer implementation is retained in the
-working tree. All implementation checkpoints below are pending.
+**Execution status:** implementation and qualification in progress. The old upload
+path is removed; no fallback/toggle is retained. See [recorded evidence](../docs/rendering-evidence.md).
+
+**User-approved raster-gate amendment (2026-11-04):** full-viewport versus tiled
+CoreGraphics replay may differ only at a reference edge (a nonuniform 3×3 coverage
+neighborhood), with RGB error ≤32/255, exact alpha, exact uniform regions, and
+≤0.25% differing pixels per fixture. This supersedes the byte-exact full-viewport
+comparison statements below. Incremental assembled tiles versus fresh target tiles,
+damage/erasure, geometry, buffer safety, and presentation evidence remain strict.
+The unchanged global pixel phase remains required. Fixed-gutter experiments
+(2/32/64 pixels) did not provide a general exact-pixel solution and were removed.
+The final path retains no raster gutter or antialiasing-mode change.
+
+**User-approved hardware gate amendment:** real positive-timestamp, sparse update,
+resize, attachment, occlusion, two-window and close gates run at onscreen sizes.
+4K/8K resource/transfer gates use actual full-size offscreen Metal buffers/textures.
+Physical backing-scale switching and 4K/8K display confirmation remain explicitly
+unqualified pending suitable displays; CPU/GPU references cover 1× and 2×.
+
+**User-approved native evidence amendment:** native acknowledgement joins success
+of the one command buffer containing every tile copy, an issued batch transaction,
+and a real positive timestamp from the first submitted tile. Other tile times are
+diagnostic, never fabricated proof. Native admission declares that actual proof
+subset; copied/presented tile sets are recorded separately. The public tracker and
+explicit composite test seams continue to require every tile in their declared
+sets. This supersedes native all-copied-tiles timestamp requirements below and is
+not proof of per-tile display or scanout-atomic multi-layer presentation.
+
+Geometry records additionally own shared ordered child identities and route
+generations: an unsubmitted reorder must continue hit testing the acknowledged
+order, not the current mutable child vector.
 
 Reading order:
 
@@ -1588,9 +1617,10 @@ accidental mutation through shared branches.
 ### Damage, clipping, and pixel-reference matrix
 
 The full-scene raster reference draws the complete prepared scene into one bitmap
-without damage/tile culling. Tile assembly must match it byte-for-byte for visible
-pixels under the same pixel/color/antialiasing configuration. Ignore row padding
-only; do not use a broad screenshot tolerance to hide seams or stale pixels.
+without damage/tile culling. Tile assembly must satisfy the user-approved edge-bounded comparison above under
+the same pixel/color/antialiasing configuration. Ignore row padding only. Uniform
+regions and alpha are exact; incremental versus fresh tile replay is byte-exact.
+Do not use an unrestricted screenshot tolerance or relax stale-pixel checks.
 
 | ID | Scenario | Required assertion |
 | --- | --- | --- |

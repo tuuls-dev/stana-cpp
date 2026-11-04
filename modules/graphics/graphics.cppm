@@ -25,7 +25,7 @@ enum class PaintKind : std::uint8_t {
 /// Drawing records local-coordinate commands; Document translates them into a
 /// complete SceneSnapshot consumed by the native renderer. Commands own their
 /// strings and value parameters, with no OS contexts or borrowed resource handles.
-/// Publish them through a const scene snapshot before sharing with a render worker.
+/// Published projections are immutable; native preparation/rasterization stays on the UI executor.
 ///
 /// @note Fields are interpreted according to kind. Text/font are used only by text
 /// commands; cornerRadius applies to rectangles/clips; popClip ignores geometry.
@@ -78,10 +78,10 @@ struct Drawing {
 
 /// @brief Owns a complete ordered paint projection of one committed document revision.
 ///
-/// Document creates this after bindings and layout settle. TestHost exposes it
-/// for deterministic paint assertions; native hosts consume it without accessing
-/// mutable Node records. Share as shared_ptr<const SceneSnapshot> so in-flight
-/// rendering retains the exact scene even if the UI publishes a newer revision.
+/// Document materializes this lazily from a settled immutable commit. TestHost exposes it
+/// for deterministic paint assertions; native hosts consume the shared internal tree
+/// without materializing this compatibility display list. Share as shared_ptr<const SceneSnapshot>
+/// so in-flight rendering retains the exact scene even if the UI publishes a newer revision.
 /// @note A scene revision identifies logical publication, not GPU completion or
 /// confirmed display presentation. Those require separate native observations.
 struct SceneSnapshot {

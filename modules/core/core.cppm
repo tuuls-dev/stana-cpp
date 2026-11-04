@@ -1,12 +1,16 @@
 module;
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <functional>
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
+#include <span>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -85,7 +89,7 @@ struct PointerEvent {
 /// A snapshot is a value, not a live view. Keep its id to compare node identity
 /// across commits, then query the host again to inspect updated properties. To
 /// activate or focus that node, obtain a NodeHandle; editing this value does not
-/// change the UI. Native renderers consume SceneSnapshot instead of this type.
+/// change the UI. Native conversion consumes the internal immutable render tree, not this view.
 struct NodeSnapshot {
 	/// @brief Identity used to compare this occurrence across commits; not a persistent key.
 	NodeId id{};
@@ -103,6 +107,135 @@ struct NodeSnapshot {
 	std::optional<std::string> accessibilityLabel{};
 };
 
+namespace detail {
+/// @brief Independent retained work domains. Routes do not imply local recomputation.
+enum class [[clang::flag_enum]] Dirty : std::uint8_t {
+	none = 0,
+	measure = 1,
+	arrange = 2,
+	paint = 4,
+	snapshot = 8,
+	structure = 16
+};
+
+[[nodiscard]] constexpr auto operator|(Dirty left, Dirty right) -> Dirty {
+	return static_cast<Dirty>(static_cast<unsigned>(left) | static_cast<unsigned>(right));
+}
+
+[[nodiscard]] constexpr auto has(Dirty value, Dirty bits) -> bool {
+	return (static_cast<unsigned>(value) & static_cast<unsigned>(bits)) != 0;
+}
+
+[[nodiscard]] constexpr auto without(Dirty value, Dirty bits) -> Dirty {
+	return static_cast<Dirty>(static_cast<unsigned>(value) & ~static_cast<unsigned>(bits));
+}
+
+inline constexpr Dirty fullWork =
+	Dirty::measure | Dirty::arrange | Dirty::paint | Dirty::snapshot | Dirty::structure;
+
+/// @brief Local painter segments; the suffix restores the node clip before its outline.
+struct PaintSegments {
+	std::uint64_t identity = 0;
+	std::vector<PaintCommand> prefix;
+	std::vector<PaintCommand> suffix;
+	std::optional<Rect> childClipBounds;
+};
+
+/// @brief Effective inherited state, separate from local disabled alpha application.
+struct ProjectionContext {
+	std::uint64_t parentRoute =
+		0; ///< Acknowledged hit-route lineage, independent of paint identity.
+	std::size_t siblingOrder = 0; ///< Reordering overlapping siblings changes interaction routing.
+	double opacity = 1;
+	bool visible = true;
+	bool eligible = true;
+	Rect rectangularClip{};
+	auto operator<=>(const ProjectionContext &) const = default;
+};
+
+/// @brief Complete immutable occurrence projection; path copies share local payloads.
+struct SceneBranch {
+	std::uint64_t routeGeneration =
+		0; ///< Stable until this occurrence's ordered ancestor route changes.
+	NodeId id{};
+	std::uint64_t generation = 0;
+	ProjectionContext context{};
+	std::shared_ptr<const PaintSegments> paint;
+	std::shared_ptr<const NodeSnapshot> snapshot;
+	std::vector<std::shared_ptr<const SceneBranch>> children;
+};
+
+/// @brief Visible occurrence geometry, including acknowledged interaction policy.
+struct GeometryRecord {
+	std::uint64_t routeGeneration =
+		0; ///< Gates order-only hit-route changes, including overflowing descendants.
+	Rect bounds{};
+	Rect rectangularClip{};
+	NodeId parent{};
+	bool eligible = true;
+	std::shared_ptr<const std::vector<NodeId>>
+		children{}; ///< Immutable acknowledged painter/hit order.
+
+	[[nodiscard]] auto operator==(const GeometryRecord &other) const -> bool {
+		const bool sameChildren = children == other.children ||
+			((!children || children->empty()) && (!other.children || other.children->empty())) ||
+			(children && other.children && *children == *other.children);
+		return routeGeneration == other.routeGeneration && bounds == other.bounds &&
+			rectangularClip == other.rectangularClip && parent == other.parent &&
+			eligible == other.eligible && sameChildren;
+	}
+};
+struct GeometryIndex;
+using GeometryRoot = std::shared_ptr<const GeometryIndex>;
+[[nodiscard]] auto geometryFind(const GeometryRoot &, NodeId) -> std::optional<GeometryRecord>;
+[[nodiscard]] auto geometrySet(const GeometryRoot &, NodeId, const GeometryRecord &)
+	-> GeometryRoot;
+[[nodiscard]] auto geometryErase(const GeometryRoot &, NodeId) -> GeometryRoot;
+void geometryChanges(const GeometryRoot &, const GeometryRoot &, std::vector<Rect> &);
+
+/// @brief Complete internal production publication; no flat inspection is required.
+struct RenderSnapshot {
+	std::uint64_t revision = 0;
+	Size size{};
+	Color background = Color::white();
+	std::uint64_t textEnvironment = 0;
+	std::shared_ptr<const SceneBranch> root;
+	GeometryRoot geometry;
+};
+
+/// @brief Complete cache key, including both proposal dimensions and provider generation.
+struct MeasureKey {
+	Size available{};
+	std::uint64_t localInputs = 0;
+	std::uint64_t descendantInputs = 0;
+	std::uint64_t textEnvironment = 0;
+	auto operator<=>(const MeasureKey &) const = default;
+};
+
+struct ArrangeKey {
+	Rect assigned{};
+	std::uint64_t placementInputs = 0;
+	std::uint64_t childMeasurements = 0;
+	Direction direction = Direction::leftToRight;
+	auto operator<=>(const ArrangeKey &) const = default;
+};
+
+/// @brief UI-confined caches and direct-child routes for one retained occurrence.
+struct NodeWork {
+	Dirty local = fullWork;
+	std::set<NodeId> measureChildren;
+	std::set<NodeId> arrangeChildren;
+	std::set<NodeId> projectionChildren;
+	std::optional<MeasureKey> measuredAt;
+	std::optional<ArrangeKey> arrangedAt;
+	std::shared_ptr<const SceneBranch> projection;
+	std::uint64_t measureInputs = 0;
+	std::uint64_t descendantInputs = 0;
+	std::uint64_t placementInputs = 0;
+	std::uint64_t childMeasurements = 0;
+};
+} // namespace detail
+
 /// @brief Cumulative work counters for a single document lifetime.
 ///
 /// TestHost::metrics() exposes these for regression tests, such as proving a
@@ -114,9 +247,16 @@ struct Metrics {
 	std::uint64_t propertyUpdates =
 		0; ///< Delivered retained assignments, including initial property installation.
 	std::uint64_t layoutPasses =
-		0; ///< Committed document layout projections, not individual measurement calls.
+		0; ///< Commits that actually compute measurement or placement; paint-only commits excluded.
 	std::uint64_t sceneRevisions =
 		0; ///< Complete scenes published; not a presentation-completion count.
+	std::uint64_t measurements = 0; ///< Actual local measure computations, excluding cache returns.
+	std::uint64_t arrangements =
+		0; ///< Actual local placement computations, excluding route forwarding.
+	std::uint64_t paintBuilds = 0; ///< Local paint segment builds, excluding ancestor path copies.
+	std::uint64_t projectionBuilds = 0;		 ///< New immutable branch objects.
+	std::uint64_t nodeMaterializations = 0;	 ///< Lazy visible-node cache builds.
+	std::uint64_t sceneMaterializations = 0; ///< Lazy complete display-list cache builds.
 };
 
 namespace detail {
@@ -128,6 +268,7 @@ namespace detail {
 /// remove the occurrence. Resolve its NodeId again instead. Application code uses
 /// NodeHandle and NodeSnapshot rather than accessing this implementation record.
 struct Node {
+	NodeWork work{}; ///< Classified local work and persistent projection cache.
 	NodeId id{};	 ///< Identity used by document lookup and non-owning handles.
 	NodeId parent{}; ///< Owning-tree parent; zero serial identifies the root boundary.
 	NodeKind kind =
@@ -182,7 +323,7 @@ struct Node {
 /// before mount effects run. The host observes publication to request native paint.
 ///
 /// Confined to its UI executor. The native rendering boundary receives an owning
-/// const SceneSnapshot, never this Document or borrowed Node pointers. close()
+/// const RenderSnapshot, never this Document or borrowed Node pointers. close()
 /// disposes scopes and invalidates handles; importing modules creates no Document.
 class Document : public std::enable_shared_from_this<Document> {
   public:
@@ -206,15 +347,21 @@ class Document : public std::enable_shared_from_this<Document> {
 	[[nodiscard]] auto reorder(NodeId parent, const std::vector<NodeId> &children)
 		-> std::expected<void, Error>;
 	void invalidate();
+	void invalidate(NodeId identity, Dirty domains);
+	void forceFullRecompute();
 	void commit();
 	void resize(Size size);
 	void setEnvironment(Environment environment);
 
 	[[nodiscard]] auto environment() const noexcept -> Environment { return environment_; }
 
-	[[nodiscard]] auto snapshots() const -> const std::vector<NodeSnapshot> & { return snapshots_; }
+	[[nodiscard]] auto snapshots() const -> const std::vector<NodeSnapshot> &;
 
-	[[nodiscard]] auto scene() const -> std::shared_ptr<const SceneSnapshot> { return scene_; }
+	[[nodiscard]] auto scene() const -> std::shared_ptr<const SceneSnapshot>;
+
+	[[nodiscard]] auto renderSnapshot() const -> std::shared_ptr<const RenderSnapshot> {
+		return render_;
+	}
 
 	[[nodiscard]] auto metrics() const noexcept -> Metrics { return metrics_; }
 
@@ -246,11 +393,14 @@ class Document : public std::enable_shared_from_this<Document> {
 	void abandonPresentation(PresentationAttempt attempt);
 	/// @brief Invalidates submission identities after surface/attachment replacement.
 	void resetPresentation(std::uint64_t epoch);
-	/// @brief Publishes geometry only after the caller joins GPU and presentation evidence.
-	void confirmPresentation(std::uint64_t sceneRevision);
-	/// @brief Gates changed old/new regions when display evidence becomes unknown.
-	void markPresentationUnknown(std::uint64_t sceneRevision);
 	[[nodiscard]] auto hitTest(Point point) const -> std::optional<NodeId>;
+
+	[[nodiscard]] auto
+	beginPresentation(std::uint64_t epoch, std::uint64_t revision, std::span<const TileId> tiles)
+		-> std::expected<PresentationAttempt, Error>;
+	[[nodiscard]] auto reportPresentation(PresentationAttempt, TilePresentation) -> bool;
+	void gatePendingPresentation(PresentationAttempt);
+	void gateSurface();
 
 	template <typename T, typename F> void bind(NodeId identity, Property<T> property, F assign) {
 		const auto weakDocument = weak_from_this();
@@ -260,9 +410,18 @@ class Document : public std::enable_shared_from_this<Document> {
 				if (const auto document = weakDocument.lock()) {
 					if (auto *node = document->find(identity);
 						node != nullptr && node->scope.alive()) {
-						setter(*node, value);
+						if constexpr (std::is_same_v<
+										  std::invoke_result_t<F, Node &, const T &>,
+										  Dirty>) {
+							const auto domains = setter(*node, value);
+							if (domains != Dirty::none) {
+								document->invalidate(identity, domains);
+							}
+						} else {
+							setter(*node, value);
+							document->invalidate();
+						}
 						++document->metrics_.propertyUpdates;
-						document->invalidate();
 					}
 				}
 			}
@@ -278,9 +437,15 @@ class Document : public std::enable_shared_from_this<Document> {
 	Size viewport_{};
 	Environment environment_;
 	std::map<std::uint64_t, std::unique_ptr<Node>> nodes_;
-	std::vector<NodeSnapshot> snapshots_;
-	std::shared_ptr<const SceneSnapshot> scene_;
-	Metrics metrics_;
+	mutable std::vector<NodeSnapshot> snapshots_;
+	mutable bool hasNodeMaterialization_ = false;
+	mutable std::shared_ptr<const SceneSnapshot> scene_;
+	std::shared_ptr<const RenderSnapshot> render_;
+	mutable Metrics metrics_;
+	std::uint64_t mutationStamp_ = 0;
+	std::optional<std::uint64_t> failedStamp_;
+	std::uint64_t textEnvironment_ = 1;
+	bool isCommitting_ = false;
 	std::vector<Error> errors_;
 	bool isDirty_ = true;
 	bool isClosed_ = false;
@@ -293,18 +458,31 @@ class Document : public std::enable_shared_from_this<Document> {
 	std::uint64_t unknownRevision_ =
 		0; ///< Newest explicitly unknown scene; older confirmations cannot clear its gate.
 	std::uint64_t confirmedRevision_ = 0; ///< Last scene whose native display evidence was joined.
-	std::map<NodeId, Rect>
-		confirmedBounds_{}; ///< Immutable-by-replacement displayed node rectangles.
-	std::map<std::uint64_t, std::map<NodeId, Rect>>
-		geometryHistory_{}; ///< Bounded pending scene geometry.
-	std::vector<Rect>
-		ambiguousRegions_{}; ///< Changed regions with explicitly unknown display state.
+	GeometryRoot confirmedGeometry_;
+	std::map<std::uint64_t, GeometryRoot> geometryHistory_;
+
+	struct PinnedGeometry {
+		PresentationAttempt attempt;
+		GeometryRoot root;
+	};
+
+	std::map<std::uint64_t, PinnedGeometry> pinnedGeometry_;
+	std::vector<Rect> ambiguousRegions_;
+	bool surfaceGated_ = false;
+	std::uint64_t presentationEpoch_ = 0;
+
 	[[nodiscard]] auto interactionBounds(NodeId identity) const -> std::optional<Rect>;
 	void rememberGeometry();
 	[[nodiscard]] auto measure(NodeId identity, Size available) -> Size;
 	void arrange(NodeId identity, Rect bounds);
-	void paint(NodeId identity, SceneSnapshot &scene, double opacity);
-	void snapshot(NodeId identity);
+	[[nodiscard]] auto project(
+		NodeId,
+		ProjectionContext,
+		GeometryRoot &,
+		std::vector<std::pair<NodeId, std::shared_ptr<const SceneBranch>>> &
+	) -> std::shared_ptr<const SceneBranch>;
+	void gateGeometry(std::uint64_t, const GeometryRoot &);
+	void acceptPresentation(PresentationAttempt);
 	[[nodiscard]] auto isEligible(NodeId identity) const -> bool;
 	[[nodiscard]] auto hitTestNode(NodeId identity, Point point) const -> std::optional<NodeId>;
 };

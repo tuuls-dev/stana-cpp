@@ -178,6 +178,12 @@ struct ReactiveRuntime {
 						callback();
 					}
 				}
+				// A native measure provider can enqueue bindings during document
+				// preparation. Settle those and publish before exposing mount effects.
+				if (!pending.empty()) {
+					again = true;
+					continue;
+				}
 				auto actions = std::move(effects);
 				effects.clear();
 				for (auto &action : actions) {

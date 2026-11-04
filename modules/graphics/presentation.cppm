@@ -1,11 +1,15 @@
 module;
 
+#include <algorithm>
+#include <array>
+#include <bitset>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <map>
 #include <optional>
+#include <span>
 #include <stdexcept>
 
 export module stana.graphics:presentation;
@@ -23,6 +27,18 @@ struct PresentationAttempt {
 	auto operator<=>(const PresentationAttempt &) const = default;
 };
 
+/// @brief Strong physical tile ordinal, scoped to a presentation epoch.
+struct TileId {
+	std::uint32_t value = 0;
+	auto operator<=>(const TileId &) const = default;
+};
+
+/// @brief One exact tile's native display observation; invalid time is not proof.
+struct TilePresentation {
+	TileId tile{};
+	double timestamp = 0;
+};
+
 /// @brief Joins GPU completion with positive native presentation evidence.
 ///
 /// Deterministic hosts inject the same two independent observations a native
@@ -30,11 +46,32 @@ struct PresentationAttempt {
 /// never establish displayed geometry. Late feedback from a replaced epoch is
 /// ignored, and a bounded pending history prevents unbounded callback ownership.
 class PresentationTracker {
+	static constexpr std::size_t maximumExpectedTiles = 1024;
+
   public:
 	/// @brief Registers an attempt before its asynchronous completion callbacks run.
 	/// @return A unique identity, or failure when the epoch is stale/history is full.
 	[[nodiscard]] auto begin(std::uint64_t epoch, std::uint64_t sceneRevision)
 		-> std::expected<PresentationAttempt, Error> {
+		constexpr std::array tiles{TileId{0}};
+		return begin(epoch, sceneRevision, tiles);
+	}
+
+	/// @brief Owns and validates the complete expected tile set before mutating admission state.
+	[[nodiscard]] auto
+	begin(std::uint64_t epoch, std::uint64_t sceneRevision, std::span<const TileId> tiles)
+		-> std::expected<PresentationAttempt, Error> {
+		std::bitset<maximumExpectedTiles> expected;
+		if (tiles.empty() || tiles.size() > expected.size()) {
+			return std::unexpected(Error::invalidValue);
+		}
+		for (const auto tile : tiles) {
+			if (tile.value >= expected.size() || expected.test(tile.value)) {
+				return std::unexpected(Error::invalidValue);
+			}
+			expected.set(tile.value);
+		}
+
 		if (epoch == 0 || epoch < epoch_) {
 			return std::unexpected(Error::invalidValue);
 		}
@@ -49,7 +86,7 @@ class PresentationTracker {
 			.sequence = detail::nextIdentity(),
 			.sceneRevision = sceneRevision
 		};
-		pending_.emplace(attempt.sequence, State{.attempt = attempt});
+		pending_.emplace(attempt.sequence, State{.attempt = attempt, .expected = expected});
 		return attempt;
 	}
 
@@ -69,12 +106,29 @@ class PresentationTracker {
 
 	/// @brief Supplies the native drawable's timestamp; zero means unconfirmed/dropped.
 	[[nodiscard]] auto reportPresented(PresentationAttempt attempt, double timestamp) -> bool {
-		if (auto *state = find(attempt)) {
-			state->hasPositiveTimestamp =
-				state->hasPositiveTimestamp || (std::isfinite(timestamp) && timestamp > 0);
+		return reportPresented(
+			attempt,
+			TilePresentation{.tile = TileId{0}, .timestamp = timestamp}
+		);
+	}
+
+	/// @brief Joins a first finite positive observation for an expected tile only.
+	[[nodiscard]] auto reportPresented(PresentationAttempt attempt, TilePresentation observation)
+		-> bool {
+		if (auto *state = find(attempt); state != nullptr && contains(attempt, observation.tile)) {
+			if (std::isfinite(observation.timestamp) && observation.timestamp > 0) {
+				state->presented.set(observation.tile.value);
+			}
 			return confirm(*state);
 		}
 		return false;
+	}
+
+	[[nodiscard]] auto contains(PresentationAttempt attempt, TileId tile) const -> bool {
+		if (!contains(attempt) || tile.value >= maximumExpectedTiles) {
+			return false;
+		}
+		return pending_.at(attempt.sequence).expected.test(tile.value);
 	}
 
 	/// @brief Tests exact pending identity before callers apply negative feedback to geometry.
@@ -113,8 +167,9 @@ class PresentationTracker {
 	struct State {
 		PresentationAttempt attempt{}; ///< Exact identity used to reject unrelated callbacks.
 		bool gpuFinished = false;	   ///< Whether GPU completion has been reported.
-		bool hasPositiveTimestamp =
-			false; ///< Whether native evidence proves this drawable presented.
+		std::bitset<maximumExpectedTiles> expected{}; ///< Owned bounded expected set.
+		std::bitset<maximumExpectedTiles>
+			presented{}; ///< First positive observations, never erased by duplicates.
 	};
 
 	static constexpr std::size_t historyLimit =
@@ -132,7 +187,7 @@ class PresentationTracker {
 	}
 
 	[[nodiscard]] auto confirm(const State &state) -> bool {
-		if (!state.gpuFinished || !state.hasPositiveTimestamp ||
+		if (!state.gpuFinished || (state.presented & state.expected) != state.expected ||
 			(confirmed_ && confirmed_->sequence >= state.attempt.sequence)) {
 			return false;
 		}

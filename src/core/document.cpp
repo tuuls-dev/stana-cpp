@@ -10,6 +10,8 @@ module;
 #include <memory>
 #include <optional>
 #include <ranges>
+#include <set>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -64,6 +66,10 @@ void Document::close() {
 	remove(root_);
 	snapshots_.clear();
 	scene_.reset();
+	render_.reset();
+	geometryHistory_.clear();
+	pinnedGeometry_.clear();
+	confirmedGeometry_.reset();
 }
 
 auto Document::createNode(NodeKind kind, NodeId parent) -> NodeId {
@@ -91,7 +97,10 @@ auto Document::createNode(NodeKind kind, NodeId parent) -> NodeId {
 	}
 	nodes_.emplace(nodeId.serial, std::move(node));
 	++metrics_.mounts;
-	invalidate();
+	invalidate(nodeId, fullWork);
+	if (parent.serial != 0) {
+		invalidate(parent, Dirty::measure | Dirty::arrange | Dirty::structure);
+	}
 	return nodeId;
 }
 
@@ -117,25 +126,49 @@ void Document::removeChildren(NodeId identity) {
 }
 
 void Document::remove(NodeId identity) {
-	auto *node = find(identity);
-	if (node == nullptr || !node->scope.alive()) {
+	const auto *node = find(identity);
+	if (node == nullptr) {
 		return;
 	}
-	// Mark the scope dead before cancellation can call application code. Descendant
-	// records stay alive until their own cancellation has finished.
-	node->scope.dispose();
-	removeChildren(identity);
-	if (auto *parent = find(node->parent)) {
+	const auto parentId = node->parent;
+	std::vector<NodeId> retired{identity};
+	for (std::size_t index = 0; index < retired.size(); ++index) {
+		if (const auto *record = find(retired.at(index))) {
+			retired.insert(retired.end(), record->children.begin(), record->children.end());
+		}
+	}
+	if (auto *parent = find(parentId)) {
 		std::erase(parent->children, identity);
 	}
-	if (focused_ == identity) {
-		focused_.reset();
+	// Lookup retirement precedes every application cleanup. An owning batch keeps
+	// scopes/storage alive even when cleanup reenters removal or commits a sibling.
+	std::vector<std::unique_ptr<Node>> disposal;
+	for (const auto id : retired) {
+		auto entry = nodes_.extract(id.serial);
+		if (!entry.empty()) {
+			disposal.push_back(std::move(entry.mapped()));
+		}
+		if (focused_ == id) {
+			focused_.reset();
+		}
+		if (pressed_ == id) {
+			pressed_.reset();
+		}
 	}
-	if (pressed_ == identity) {
-		pressed_.reset();
+	for (const auto &[serial, record] : nodes_) {
+		static_cast<void>(serial);
+		for (const auto id : retired) {
+			record->work.measureChildren.erase(id);
+			record->work.arrangeChildren.erase(id);
+			record->work.projectionChildren.erase(id);
+		}
 	}
-	nodes_.erase(identity.serial);
-	invalidate();
+	if (find(parentId) != nullptr) {
+		invalidate(parentId, Dirty::measure | Dirty::arrange | Dirty::structure);
+	}
+	for (auto &record : std::views::reverse(disposal)) {
+		record->scope.dispose();
+	}
 }
 
 auto Document::reorder(NodeId parent, const std::vector<NodeId> &children)
@@ -151,33 +184,120 @@ auto Document::reorder(NodeId parent, const std::vector<NodeId> &children)
 	if (wanted != existing || std::ranges::adjacent_find(wanted) != wanted.end()) {
 		return std::unexpected(Error::invalidStructure);
 	}
+	if (node->children == children) {
+		return {};
+	}
 	node->children = children;
-	invalidate();
+	invalidate(parent, Dirty::measure | Dirty::arrange | Dirty::structure);
 	return {};
 }
 
-void Document::invalidate() {
+void Document::invalidate(NodeId identity, Dirty domains) {
+	auto *node = find(identity);
+	if (node == nullptr || domains == Dirty::none) {
+		return;
+	}
+	mutationStamp_ = nextIdentity();
 	isDirty_ = true;
+	if (has(domains, Dirty::measure) && !has(node->work.local, Dirty::measure)) {
+		node->work.measureInputs = nextIdentity();
+	}
+	if (has(domains, Dirty::arrange) && !has(node->work.local, Dirty::arrange)) {
+		node->work.placementInputs = nextIdentity();
+	}
+	node->work.local = node->work.local | domains;
+	auto child = identity;
+	for (auto *parent = find(node->parent); parent != nullptr; parent = find(parent->parent)) {
+		bool changed = parent->work.projectionChildren.insert(child).second;
+		if (has(domains, Dirty::measure)) {
+			if (parent->work.measureChildren.insert(child).second) {
+				parent->work.descendantInputs = nextIdentity();
+				changed = true;
+			}
+		}
+		if (has(domains, Dirty::arrange)) {
+			changed = parent->work.arrangeChildren.insert(child).second || changed;
+		}
+		if (!changed) {
+			break;
+		}
+		child = parent->id;
+	}
+}
+
+void Document::invalidate() {
+	for (const auto &[serial, node] : nodes_) {
+		static_cast<void>(serial);
+		node->work.measuredAt.reset();
+		node->work.arrangedAt.reset();
+		node->work.local = fullWork;
+	}
+	if (find(root_) != nullptr) {
+		invalidate(root_, fullWork);
+	}
+}
+
+void Document::forceFullRecompute() {
+	invalidate();
+	commit();
 }
 
 void Document::resize(Size size) {
 	requireNonnegative(size.width);
 	requireNonnegative(size.height);
+	if (viewport_ == size) {
+		return;
+	}
 	viewport_ = size;
-	invalidate();
+	invalidate(root_, Dirty::measure | Dirty::arrange | Dirty::snapshot);
 	commit();
 }
 
 void Document::setEnvironment(Environment environment) {
 	requireNonnegative(environment.textScale);
+	const bool textChanged = std::is_neq(environment.textScale <=> environment_.textScale);
+	const bool directionChanged = environment.direction != environment_.direction;
+	const bool themeChanged = environment.theme != environment_.theme;
+	if (environment == environment_) {
+		return;
+	}
 	environment_ = environment;
-	invalidate();
+	if (textChanged) {
+		textEnvironment_ = nextIdentity();
+	}
+	for (const auto &[serial, node] : nodes_) {
+		static_cast<void>(serial);
+		Dirty domains = Dirty::none;
+		if (directionChanged) {
+			domains = domains | Dirty::arrange | Dirty::snapshot;
+		}
+		if (node->kind == NodeKind::text || node->kind == NodeKind::button ||
+			node->kind == NodeKind::toggle) {
+			if (textChanged) {
+				domains = domains | Dirty::measure | Dirty::paint;
+			}
+			if (themeChanged && !node->isForegroundExplicit) {
+				domains = domains | Dirty::paint;
+			}
+		}
+		invalidate(node->id, domains);
+	}
+	if (themeChanged || (!textChanged && !directionChanged)) {
+		invalidate(root_, Dirty::snapshot);
+	}
 	commit();
 }
 
 void Document::setTextMeasure(std::function<Size(const std::string &, Font, double)> measure) {
 	measureText_ = std::move(measure);
-	invalidate();
+	textEnvironment_ = nextIdentity();
+	for (const auto &[serial, node] : nodes_) {
+		static_cast<void>(serial);
+		if (node->kind == NodeKind::text || node->kind == NodeKind::button ||
+			node->kind == NodeKind::toggle) {
+			invalidate(node->id, Dirty::measure | Dirty::paint);
+		}
+	}
 }
 
 void Document::setOnPublish(std::function<void()> callback) {

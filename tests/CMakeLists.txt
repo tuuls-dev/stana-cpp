@@ -29,13 +29,21 @@ stana_apply_safety(stana-ui-contracts)
 add_test(NAME stana.ui COMMAND stana-ui-contracts)
 
 if(APPLE)
-	add_executable(stana-native-smoke platform/macos/window_smoke.cpp)
+	add_executable(stana-native-smoke MACOSX_BUNDLE platform/macos/window_smoke.cpp platform/macos/window_fixture.mm)
+    set_target_properties(stana-native-smoke PROPERTIES
+        MACOSX_BUNDLE_INFO_PLIST "${PROJECT_SOURCE_DIR}/cmake/AppInfo.plist.in"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "dev.stana.native-smoke"
+        MACOSX_BUNDLE_BUNDLE_NAME "Stana Native Qualification"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
+    target_compile_options(stana-native-smoke PRIVATE "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>")
 	target_link_libraries(stana-native-smoke PRIVATE stana::stana)
 	stana_apply_safety(stana-native-smoke)
 	option(STANA_NATIVE_TESTS "Run native tests requiring a logged-in window server" OFF)
 	if(STANA_NATIVE_TESTS)
-		add_test(NAME stana.native.window COMMAND stana-native-smoke)
-		set_tests_properties(stana.native.window PROPERTIES TIMEOUT 15 LABELS native)
+		add_test(NAME stana.native.window COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/platform/macos/launch_native.py" "$<TARGET_BUNDLE_DIR:stana-native-smoke>")
+		set_tests_properties(stana.native.window PROPERTIES TIMEOUT 45 LABELS native)
 	endif()
 endif()
 
@@ -53,3 +61,29 @@ add_executable(stana-presentation-contracts graphics/presentation.cpp)
 target_link_libraries(stana-presentation-contracts PRIVATE stana::stana)
 stana_apply_safety(stana-presentation-contracts)
 add_test(NAME stana.presentation COMMAND stana-presentation-contracts)
+
+add_executable(stana-incremental graphics/incremental.cpp)
+target_link_libraries(stana-incremental PRIVATE stana::stana)
+stana_apply_safety(stana-incremental)
+add_test(NAME stana.incremental COMMAND stana-incremental)
+
+add_executable(stana-tiles graphics/tiles.cpp)
+target_link_libraries(stana-tiles PRIVATE stana::stana)
+stana_apply_safety(stana-tiles)
+add_test(NAME stana.tiles COMMAND stana-tiles)
+
+if(APPLE)
+	add_executable(stana-raster platform/macos/raster.mm)
+	target_link_libraries(stana-raster PRIVATE stana::stana "-framework AppKit" "-framework CoreGraphics" "-framework CoreText")
+	target_compile_options(stana-raster PRIVATE -fobjc-arc)
+	stana_apply_safety(stana-raster)
+	add_test(NAME stana.raster COMMAND stana-raster)
+	if(STANA_NATIVE_TESTS)
+		add_executable(stana-shared-copy platform/macos/shared_copy.mm)
+		target_link_libraries(stana-shared-copy PRIVATE stana::stana "-framework Metal" "-framework CoreGraphics")
+		target_compile_options(stana-shared-copy PRIVATE -fobjc-arc)
+		stana_apply_safety(stana-shared-copy)
+		add_test(NAME stana.native.shared-copy COMMAND stana-shared-copy)
+		set_tests_properties(stana.native.shared-copy PROPERTIES TIMEOUT 30 LABELS native)
+	endif()
+endif()

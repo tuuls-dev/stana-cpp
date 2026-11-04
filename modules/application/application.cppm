@@ -46,13 +46,40 @@ void installNativeTaskDispatcher();
 
 } // namespace detail
 
+/// @brief Cumulative renderer work and current gauges; drawable payload is an estimate.
+struct RenderingWork {
+	std::uint64_t tileCount = 0;		///< Current tile-layer count.
+	std::uint64_t rasterizedTiles = 0;	///< Cumulative fully cleared/replayed tiles.
+	std::uint64_t presentedTiles = 0;	///< Cumulative tiles whose native presentation was issued.
+	std::uint64_t rasterizedPixels = 0; ///< Cumulative visible physical pixels replayed.
+	std::uint64_t copiedBytes =
+		0; ///< Committed buffer-to-drawable pixel payload, excluding row padding.
+	std::uint64_t cpuUploadBytes = 0;	 ///< Bitmap upload payload; zero in the shared-buffer path.
+	std::uint64_t bufferAllocations = 0; ///< Cumulative successful shared Metal buffer allocations.
+	std::uint64_t rasterBytes =
+		0; ///< Current plus retired aligned shared-buffer bytes; excludes drawables.
+	std::uint64_t peakRasterBytes =
+		0; ///< Peak owned shared-buffer bytes during this window lifetime.
+	std::uint64_t estimatedDrawableBytes =
+		0; ///< Estimated tile pixel payload times configured drawable count, not measured VRAM.
+	std::uint64_t fullDamageFallbacks =
+		0; ///< Conservative viewport selections for unknown ink bounds.
+	std::uint64_t recoveries =
+		0; ///< Consumed recovery cycles; successful confirmation resets the allowance.
+	std::uint64_t anchorAttempts = 0; ///< Committed paint-equivalent revision evidence anchors.
+	bool hasActiveBatch = false; ///< Whether a composite or its GPU drain currently owns admission.
+	bool hasPendingScene =
+		false; ///< Whether latest document demand differs from confirmed display.
+};
+
 /// @brief Last-known rendering progress for one active native window.
 ///
 /// `Application::renderingDiagnostics()` returns these values for debugging and
 /// native verification. A submitted scene is not necessarily displayed: only a
-/// confirmed revision has both successful GPU completion and a positive native
-/// drawable timestamp. This is acknowledged last-known geometry, not a promise
-/// of scanout-atomic input or a performance qualification.
+/// confirmed revision joins GPU success for every copied tile, an issued batch
+/// transaction and a positive native timestamp from that batch's proof tile.
+/// Other tile timestamps remain diagnostic, not independent display proof. This is acknowledged
+/// last-known geometry, not a promise of scanout-atomic input or a performance qualification.
 struct WindowDiagnostics {
 	std::uint64_t surfaceEpoch = 0; ///< Current native geometry/surface generation.
 	std::optional<std::uint64_t> submittedSceneRevision{}; ///< Last GPU submission, if any.
@@ -60,6 +87,8 @@ struct WindowDiagnostics {
 		confirmedSceneRevision{}; ///< Last joined display confirmation, if any.
 	std::optional<std::string>
 		lastFailure{}; ///< Native failure message, absent when none was recorded.
+	RenderingWork
+		renderingWork{}; ///< Tile-sized copies remain; cpuUploadBytes excludes command values.
 };
 
 /// @brief Owns the main-thread native event loop and mounted window sessions.

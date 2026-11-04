@@ -3,11 +3,12 @@
 A **C++23 retained desktop UI toolkit**, consumed with **`import stana;`**.
 The portable engine uses typed aggregate descriptions, tuple composition and
 fine-grained signals. The initial native backend is macOS 26+ (AppKit, Core Text,
-Core Graphics and Metal), with no Swift runtime dependency.
+Core Graphics and Metal) on Apple Silicon with unified-memory Apple-family GPUs,
+with no Swift runtime dependency. Intel macOS retains headless engine support.
 
 **Port in progress:** the native Counter, reactive runtime, structural components,
 headless testing and Unicode editing buffer are implemented. Full upstream desktop
-and renderer parity is tracked in [.todos](.todos/README.md), not claimed complete.
+and renderer parity is tracked in [the task backlog](.tasks/00_omnibus.md), not claimed complete.
 Symbols and Movexa are explicitly out of scope for this pass.
 
 ```cpp
@@ -43,7 +44,8 @@ just example counter
 ```
 
 `just example counter` configures and builds Debug before launching the native
-window. `just build`, `just test`, and `just format-check` are also available.
+window, with native rendering traces on by default (`just example counter --no-trace`
+disables them). `just build`, `just test`, and `just format-check` are also available.
 Run `just` to list recipes. Direct CMake commands remain supported; after building,
 `open build/debug/stana-counter.app` launches the same macOS example. Public modules
 include `stana.primitives`, `stana.reactive`, `stana.graphics`, `stana.text`,
@@ -90,6 +92,44 @@ matching tools while that formula remains at 22.1.8. The presets detect the
 Homebrew LLVM path automatically; `/usr/bin/clang++` is deliberately not supported.
 Keep CMake/Ninja/Python up to date, for example `python3 -m pip install 'cmake>=4.4' ninja`.
 
+## Incremental rendering
+
+**Qualification in progress:** see [measured evidence](docs/rendering-evidence.md).
+CoreGraphics tile clipping can produce bounded antialiasing differences; the
+approved reference gate keeps alpha/uniform regions exact and limits edge-only
+RGB error and affected pixel count. Incremental stale-pixel checks remain exact.
+
+Retained mutations classify measurement, placement, paint, and inspection work.
+Complete immutable scene branches and an immutable geometry index share unchanged
+payloads across revisions. Public `TestHost::scene()`/`nodes()` still work; flat
+inspection views are built lazily and are not part of native frame conversion.
+`Metrics::layoutPasses` counts commits that actually compute measurement or placement;
+paint-only commits do not increase it. The additive per-operation counters distinguish
+local work, ancestor path copies, and explicit flat materialization.
+
+On supported Macs, CoreGraphics/Core Text rasterize on the UI executor directly
+into reusable shared Metal buffers. Physical 512×512 tiles (smaller at edges) own
+persistent Metal layers. Only dirty tiles are cleared/replayed and copied into
+fresh, completely initialized drawables; unchanged layers are untouched. There is
+no intermediate scene texture, bitmap upload, old renderer fallback, or runtime
+render-path switch. There **is** a tile-sized GPU buffer-to-drawable copy and normal
+Core Animation compositor traffic; this is not a claim of zero total copies.
+
+One active composite per window joins GPU success for every copied tile, an issued
+Core Animation batch transaction, and a positive native timestamp from the first
+submitted tile. Other tile timestamps are diagnostic, not per-tile display proof. Changed interaction regions remain gated until that join;
+paint-equivalent revisions use a real tile-zero evidence anchor. Recovery, drawable
+retry, and GPU drain have bounded deadlines. Preparation and drawable acquisition
+remain on the UI executor; `nextDrawable` is non-blocking and a nil drawable retries on the next frame.
+A transaction groups tiles but does not prove per-tile display or scanout-atomic presentation.
+
+`Application::renderingDiagnostics().renderingWork` reports actual raster/copy work,
+shared-buffer allocations, and separate estimated drawable payload. The 256 MiB
+per-window shared-raster budget includes retired GPU owners, **not** Core Text,
+driver allocations, compositor surfaces, or total process memory. Many tile layers
+have measurable overhead. Native support requires macOS 26+ and an Apple-family
+Metal GPU with unified memory; unsupported hardware fails explicitly.
+
 ## Build and test
 
 ```sh
@@ -115,10 +155,13 @@ by `.editorconfig`. YAML uses spaces because YAML forbids tab indentation.
 ### Native verification
 
 Headless tests never create `NSApplication`. A real window-server/Metal smoke
-binary is built on macOS as `build/debug/tests/stana-native-smoke`. Run it in a
+binary is built on macOS as `build/debug/tests/stana-native-smoke.app`. Run it in a
 logged-in graphical session, or configure `-DSTANA_NATIVE_TESTS=ON` to include it
 in CTest. A sandbox may need explicit access to the window server and Metal device.
-Missing Metal is an error, not a silent CPU-renderer fallback.
+Unsupported native hardware is an error, not a silent CPU-renderer fallback.
+Default Apple tests include CPU-only full/tile byte parity without `NSApplication`;
+`-DSTANA_NATIVE_TESTS=ON` additionally registers shared-buffer GPU readback and real
+tile-window evidence gates. See [rendering evidence](docs/rendering-evidence.md).
 
 ### VS Code
 
@@ -219,3 +262,5 @@ python3 tools/release.py package --build build/release --output dist
 
 No license has been selected yet; choose one before distributing this project
 under open-source terms.
+
+codex resume 01a1a724-4245-7f70-bd6b-09c22b9f12bc
