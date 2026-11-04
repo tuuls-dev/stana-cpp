@@ -87,3 +87,8 @@ if(APPLE)
 		set_tests_properties(stana.native.shared-copy PROPERTIES TIMEOUT 30 LABELS native)
 	endif()
 endif()
+
+add_executable(stana-cpu-canvas graphics/cpu_canvas.cpp)
+target_link_libraries(stana-cpu-canvas PRIVATE stana::stana)
+stana_apply_safety(stana-cpu-canvas)
+add_test(NAME stana.cpu-canvas COMMAND stana-cpu-canvas)

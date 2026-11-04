@@ -10,3 +10,7 @@ target_link_libraries(consumer PRIVATE stana::stana)
 set_target_properties(consumer PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
 enable_testing()
 add_test(NAME consumer.run COMMAND consumer)
+
+add_executable(rejected-old-canvas EXCLUDE_FROM_ALL old_canvas.cpp)
+target_link_libraries(rejected-old-canvas PRIVATE stana::stana)
+set_target_properties(rejected-old-canvas PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)

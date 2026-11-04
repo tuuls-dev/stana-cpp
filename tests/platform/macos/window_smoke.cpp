@@ -278,7 +278,7 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 		static_cast<void>(mount(
 			ZStack{
 				.children = children(
-					Canvas{
+					CPUCanvas{
 						.drawing = markers(),
 						.layout =
 							{.frame = Frame{.width = Length::fill(), .height = Length::fill()}}

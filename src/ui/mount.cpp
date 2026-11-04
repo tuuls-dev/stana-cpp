@@ -175,7 +175,9 @@ void applyAppearance(
 			}
 		);
 	}
-	context.document->find(identity)->clip = properties.clip;
+	if (properties.clip.has_value()) {
+		context.document->find(identity)->clip = *properties.clip;
+	}
 }
 
 void applyInteraction(
@@ -300,9 +302,23 @@ auto mount(const Spacer &description, MountContext &context) -> NodeHandle {
 	return context.document->handle(identity);
 }
 
-auto mount(const Canvas &description, MountContext &context) -> NodeHandle {
-	const auto identity = detail::createConfigured(description, detail::NodeKind::canvas, context);
-	context.document->find(identity)->drawing = description.drawing;
+auto mount(const CPUCanvas &description, MountContext &context) -> NodeHandle {
+	const auto identity =
+		detail::createConfigured(description, detail::NodeKind::cpuCanvas, context);
+	context.document->find(identity)->clip = description.appearance.clip.value_or(true);
+	context.document->bind(
+		identity,
+		description.drawing,
+		[](detail::Node &node, const Drawing &value) -> detail::Dirty {
+			value.validate();
+			if (node.drawing == value) {
+				return detail::Dirty::none;
+			}
+			Drawing prepared = value;
+			node.drawing.commands.swap(prepared.commands);
+			return detail::Dirty::paint;
+		}
+	);
 	return context.document->handle(identity);
 }
 } // namespace stana

@@ -81,6 +81,7 @@ auto Document::createNode(NodeKind kind, NodeId parent) -> NodeId {
 	node->id = nodeId;
 	node->parent = parent;
 	node->kind = kind;
+	node->clip = kind == NodeKind::scroll || kind == NodeKind::cpuCanvas;
 	if (kind == NodeKind::button || kind == NodeKind::toggle) {
 		node->padding = Insets::all(buttonPadding);
 		node->cornerRadius = defaultCornerRadius;
@@ -258,6 +259,7 @@ void Document::setEnvironment(Environment environment) {
 	const bool textChanged = std::is_neq(environment.textScale <=> environment_.textScale);
 	const bool directionChanged = environment.direction != environment_.direction;
 	const bool themeChanged = environment.theme != environment_.theme;
+	const bool colorChanged = themeChanged || environment.highContrast != environment_.highContrast;
 	if (environment == environment_) {
 		return;
 	}
@@ -270,6 +272,10 @@ void Document::setEnvironment(Environment environment) {
 		Dirty domains = Dirty::none;
 		if (directionChanged) {
 			domains = domains | Dirty::arrange | Dirty::snapshot;
+			if (node->kind == NodeKind::cpuCanvas || node->kind == NodeKind::text ||
+				node->kind == NodeKind::button || node->kind == NodeKind::toggle) {
+				domains = domains | Dirty::paint;
+			}
 		}
 		if (node->kind == NodeKind::text || node->kind == NodeKind::button ||
 			node->kind == NodeKind::toggle) {
@@ -277,6 +283,21 @@ void Document::setEnvironment(Environment environment) {
 				domains = domains | Dirty::measure | Dirty::paint;
 			}
 			if (themeChanged && !node->isForegroundExplicit) {
+				domains = domains | Dirty::paint;
+			}
+		}
+		if (colorChanged) {
+			const auto semantic = [](Color color) -> bool {
+				return color.token != Color::Token::explicitColor;
+			};
+			if (semantic(node->background) || semantic(node->foreground) ||
+				semantic(node->borderColor) ||
+				std::ranges::any_of(
+					node->drawing.commands,
+					[&](const PaintCommand &command) -> bool {
+						return semantic(command.color);
+					}
+				)) {
 				domains = domains | Dirty::paint;
 			}
 		}

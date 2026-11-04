@@ -38,41 +38,31 @@ struct PaintCommand {
 	double lineWidth = 1;	 ///< Outline or segment thickness in logical points.
 	std::string text{};		 ///< Owned display text; used only for PaintKind::text.
 	Font font{};			 ///< System-font request; used only for PaintKind::text.
+	[[nodiscard]] auto operator==(const PaintCommand &) const -> bool;
 };
 
-/// @brief Builds decorative paint commands for a Canvas component.
+/// @brief Builds decorative paint commands for a CPUCanvas component.
 ///
-/// Record geometry in Canvas-local logical coordinates, then pass the value as
-/// Canvas::drawing. Mounting copies the commands into the retained occurrence;
+/// Record geometry in CPUCanvas-local logical coordinates, then pass the value as
+/// CPUCanvas::drawing. Mounting copies the commands into the retained occurrence;
 /// changing this original builder afterward does not mutate the mounted canvas.
 /// Supply an accessible equivalent when the picture carries meaningful content.
 struct Drawing {
 	std::vector<PaintCommand>
 		commands; ///< Ordered commands; later commands paint above earlier ones.
 
-	/// @brief Appends a filled, optionally rounded rectangle in local coordinates.
-	/// @param bounds Logical rectangle relative to the Canvas origin.
-	/// @param color Fill color and opacity.
-	/// @param cornerRadius Nonnegative rounding radius in logical points.
+	/// @brief Validates the complete authored stream, including direct command edits.
+	void validate() const;
+	[[nodiscard]] auto operator==(const Drawing &) const -> bool = default;
+	void fillRect(Rect bounds, Color color, double cornerRadius = 0);
+	void strokeRect(Rect bounds, Color color, double width = 1, double cornerRadius = 0);
+
 	void fill(Rect bounds, Color color, double cornerRadius = 0) {
-		commands.push_back(
-			{.kind = PaintKind::fillRect,
-				.bounds = bounds,
-				.color = color,
-				.cornerRadius = cornerRadius}
-		);
+		fillRect(bounds, color, cornerRadius);
 	}
 
-	/// @brief Appends an outlined, optionally rounded rectangle in local coordinates.
-	/// @param width Stroke thickness in logical points, independent of device scale.
 	void stroke(Rect bounds, Color color, double width = 1, double cornerRadius = 0) {
-		commands.push_back(
-			{.kind = PaintKind::strokeRect,
-				.bounds = bounds,
-				.color = color,
-				.cornerRadius = cornerRadius,
-				.lineWidth = width}
-		);
+		strokeRect(bounds, color, width, cornerRadius);
 	}
 };
 

@@ -51,8 +51,8 @@ constexpr double focusBorderWidth = 2;
 		return "toggle";
 	case scroll:
 		return "scroll";
-	case canvas:
-		return "canvas";
+	case cpuCanvas:
+		return "cpuCanvas";
 	}
 	throw std::logic_error("Unknown Stana node kind");
 }
@@ -86,48 +86,6 @@ namespace {
 			)
 		}
 	};
-}
-
-/// @brief Reject invalid local streams before a reusable branch can leak graphics state.
-void validateDrawing(const Drawing &drawing) {
-	std::size_t depth = 0;
-	for (const auto &command : drawing.commands) {
-		if (command.kind == PaintKind::popClip) {
-			if (depth == 0) {
-				throw std::invalid_argument("Canvas clip underflow");
-			}
-			--depth;
-			continue;
-		}
-		requireFinite(command.bounds.origin.x);
-		requireFinite(command.bounds.origin.y);
-		requireFinite(command.bounds.origin.x + command.bounds.size.width);
-		requireFinite(command.bounds.origin.y + command.bounds.size.height);
-		if (command.kind == PaintKind::line) {
-			requireFinite(command.bounds.size.width);
-			requireFinite(command.bounds.size.height);
-		} else {
-			requireNonnegative(command.bounds.size.width);
-			requireNonnegative(command.bounds.size.height);
-		}
-		requireNonnegative(command.cornerRadius);
-		requireNonnegative(command.lineWidth);
-		requireNonnegative(command.font.size);
-		requireFinite(command.font.weight);
-		for (const auto component :
-			{command.color.red, command.color.green, command.color.blue, command.color.alpha}) {
-			requireNonnegative(component);
-			if (component > 1) {
-				throw std::invalid_argument("Color exceeds one");
-			}
-		}
-		if (command.kind == PaintKind::pushClip) {
-			++depth;
-		}
-	}
-	if (depth != 0) {
-		throw std::invalid_argument("Unbalanced Canvas clips");
-	}
 }
 
 void flattenPaint(
@@ -201,7 +159,7 @@ auto Document::project(
 	if (!needsPaint) {
 		branch->paint = previous->paint;
 	} else {
-		validateDrawing(node->drawing);
+		node->drawing.validate();
 		++metrics_.paintBuilds;
 		auto paint = std::make_shared<PaintSegments>();
 		paint->identity = nextIdentity();
@@ -212,11 +170,14 @@ auto Document::project(
 			scene.commands.push_back(
 				{.kind = PaintKind::fillRect,
 					.bounds = node->bounds,
-					.color = withOpacity(node->background, opacity),
+					.color = withOpacity(
+						node->background.resolved(environment_.theme, environment_.highContrast),
+						opacity
+					),
 					.cornerRadius = node->cornerRadius}
 			);
 		}
-		if (node->clip || node->kind == NodeKind::scroll) {
+		if (node->clip) {
 			scene.commands.push_back(
 				{.kind = PaintKind::pushClip,
 					.bounds = node->bounds,
@@ -228,37 +189,50 @@ auto Document::project(
 			auto font = node->font;
 			font.size *= environment_.textScale;
 			requireNonnegative(font.size);
-			auto bounds = node->bounds;
-			bounds.origin.x += node->padding.leading;
-			bounds.origin.y += node->padding.top;
-			bounds.size.width =
-				std::max(0.0, bounds.size.width - node->padding.leading - node->padding.trailing);
-			bounds.size.height =
-				std::max(0.0, bounds.size.height - node->padding.top - node->padding.bottom);
+			const auto bounds = contentRect(node->bounds, node->padding, environment_.direction);
 			const Color foreground =
 				node->isForegroundExplicit ? node->foreground : themeLabel(environment_.theme);
 			scene.commands.push_back(
 				{.kind = PaintKind::text,
 					.bounds = bounds,
-					.color = withOpacity(foreground, opacity),
+					.color = withOpacity(
+						foreground.resolved(environment_.theme, environment_.highContrast),
+						opacity
+					),
 					.text = node->text,
 					.font = font}
 			);
 		}
+		const auto content = contentRect(node->bounds, node->padding, environment_.direction);
 		for (auto command : node->drawing.commands) {
-			command.bounds.origin.x += node->bounds.origin.x;
-			command.bounds.origin.y += node->bounds.origin.y;
-			requireFinite(command.bounds.origin.x);
-			requireFinite(command.bounds.origin.y);
-			command.color = withOpacity(command.color, opacity);
+			if (command.kind != PaintKind::popClip) {
+				command.bounds.origin.x += content.origin.x;
+				command.bounds.origin.y += content.origin.y;
+				requireFinite(command.bounds.origin.x);
+				requireFinite(command.bounds.origin.y);
+				requireFinite(command.bounds.origin.x + command.bounds.size.width);
+				requireFinite(command.bounds.origin.y + command.bounds.size.height);
+				if (command.kind == PaintKind::fillRect || command.kind == PaintKind::strokeRect ||
+					command.kind == PaintKind::pushClip) {
+					command.cornerRadius = std::min(
+						{command.cornerRadius,
+							command.bounds.size.width / 2,
+							command.bounds.size.height / 2}
+					);
+				}
+				command.color = withOpacity(
+					command.color.resolved(environment_.theme, environment_.highContrast),
+					opacity
+				);
+			}
 			scene.commands.push_back(std::move(command));
 		}
 		paint->prefix = std::move(scene.commands);
-		if (node->clip || node->kind == NodeKind::scroll) {
+		if (node->clip) {
 			paint->childClipBounds = node->bounds;
 		}
 
-		if (node->clip || node->kind == NodeKind::scroll) {
+		if (node->clip) {
 			paint->suffix.push_back({.kind = PaintKind::popClip});
 		}
 		if (node->borderWidth > 0 || focused_ == identity) {
@@ -266,7 +240,8 @@ auto Document::project(
 				{.kind = PaintKind::strokeRect,
 					.bounds = node->bounds,
 					.color = withOpacity(
-						focused_ == identity ? Color::accent() : node->borderColor,
+						(focused_ == identity ? Color::accent() : node->borderColor)
+							.resolved(environment_.theme, environment_.highContrast),
 						opacity
 					),
 					.cornerRadius = node->cornerRadius,

@@ -18,7 +18,7 @@ add_library(stana::stana ALIAS stana)
 target_sources(stana
 	PUBLIC FILE_SET modules TYPE CXX_MODULES BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/modules"
 		FILES modules/stana.cppm modules/primitives/primitives.cppm modules/reactive/reactive.cppm modules/tasks/tasks.cppm modules/graphics/graphics.cppm modules/graphics/presentation.cppm modules/core/core.cppm modules/ui/ui.cppm modules/testing/testing.cppm modules/application/application.cppm modules/text/text.cppm
-	PRIVATE src/version.cpp src/core/document.cpp src/core/input.cpp src/layout/layout.cpp src/scene/scene.cpp src/scene/geometry.cpp src/platform/tiles.cpp src/platform/scheduler.cpp src/ui/mount.cpp src/application/application.cpp src/text/text.cpp)
+	PRIVATE src/graphics/drawing.cpp src/version.cpp src/core/document.cpp src/core/input.cpp src/layout/layout.cpp src/scene/scene.cpp src/scene/geometry.cpp src/platform/tiles.cpp src/platform/scheduler.cpp src/ui/mount.cpp src/application/application.cpp src/text/text.cpp)
 target_compile_features(stana PUBLIC cxx_std_23)
 target_link_libraries(stana PRIVATE ICU::uc ICU::i18n ICU::data)
 set_target_properties(stana PROPERTIES

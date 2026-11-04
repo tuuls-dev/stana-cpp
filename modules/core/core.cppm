@@ -34,7 +34,7 @@ enum class NodeKind : std::uint8_t {
 	button,
 	toggle,
 	scroll,
-	canvas
+	cpuCanvas
 };
 } // namespace detail
 
@@ -308,7 +308,7 @@ struct Node {
 		accessibilityLabel{};	  ///< Explicit application-authored semantic label, if any.
 	std::string diagnosticName{}; ///< Debug identity supplied by lifecycle configuration, not an
 								  ///< accessible name.
-	Drawing drawing{};			  ///< Local-coordinate Canvas commands copied at mount.
+	Drawing drawing{};			  ///< Local-coordinate CPUCanvas commands copied at mount.
 	std::function<void()> onClick;
 	std::function<void(PointerEvent &)> onPointerDown;
 	std::function<void(PointerEvent &)> onPointerDownCapture;

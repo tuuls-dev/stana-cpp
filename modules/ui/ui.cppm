@@ -73,7 +73,7 @@ struct AppearanceProperties {
 	/// @brief Optional reactive layout/paint participation; does not remove mounted resources.
 	std::optional<Property<Visibility>> visibility{};
 	/// @brief Whether this node clips descendant paint to its rounded outer bounds.
-	bool clip = false;
+	std::optional<bool> clip{};
 };
 
 /// @brief Shared interaction policy and pointer-down handlers.
@@ -263,15 +263,16 @@ struct Spacer {
 /// Mounting copies commands into the retained node; scene projection translates
 /// them to document coordinates. This is not a native drawing-context escape hatch.
 /// Provide an accessible equivalent when the drawing conveys meaningful content.
-struct Canvas {
-	/// @brief Portable local-coordinate paint commands copied into the retained Canvas at mount.
-	Drawing drawing{};
+struct CPUCanvas {
+	/// @brief Portable local-coordinate paint commands copied into the retained CPUCanvas at mount.
+	Property<Drawing> drawing{};
 	/// @brief Shared box-model overrides applied to this component at mount and on reactive
 	/// updates.
 	LayoutProperties layout{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
 	/// @brief Explicit semantic naming for this occurrence, independent of diagnostic metadata.
+	InteractionProperties interaction{};
 	AccessibilityProperties accessibility{};
 	/// @brief Mount/disposal callbacks and diagnostics owned by this mounted occurrence.
 	LifecycleProperties lifecycle{};
@@ -489,7 +490,7 @@ createConfigured(const Description &description, NodeKind kind, MountContext &co
 [[nodiscard]] auto mount(const Button &description, MountContext &context) -> NodeHandle;
 [[nodiscard]] auto mount(const Toggle &description, MountContext &context) -> NodeHandle;
 [[nodiscard]] auto mount(const Spacer &description, MountContext &context) -> NodeHandle;
-[[nodiscard]] auto mount(const Canvas &description, MountContext &context) -> NodeHandle;
+[[nodiscard]] auto mount(const CPUCanvas &description, MountContext &context) -> NodeHandle;
 
 template <typename T>
 	requires requires(const T &description, ComponentContext &context) {

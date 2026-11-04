@@ -15,6 +15,11 @@ auto main() -> int {
 		)) {
 		return 1;
 	}
+	stana::Drawing drawing;
+	drawing.fillRect({.size = {.width = 1, .height = 1}}, stana::Color::accent());
+	const stana::Signal model{drawing};
+	const stana::CPUCanvas canvas{.drawing = model, .appearance = {.clip = false}};
+	static_cast<void>(canvas);
 	stana::Metrics metrics;
 	stana::WindowDiagnostics diagnostics;
 	if (metrics.measurements != 0 || diagnostics.renderingWork.cpuUploadBytes != 0) {
