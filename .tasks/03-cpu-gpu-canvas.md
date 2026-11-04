@@ -41,19 +41,32 @@ milestones, verification, and sources (§13–16).
 
 ### 1.2 Explicit platform meaning
 
-Cross-platform does **not** mean that a Metal shader becomes portable by wrapping
-its source in a C++ type. Built-in GPU commands and the pass/resource model are
-backend-neutral; `GPUShader::metalSource` and `metalLibrary` are explicitly
-backend-tagged, trusted extensions, matching upstream. No native framework types
-appear in exported signatures. Unsupported shader execution returns a capability
-diagnostic, never fake pixels or silent CPU fallback.
+**The entire public Stana interface must be platform-neutral.** This includes
+exported module declarations, types, properties, enums, factories, shader inputs,
+binding coordinates, configuration, and consumer examples—not merely avoiding
+native object pointers. No backend names, native shader payloads, native register
+indices, or platform-selected overloads are exposed, including through transitively
+exported `stana.graphics` declarations. There is no public native escape hatch.
+
+Application programs use one owned WGSL source contract:
+`GPUShader::source(std::string)`. Logical resource bindings use WGSL group/binding
+coordinates. Stana privately validates/translates that source with Tint and the
+macOS adapter privately compiles the resulting MSL. No public `metalSource`,
+`metalLibrary`, MSL, metallib, HLSL, DXIL, SPIR-V, native compiler options, or
+backend-selection API exists. Future adapters consume the same public WGSL and
+logical descriptors; applications do not supply per-platform shader variants.
+The [WGSL specification](https://www.w3.org/TR/WGSL/) and
+[Dawn architecture](https://github.com/google/dawn/blob/main/docs/dawn/overview.md)
+provide the language and translation foundation; this does not introduce a
+browser, JavaScript runtime, WebGPU public API, or Dawn graphics runtime into Stana.
 
 Windows/Linux currently support the portable engine and deterministic headless
 host, not native application windows. Preserve that contract. Implementing Win32,
-Wayland/X11, D3D12, Vulkan, or a portable shader compiler is not an implicit part of
-this canvas task. Do not create empty backend directories. A future backend can
-consume the same built-in commands and graph and add explicitly tagged shader
-payloads without exposing its native handles.
+Wayland/X11, D3D12, or Vulkan hosts is not an implicit part of this canvas task.
+Portable shader validation/translation **is** included. Do not create empty backend
+directories. Unsupported native execution returns a capability/unsupported-platform
+failure, never fake pixels or silent CPU fallback. A portable shader interface
+does not imply that all native hosts have already been implemented.
 [Vulkan synchronization examples](https://docs.vulkan.org/guide/latest/synchronization_examples.html) and
 [D3D12 resource barriers](https://learn.microsoft.com/en-us/windows/win32/direct3d12/using-resource-barriers-to-synchronize-resource-states-in-direct3d-12)
 support keeping read/write dependencies explicit rather than encoding Metal's
@@ -71,7 +84,8 @@ implicit ordering into the portable model.
 | Default clipping | Both canvases clip to their rounded outer bounds by default; explicit `.clip = false` overrides it. |
 | CPU execution | CoreGraphics/Core Text on the UI executor, preserving task 01; no raster-worker project. |
 | GPU execution | Offscreen textures followed by ordered composition into complete dirty final tiles. |
-| Custom shaders | Trusted MSL source or owned metallib bytes, no current-working-directory paths or native contexts. |
+| Public interface | Platform-neutral throughout; no native names, payload variants, slot conventions, or escape hatches. |
+| Custom shaders | Owned WGSL source, logical bindings, private Tint translation and private native compilation; no native shader ingress. |
 | Native API | Classic `MTLCommandQueue`/`MTLCommandBuffer`, directly bound tracked resources; not Metal 4 queues. |
 | Compilation | One bounded serial compiler queue per device; never compile application shaders synchronously in UI paint. |
 | Animation | Drawing/resource changes request work. No implicit time uniform, display-link loop, or state step on presentation retry. |
@@ -172,6 +186,11 @@ implementation change, retaining the original CPU-only performance gates. This
 plan does not mark task 01 complete or silently change its unrelated scheduling,
 input, recovery, or layout contracts.
 
+The user's public-interface constraint takes precedence over upstream's Metal
+shader escape hatch and the earlier revision of this plan. Replace it rather than
+retaining it in an optional public extension module. Native implementation details
+may appear in this implementation specification, never in the consumer contract.
+
 ### 2.4 Deliberate adaptations, not accidental omissions
 
 This is behavioral parity with the two components and their GPU value/program
@@ -184,6 +203,11 @@ The existing extra CPU command-stream operations remain supported. Color palette
 defaults retain C++'s established accent. Native window capture, isolated layers,
 backdrops, and frame callbacks are independent features, not silently omitted
 GPUCanvas commands. These differences must be stated in implementation docs.
+Shader authoring deliberately differs from upstream: WGSL replaces Metal-specific
+source/library inputs, logical bindings replace native slots, and compute dispatch
+uses explicit workgroup counts. Preserve render/compute/state capabilities through
+private lowering; do not weaken the public portability requirement to copy Swift
+signatures verbatim.
 
 ## 3. Public authoring and rename contract
 
@@ -416,9 +440,9 @@ Define in `stana.graphics`, re-exported by `import stana`:
 - `GPUColorEncoding { encodedSRGB, extendedLinear }`.
 - `GPUTextureFormat { bgra8Unorm, rgba16Float, r8Unorm }`, respectively 4, 8, 1
   bytes per pixel. `r8Unorm` is scalar data, not an RGB/alpha color encoding.
-- `GPUShader`, a closed tagged value created by `metalSource(std::string)` or
-  `metalLibrary(std::span<const std::byte>)`. Factories own the bytes; metallib
-  handles contain no file paths, Objective-C objects, or device ownership.
+- `GPUShader`, an immutable value created by `source(std::string)` containing owned
+  WGSL source. No native-language tag, compiled-native-library variant, include
+  path, native compiler option, or device ownership exists in its public API.
 - `GPUFunctionConstant = std::variant<bool, std::int32_t, float>`; floats finite.
 
 Fallible descriptor factories return `std::expected<Handle, GPUError>`.
@@ -469,7 +493,8 @@ assumption that every selected STL exports `std::float16_t`.
 ```cpp
 struct GPUBinding {
 	std::string resource;
-	std::uint32_t index = 0;
+	std::uint32_t group = 0;
+	std::uint32_t binding = 0;
 	enum class Access { read, write } access = Access::read;
 	enum class Stage { vertex, fragment, compute } stage = Stage::fragment;
 	bool previous = false;
@@ -488,9 +513,7 @@ struct GPURenderPass {
 
 struct GPUComputePass {
 	std::string function;
-	std::uint32_t width = 1;
-	std::uint32_t height = 1;
-	std::uint32_t depth = 1;
+	std::array<std::uint32_t, 3> workgroupCount{1, 1, 1};
 	std::vector<GPUBinding> bindings{};
 };
 using GPUPass = std::variant<GPURenderPass, GPUComputePass>;
@@ -513,13 +536,35 @@ an inline member initializer, preserving aggregate designated initialization.
 `GPUProgram::updatingResources(map<string, GPUResource, less<>>)` returns a new
 `expected<GPUProgram, GPUError>` and leaves the old program untouched.
 Render topology is triangles, no depth/stencil, one color attachment, sample count
-one for application programs. Vertex shader uses its own `vertex_id`/buffer ABI.
+one for application programs. Vertex inputs use WGSL `@builtin(vertex_index)`
+and explicitly bound buffers with WGSL host-shareable layout.
 There is no injected native vertex layout, reserved hidden buffer, time, viewport,
 or uniform binding. Applications explicitly provide uniform bytes and bindings.
 
-The examples must show checked factory results, a complete valid render shader,
-compute-to-render dependencies, a mesh, and a byte-owned precompiled library.
+The examples must show checked factory results, a complete valid WGSL render
+shader, compute-to-render dependencies, a mesh, and WGSL loaded into an owned
+string from an application resource. Consumer code has no platform conditionals.
 Do not ship the Swift fixture's placeholder shader string as an executable demo.
+
+### 5.4 Portable shader execution convention
+
+The public shader contract follows WGSL semantics and the portable
+[WebGPU coordinate convention](https://www.w3.org/TR/webgpu/#coordinate-systems),
+not the current native API's ABI. Vertex output is homogeneous clip position;
+after division by W, visible NDC X/Y lie in `[-1,1]` and depth in `[0,1]`.
+Framebuffer and 2D texture coordinates have a top-left origin. Applications receive
+only their declared inputs and WGSL builtins. Conversion from logical canvas
+points is explicit in app-owned uniform data/source; Stana does not inject a
+native viewport struct. Native lowering handles coordinate/entry-point adaptation
+and helper arguments privately. Test asymmetric geometry and texture orientation
+so a native-only flip cannot become the portable behavior accidentally.
+
+Compute uses `workgroupCount` and WGSL `@workgroup_size`; program constants provide
+WGSL overrides, not native specialization IDs. Buffer contents follow WGSL
+host-shareable alignment/stride; documented C++ packing helpers must produce that
+layout rather than mirror a native struct. Sampler/format enums describe logical
+behavior, never native numeric enum values. Changes in adapter or compiler must
+not require an application source, binding, or resource-packing variant.
 
 ## 6. Descriptor validation and dependency graph
 
@@ -534,10 +579,12 @@ Complete this algorithm before assigning a new immutable program identity:
 2. Validate every resource and all aggregate byte/count budgets. Validate target
    partial-zero axes without unchecked multiplication. Descriptor correctness is
    portable; device-specific limits are checked again at native preparation.
-3. Validate stages, resource existence, and unique `(stage, namespace, index)`
-   binding slots. Buffer/texture/sampler namespaces are distinct. Portable upper
-   bounds mirror upstream: buffer slots `<31`, texture `<128`, sampler `<16`;
-   the native profile/reflection can impose tighter limits.
+3. Validate stages, resource existence, and logical `(group, binding)` coordinates,
+   with `group < 4`, `binding < 128`, and at most 128 distinct bindings per pass.
+   There is one logical namespace, not native buffer/texture/sampler namespaces.
+   Repeated coordinates across vertex/fragment stage declarations may share the
+   same resource/access/previous tuple; conflicting declarations or duplicate
+   entries for the same stage are rejected. Device limits are checked privately.
 4. Compute each pass's write set, including render attachment. Only storage,
    target, and state may be written. Samplers and immutable resources are read-only.
    `previous=true` is permitted only for read-only state binding.
@@ -561,38 +608,56 @@ Render entry names and counts must be nonempty/positive. An index buffer must be
 an immutable buffer, have a byte length divisible by four and enough UInt32
 indices for `vertexCount`. Application vertex fetching is shader-defined; do not
 claim descriptor validation can prove its arbitrary buffer access safety.
-Compute dispatch dimensions are positive; check product/dispatch budgets without
-overflow before encoding. Bindings with compute stage belong only to compute
-passes and vice versa. No descriptor can read or write the window drawable.
+Compute workgroup counts are positive; combine them with the WGSL entry point's
+resolved `@workgroup_size` using checked arithmetic before encoding. Bindings with
+compute stage belong only to compute passes and vice versa. No descriptor can
+read or write the window drawable. Public bytes for uniforms/storage use WGSL
+host-shareable layout, not `sizeof` a native compiler's generated argument struct.
 
-### 6.2 Native reflection, including cached replacements
+### 6.2 Portable shader validation and private native reflection
 
-Request pipeline binding/type reflection and retain it with the compiled pipeline.
-Check every used argument for stage, slot, resource class, access compatibility,
-texture dimension/type, buffer minimum size/alignment, and supported format.
-Reject shader arguments requiring unsupported arrays, argument buffers,
-threadgroup-memory declarations, or resource kinds instead of partially binding.
-Unused declared bindings are harmless but still structurally validated.
+Use Tint's WGSL reader/validator and entry-point inspection before native lowering.
+Check entry stage, logical bindings, buffer address space/layout/minimum size,
+texture dimension/sample/format/access, overrides and workgroup size. Resolve
+`GPUFunctionConstant` names as WGSL `override` identifiers with exact types.
+The initial portable profile accepts f32/i32/u32/bool, 2D non-array textures and
+samplers, uniform/storage buffers, render/compute entry points and bounded
+workgroup memory. Reject optional extensions, resource binding arrays, external
+textures, subgroup requirements and native-only features; half-float image storage
+does not require WGSL f16 arithmetic. Reject unsupported resources before lowering.
 
-Read-write shader arguments require a model that can express their dependency;
-this API cannot express same-step read/write aliasing, so reject them rather than
-misclassifying `.write` as permission to read arbitrary previous contents.
-Writable render-stage textures/buffers require actual device support; unsupported
-ones produce a capability error before submission.
+Only compute passes may write bound storage; render passes write their declared
+attachment. A `.write` storage-buffer binding grants exclusive access to its
+zero-initialized same-step allocation, including shader-local read/modify/write
+with correct WGSL synchronization. It does not grant a second aliased binding or
+access to previous-step contents. Read-only bindings cannot resolve to writable
+shader declarations. Storage texture writes initially use `rgba16Float`; other
+formats can be sampled or used as supported render attachments, but no driver-
+specific storage extension becomes a public requirement.
+
+Privately lower logical bindings to dense per-stage native slots and retain the
+mapping with the executable. Request native pipeline reflection and check it
+against that generated mapping, not against public numeric slots. Native helper
+arguments and translated names remain private. Reconcile uniform layout and
+generated helper buffer sizes before submission. Unused declared bindings remain
+structurally validated. Compiler/native reflection disagreement is an error, not
+permission to partially bind a shader.
 
 Re-run binding compatibility and minimum-size checks for **every new resource
 version**, even when executable/pipeline cache hits. A cached 16-byte-uniform
 pipeline cannot accept a replacement 4-byte buffer. Texture format/type changes
 also invalidate compatibility. Reflection is not an execution-time bounds proof;
 run [Metal Shader Validation](https://developer.apple.com/documentation/xcode/validating-your-apps-metal-shader-usage)
-for native verification.
+for native verification. Public compiler diagnostics identify the original WGSL
+entry/source locations and logical bindings; generated source, native register
+identifiers, and Tint/native reflection types are not public API fields.
 
 ### 6.3 Three separate program identities
 
 | Identity | Changes when | Preserves |
 | --- | --- | --- |
 | Input/program version | Any valid replacement or new program | Nothing about rendered output freshness. |
-| Pipeline version | Shader, entry functions, constants, pass topology/bindings, target formats, or binding ABI changes | Resource-only content updates with compatible ABI reuse executable pipelines. |
+| Pipeline version | WGSL source, entry functions, overrides, logical pass/bindings, target formats, or host-shareable layout changes | Resource-only content updates with compatible layout reuse executable pipelines. |
 | State version | State descriptor/resetKey, incompatible executable/resource schema, renderer reset, or backing configuration changes | Compatible immutable-input replacements keep previous successful state. |
 
 Compute replacement compatibility from the complete resource key set, resource
@@ -602,6 +667,9 @@ may change without recompilation if the binding ABI remains compatible, but must
 be revalidated. State compatibility compares state descriptors **by value**,
 including initial bytes/resetKey; immutable input changes alone do not reset it.
 The renderer owns additional backing/device epoch keys, not public program values.
+Private compiled-cache keys also include Tint revision, lowering options, native
+slot map, device/compiler profile and generated entry points. These never appear
+as shader variants or backend switches in public handles.
 
 Do not retain a pipeline merely because only target formats match, and do not
 reset simulation whenever an application updates its uniform buffer. Compiling
@@ -801,12 +869,52 @@ directory. This avoids adding Xcode's `metal` executable to portable builds and
 keeps installed/relocated packages complete. Failure of a required built-in shader
 is a native startup failure, not an application `onError` or fallback.
 
-Application metallib is owned package/resource bytes supplied by the app. Validate
-device/library compatibility at preparation and diagnose incompatible bytes.
+Application shader ingress is WGSL source only. The private compiler service
+validates it, resolves overrides and logical resources, lowers to backend source,
+and invokes the native compiler on the bounded compiler queue. Preserve Tint's
+robustness and workgroup-memory initialization transformations; do not discard
+them as a speed optimization. Compilation errors report original source locations
+where available. No app-provided native source or binary bypass is accepted.
+
 Do not write arbitrary application source or compiled assets to disk. No persistent
-cross-driver pipeline cache is required. Pin the compiler language/options for the
-selected device profile; do not use native MSL fast-math assumptions as input
-validation or enable global C++ `-ffast-math`.
+cross-driver pipeline cache is required. Pin compiler/lowering options for the
+private device profile; do not use native fast-math assumptions as input validation
+or enable global C++ `-ffast-math`. Native built-in `.metal` resources are strictly
+private and do not imply that application shaders may use that language.
+
+### 9.5 Private Tint dependency and distribution
+
+Use Tint's C++ libraries from the official Dawn repository, not a new shader
+compiler, full Dawn rendering runtime, or command-line subprocess per frame.
+Its [CMake build definitions](https://github.com/google/dawn/blob/main/CMakeLists.txt)
+provide separate WGSL reader and MSL writer options. Configure only the required
+reader, validator/inspector, IR and MSL writer plus their necessary support targets;
+disable Dawn native backends, samples, tools and unrelated shader writers. The MSL
+writer is pure translation and is built/tested on all supported host platforms,
+without requiring Metal SDKs on Windows/Linux. No Tint type or header is exported.
+
+During M0, select and record a tested immutable upstream commit plus its exact
+dependency revisions/archive hashes in `cmake/ShaderCompiler.cmake` and the
+bootstrap manifest; never track floating `main` during builds. Baseline language
+support is the core WGSL accepted by that pinned compiler and Stana's documented
+portable profile, not every future draft feature. Build integration must pass the
+existing Clang/STL/sanitizer matrix before native program work proceeds.
+
+Add `tools/bootstrap_tint.py` using the repository's verified-dependency pattern.
+Fetch only as an explicit bootstrap step, verify source/dependency hashes, cache
+by revision/toolchain/configuration, and support already-provisioned offline builds.
+Do not run an unpinned dependency downloader during normal consumer configuration.
+Keep third-party build policy isolated from first-party warnings while retaining
+the latter unchanged; instrument supported compiler-library builds with the same
+sanitizer as Stana. Record licenses and source provenance in release packages.
+
+Package required private Tint/support static archives and exported private CMake
+link targets alongside Stana, with relocatable paths and no Tint header requirement
+for consumers. Source/install/relocation tests must link and run portable validation
+offline. Account for compiler artifacts in package metadata; GPU allocation budgets
+do not claim to include compiler-process CPU memory. The compiler service remains
+bounded in admission and input sizes even though compilation cannot be forcibly
+interrupted. These private dependencies do not change `import stana` or C++23.
 
 ## 10. Device profiles, hazards, and resource lifetime
 
@@ -825,10 +933,12 @@ that queue order always solves hazards. See [resource synchronization](https://d
 
 Check texture dimensions, pixel-format usage, writable-stage capabilities,
 buffer lengths, threadgroup limits, and dispatch dimensions on the actual device.
-Choose deterministic compute threadgroups from pipeline limits; nonuniform thread
-dispatch requires support or padded groups with the documented shader bounds
-contract. Reject unsupported dispatch rather than overrun dimensions. No backend
-may bypass validation simply because a public descriptor was already valid.
+Use the WGSL entry point's resolved workgroup size and the public workgroup counts;
+validate each axis, total threads/group, workgroup memory, and checked total
+invocations against portable and device limits. Do not silently choose a different
+group size, reinterpret workgroup counts as invocation counts, or add unsafe tail
+guards around shader barriers. No backend may bypass validation simply because a
+public descriptor was already valid.
 
 ### 10.2 Unified and discrete memory
 
@@ -856,9 +966,10 @@ Use these named internal defaults, not public tuning properties:
 | Single CPU payload/native resource | 256 MiB, including checked state-pair individual allocations. |
 | Resources / passes per program | 128 / 128. |
 | Commands / points / mesh vertices / mesh indices | 65,536 / 1,048,576 / 1,048,576 / 3,145,728. |
-| Shader source or metallib bytes | 16 MiB per shader. |
+| WGSL source bytes | 16 MiB per shader. |
 | Function constants / name bytes | 128 / 1,024 UTF-8 bytes per name. |
-| Bindings per pass | 256, with stricter stage/namespace limits. |
+| Bindings per pass | 128 distinct logical coordinates; at most 256 stage declarations. |
+| Compute workgroup size / memory | At most 256 invocations/group and 16 KiB workgroup memory; lower device limits reject before submission. |
 | Compute invocation product | 268,435,456 per pass. |
 | Total owned descriptor input bytes | 256 MiB per program/drawing, shared blobs counted once per value. |
 | Device canvas allocation budget | 512 MiB across windows, including live, cached, and retired tracked allocations. |
@@ -990,7 +1101,7 @@ owners safely; never join a blocked compiler/GPU operation on the UI executor.
 | --- | --- |
 | Invalid public descriptor | Factory returns `invalidDescriptor`; no mount/native work; old value untouched. |
 | Invalid mutable CPU drawing | Diagnosed input exception before replacement/publication. |
-| Source/library/function-constant compilation | `compiler` diagnostic; failed replacement not committed. |
+| WGSL validation/lowering/override/native compilation | `compiler` diagnostic using public source provenance; failed replacement not committed. |
 | Reflection/buffer/texture/index mismatch | `binding` diagnostic, including cached-pipeline replacements. |
 | Unsupported shader/device/profile/format or budget | `capability` diagnostic; no partial submission. |
 | Initially unavailable program | Transparent program contribution; background/border/other commands still paint. |
@@ -1107,6 +1218,8 @@ objects, performance guarantees, or synchronization mechanisms.
 | `src/graphics/drawing.cpp` | CPU validation/equality and non-template drawing algorithms. |
 | `src/graphics/gpu.cpp` | Immutable GPU values, COW appends, checked geometry and payload validation. |
 | `src/graphics/gpu_program.cpp` | Descriptor validation, stable DAG, version/resource replacement compatibility. |
+| `src/graphics/shader_compiler.hpp/.cpp` | Private WGSL validation/inspection, portable profile, overrides and lowering boundary; no exported compiler types. |
+| `cmake/ShaderCompiler.cmake`, `tools/bootstrap_tint.py` | Pinned verified Tint dependency, private build targets, offline/relocatable packaging. |
 | `src/graphics/storage.hpp` | Private shared module-free immutable blob/array ownership used across bridge. |
 | `modules/ui/ui.cppm`, `src/ui/mount.cpp` | Rename, aggregate declarations, scoped reactive mounts, clip defaults, callbacks. |
 | `modules/core/core.cppm`, `src/core/document.cpp` | Node kinds/storage, classified drawing assignment, disposal and diagnostic queue. |
@@ -1137,7 +1250,14 @@ header, or rectangle-only native demo is not “full implementation.”
 ### M0 — Lock reference and prerequisite contracts
 
 - [ ] Record the pinned source mappings above in implementation notes; add complete
-  public consumer fixtures for CPU, primitives, mesh, program, and color mode.
+  public consumer fixtures for CPU, primitives, mesh, WGSL program, and color mode.
+- [ ] Pin/bootstrap/package private Tint and its dependencies; prove WGSL validation,
+  inspection and native-source translation build on every existing host target.
+- [ ] Add the public-interface audit: all shader/binding/configuration contracts are
+  platform-neutral across direct and transitive exports; no native overload escape.
+  Audit every exported module and its transitive imports, plus valid consumer
+  examples; include negative fixtures for `GPUShader::metalSource`,
+  `GPUShader::metalLibrary`, native binary ingress and backend-selection options.
 - [ ] Reconcile task-01 exceptions explicitly; implement its persistent projection,
   damage, resource ownership, and presenter/evidence prerequisites, or reference
   their already-merged verified commits. Do not assume pending plans are code.
@@ -1180,8 +1300,9 @@ scale and fractional tiles match full reconstruction; no Metal validation errors
 
 ### M4 — Trusted programs and diagnostics
 
-- [ ] Implement bounded compiler queue, source/metallib/constants, reflection,
-  cache-hit replacement checks, render/indexed/compute passes and zero init.
+- [ ] Implement bounded compiler queue, WGSL validation/lowering/overrides, logical
+  binding remapping and private native reflection, cache-hit replacement checks,
+  render/indexed/compute passes and zero initialization.
 - [ ] Route deduplicated diagnostics safely; preserve prior output on replacement
   failure and make unavailable initial programs transparent.
 - [ ] Verify explicit capability failure and no implicit CPU fallback.
@@ -1215,7 +1336,8 @@ mapping references agree; no double premultiplication or tile profile mismatch.
 - [ ] Run serialized native offscreen and real window-server suites on supported
   Apple Silicon and available Intel/AMD hardware; record device/profile evidence.
 - [ ] Verify source/install/relocation builds with shader source embedded and no
-  Swift checkout/current-directory dependency.
+  Swift checkout/current-directory dependency; portable WGSL examples run without
+  app-side platform conditionals or native binaries.
 - [ ] Publish complete canvas examples, migration, explicit shader portability,
   color/state semantics, limits, failure behavior, and measured counters.
 
@@ -1242,15 +1364,17 @@ may inject completion/diagnostic ordering, not fabricate production rendering.
 | P08 | GPU versions | Copies equal; independent identical values unequal; successful mutation/replacement fresh; failed mutation unchanged. |
 | P09 | Mesh/polyline | Invalid index/count/float conversion, empty/one-point/duplicate/closed points, zero width, bounded counts. |
 | P10 | Texture/state bytes | Every format, exact length, overflow before multiply, partial-auto targets, bad source peak, invalid half floats/alpha. |
-| P11 | Binding structure | Missing/reserved names, stage mismatch, duplicate namespace slots, slot maxima, immutable write, previous misuse. |
+| P11 | Binding structure | Missing/reserved names, stage mismatch, conflicting/duplicate logical group-bindings, shared-stage declarations, limits, immutable write, previous misuse. |
 | P12 | Pass graph | Stable independent order, producer forward reference, cycles/self-cycles, multiple writers, unproduced read/output, all-pass validation. |
 | P13 | Program replacement | Content update reuses pipeline/state; ABI/format/schema changes invalidate correctly; invalid replacement leaves old handle intact. |
 | P14 | State model | Previous reads excluded from current DAG; initializer/resetKey equality; unwritten slot carry-forward; instance separation. |
 | P15 | Incremental scene | Full/patched mixed trees equivalent; leaf update path-copies only affected route; CPU compatibility flattening explicitly excludes GPU pixels. |
 | P16 | Diagnostics | Owning message, exact identity, bounded queue/dedup, stale/reordered delivery, callback removes/closes/reenters safely. |
 | P17 | Color math | SDR token resolution, signed transfer, alpha-zero, premultiplied conversion, headroom mapping including H=1. |
-| P18 | Policy/packages | Exhaustive enums/variants, hardening, installed module partitions, source/install/relocation consumer, non-Apple unsupported behavior. |
+| P18 | Policy/packages | Exhaustive enums/variants, hardening, installed module partitions/private compiler archives, offline source/install/relocation consumer, non-Apple unsupported execution. |
 | P19 | Budget arithmetic | Peak live/candidate/retired accounting, shared-blob counting, limit boundaries, no unchecked count/product casts. |
+| P20 | Platform-neutral public API | No native shader factories/formats/options/types or backend selection in any export; negative fixtures reject the superseded factories; public examples have no platform conditionals. |
+| P21 | Portable shader compiler | Same WGSL render/compute fixtures validate and lower headlessly on all CI hosts; logical binding/override/layout/workgroup errors reject; native SDKs not required. |
 
 Table-driven malformed-descriptor tests cover combinations, not just one happy
 path per constructor. Use bounded randomized graph/input generation with fixed
@@ -1263,7 +1387,7 @@ seeds for cycle/order and overflow regressions; no unbounded fuzzing in normal C
 | N01 | Mixed painter order | CPU behind/between/above GPU with translucent overlap, normal/focus borders, nested clips and scroll. |
 | N02 | Built-ins | Rect/rounded/ellipse, non-square ellipse, indexed gradient triangles, round caps/joins, duplicate/one-point lines. |
 | N03 | Sampling/coordinates | 1×/2× and supported fractional scales, fractional origins, padding/RTL, tile-edge seams, offscreen geometry crop. |
-| N04 | Custom programs | Source and metallib, all constant types, indexed/instanced render, compute→render and multi-target graph; output exact reference. |
+| N04 | Custom programs | Same public WGSL source, all override types, logical binding remapping, indexed/instanced render, compute→render and multi-target graph; output exact reference. |
 | N05 | Reflected bindings | Missing/wrong type/access and undersized buffer; invalid replacement rechecked on pipeline cache hit. |
 | N06 | Transient initialization | Unwritten target/storage bytes are zero; samplers return zero outside extent; no stale-pool information leak. |
 | N07 | Temporal correctness | 1,000 admitted input steps; exact expected counter/state; atomic multi-slot commit; initializer/reset, hidden/resume, independent instances. |
@@ -1273,7 +1397,7 @@ seeds for cycle/order and overflow regressions; no unbounded fuzzing in normal C
 | N11 | Full reference | Incremental dirty final tiles equal forced full mixed reconstruction and untiled reconstruction under one fixed AA profile. |
 | N12 | Teardown/failure | Close/resize during compile/GPU, old-epoch result, simulated allocation/encoder/command failure, no premature release or state commit. |
 | N13 | Device accounting | Unified path zero separate CPU upload; discrete path correct synchronization and explicit copy bytes; leases stay charged through retirement. |
-| N14 | Packaging | Installed and relocated consumer executes built-ins without source checkout, Swift runtime, or CWD shader files. |
+| N14 | Packaging | Installed and relocated consumer validates WGSL and executes built-ins/application programs without source checkout, Swift runtime, network, or CWD shader files. |
 
 Use exact bytes for identical-path copy/order/state fixtures; permit at most two
 8-bit channel units for independently rasterized antialiased edges. For half-float
@@ -1372,6 +1496,11 @@ choices are Stana design decisions in this plan, not claims made by vendors.
 
 | Primary source | Fact checked / consequence |
 | --- | --- |
+| [W3C: WGSL](https://www.w3.org/TR/WGSL/) | Platform-neutral application shader syntax; Stana selects a bounded supported profile, logical bindings, overrides and workgroup dispatch. |
+| [W3C: WebGPU coordinates](https://www.w3.org/TR/webgpu/#coordinate-systems) | Distinguish homogeneous clip position, NDC, framebuffer and texture coordinates independently of the chosen native adapter. |
+| [Dawn: Architecture](https://github.com/google/dawn/blob/main/docs/dawn/overview.md) | Tint translates WGSL to native shader languages; use translation privately rather than exposing backend payloads. |
+| [Dawn: CMake](https://github.com/google/dawn/blob/main/CMakeLists.txt) | Selectable Tint reader/writer libraries enable a private compiler-only dependency rather than a full graphics runtime. |
+| [Dawn: CMake quickstart](https://github.com/google/dawn/blob/main/docs/quickstart-cmake.md) | C++/CMake dependency and packaging workflow; Stana additionally requires immutable pins, verified bootstrap and offline consumers. |
 | [Apple: Resource synchronization](https://developer.apple.com/documentation/metal/resource-synchronization) | Tracked classic-queue resources differ from Metal 4 synchronization; select explicit classic executor constraints. |
 | [Apple: Resource fundamentals](https://developer.apple.com/documentation/metal/resource-fundamentals) | Resource storage and hazard modes are backend details; do not leak native resources through public values. |
 | [Apple: Intel/AMD storage modes](https://developer.apple.com/documentation/metal/choosing-a-resource-storage-mode-for-intel-and-amd-gpus) | Unified and discrete storage/synchronization differ; preserve correctness profiles, not blanket zero-copy claims. |
@@ -1398,6 +1527,7 @@ choices are Stana design decisions in this plan, not claims made by vendors.
 - [ ] Extended-linear/HDR composition, texture ingress and one final mapping.
 - [ ] Portable CI, native offscreen and exact presentation gates with evidence.
 - [ ] Public examples, rename migration, platform limitations and relocated packages.
+- [ ] Platform-neutral shader/interface audit, private compiler packaging and portable WGSL fixtures.
 - [ ] Cross-task specifications reconciled; all implementation evidence recorded.
 
 Only then change `status` to `done`. Keep `plan: final` to distinguish the settled
