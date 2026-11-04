@@ -1,5 +1,6 @@
 module;
 
+#include <cmath>
 #include <functional>
 #include <memory>
 #include <stdexcept>
@@ -13,22 +14,55 @@ import stana.reactive;
 
 namespace stana {
 namespace detail {
+namespace {
+void validateColor(Color color) {
+	for (const double component : {color.red, color.green, color.blue, color.alpha}) {
+		requireNonnegative(component);
+		if (component > 1) {
+			throw std::invalid_argument("Color exceeds one");
+		}
+	}
+}
+} // namespace
+
 void applyLayout(const LayoutProperties &properties, NodeId identity, MountContext &context) {
 	if (properties.padding) {
-		context.document->bind(identity, *properties.padding, [](Node &node, Insets value) -> void {
-			requireNonnegative(value.top);
-			requireNonnegative(value.leading);
-			requireNonnegative(value.bottom);
-			requireNonnegative(value.trailing);
-			node.padding = value;
-		});
+		context.document->bind(
+			identity,
+			*properties.padding,
+			[](Node &node, Insets value) -> detail::Dirty {
+				requireNonnegative(value.top);
+				requireNonnegative(value.leading);
+				requireNonnegative(value.bottom);
+				requireNonnegative(value.trailing);
+				return detail::assignRetained(
+					node.padding,
+					value,
+					detail::Dirty::measure | detail::Dirty::arrange | detail::Dirty::paint |
+						detail::Dirty::snapshot
+				);
+			}
+		);
 	}
 	if (properties.frame) {
 		context.document->bind(
 			identity,
 			*properties.frame,
-			[](Node &node, const Frame &value) -> void {
-				node.frame = value;
+			[](Node &node, const Frame &value) -> detail::Dirty {
+				requireNonnegative(value.width.value);
+				requireNonnegative(value.height.value);
+				for (const auto limit :
+					{value.minWidth, value.minHeight, value.maxWidth, value.maxHeight}) {
+					if (limit) {
+						requireNonnegative(*limit);
+					}
+				}
+				return detail::assignRetained(
+					node.frame,
+					value,
+					detail::Dirty::measure | detail::Dirty::arrange | detail::Dirty::paint |
+						detail::Dirty::snapshot
+				);
 			}
 		);
 	}
@@ -36,18 +70,31 @@ void applyLayout(const LayoutProperties &properties, NodeId identity, MountConte
 
 void applyTextStyle(const TextProperties &properties, NodeId identity, MountContext &context) {
 	if (properties.font) {
-		context.document->bind(identity, *properties.font, [](Node &node, Font value) -> void {
-			requireNonnegative(value.size);
-			node.font = value;
-		});
+		context.document->bind(
+			identity,
+			*properties.font,
+			[](Node &node, Font value) -> detail::Dirty {
+				requireNonnegative(value.size);
+				requireFinite(value.weight);
+				return detail::assignRetained(
+					node.font,
+					value,
+					detail::Dirty::measure | detail::Dirty::paint
+				);
+			}
+		);
 	}
 	if (properties.foreground) {
 		context.document->bind(
 			identity,
 			*properties.foreground,
-			[](Node &node, Color value) -> void {
-				node.foreground = value;
+			[](Node &node, Color value) -> detail::Dirty {
+				validateColor(value);
+				const bool wasExplicit = node.isForegroundExplicit;
+				const auto changed =
+					detail::assignRetained(node.foreground, value, detail::Dirty::paint);
 				node.isForegroundExplicit = true;
+				return wasExplicit ? changed : detail::Dirty::paint;
 			}
 		);
 	}
@@ -62,26 +109,32 @@ void applyAppearance(
 		context.document->bind(
 			identity,
 			*properties.background,
-			[](Node &node, Color value) -> void {
-				node.background = value;
+			[](Node &node, Color value) -> detail::Dirty {
+				validateColor(value);
+				return detail::assignRetained(node.background, value, detail::Dirty::paint);
 			}
 		);
 	}
 	if (properties.opacity) {
-		context.document->bind(identity, *properties.opacity, [](Node &node, double value) -> void {
-			requireNonnegative(value);
-			if (value > 1) {
-				throw std::invalid_argument("Opacity exceeds one");
+		context.document->bind(
+			identity,
+			*properties.opacity,
+			[](Node &node, double value) -> detail::Dirty {
+				requireNonnegative(value);
+				if (value > 1) {
+					throw std::invalid_argument("Opacity exceeds one");
+				}
+				return detail::assignRetained(node.opacity, value, detail::Dirty::paint);
 			}
-			node.opacity = value;
-		});
+		);
 	}
 	if (properties.borderColor) {
 		context.document->bind(
 			identity,
 			*properties.borderColor,
-			[](Node &node, Color value) -> void {
-				node.borderColor = value;
+			[](Node &node, Color value) -> detail::Dirty {
+				validateColor(value);
+				return detail::assignRetained(node.borderColor, value, detail::Dirty::paint);
 			}
 		);
 	}
@@ -89,9 +142,9 @@ void applyAppearance(
 		context.document->bind(
 			identity,
 			*properties.borderWidth,
-			[](Node &node, double value) -> void {
+			[](Node &node, double value) -> detail::Dirty {
 				requireNonnegative(value);
-				node.borderWidth = value;
+				return detail::assignRetained(node.borderWidth, value, detail::Dirty::paint);
 			}
 		);
 	}
@@ -99,9 +152,9 @@ void applyAppearance(
 		context.document->bind(
 			identity,
 			*properties.cornerRadius,
-			[](Node &node, double value) -> void {
+			[](Node &node, double value) -> detail::Dirty {
 				requireNonnegative(value);
-				node.cornerRadius = value;
+				return detail::assignRetained(node.cornerRadius, value, detail::Dirty::paint);
 			}
 		);
 	}
@@ -109,8 +162,16 @@ void applyAppearance(
 		context.document->bind(
 			identity,
 			*properties.visibility,
-			[](Node &node, Visibility value) -> void {
+			[](Node &node, Visibility value) -> detail::Dirty {
+				if (node.visibility == value) {
+					return detail::Dirty::none;
+				}
+				const bool collapsed =
+					node.visibility == Visibility::collapsed || value == Visibility::collapsed;
 				node.visibility = value;
+				return collapsed ? detail::Dirty::measure | detail::Dirty::arrange |
+						detail::Dirty::paint | detail::Dirty::snapshot
+								 : detail::Dirty::paint | detail::Dirty::snapshot;
 			}
 		);
 	}
@@ -122,9 +183,17 @@ void applyInteraction(
 	NodeId identity,
 	MountContext &context
 ) {
-	context.document->bind(identity, properties.isEnabled, [](Node &node, bool value) -> void {
-		node.isEnabled = value;
-	});
+	context.document->bind(
+		identity,
+		properties.isEnabled,
+		[](Node &node, bool value) -> detail::Dirty {
+			return detail::assignRetained(
+				node.isEnabled,
+				value,
+				detail::Dirty::paint | detail::Dirty::snapshot
+			);
+		}
+	);
 	auto *node = context.document->find(identity);
 	node->inert = properties.inert;
 	node->onPointerDown = properties.onPointerDown;
@@ -169,8 +238,12 @@ auto mount(const Text &description, MountContext &context) -> NodeHandle {
 	context.document->bind(
 		identity,
 		description.text,
-		[](detail::Node &node, const std::string &value) -> void {
-			node.text = value;
+		[](detail::Node &node, const std::string &value) -> detail::Dirty {
+			return detail::assignRetained(
+				node.text,
+				value,
+				detail::Dirty::measure | detail::Dirty::paint | detail::Dirty::snapshot
+			);
 		}
 	);
 	return context.document->handle(identity);
@@ -181,8 +254,12 @@ auto mount(const Button &description, MountContext &context) -> NodeHandle {
 	context.document->bind(
 		identity,
 		description.text,
-		[](detail::Node &node, const std::string &value) -> void {
-			node.text = value;
+		[](detail::Node &node, const std::string &value) -> detail::Dirty {
+			return detail::assignRetained(
+				node.text,
+				value,
+				detail::Dirty::measure | detail::Dirty::paint | detail::Dirty::snapshot
+			);
 		}
 	);
 	context.document->find(identity)->onClick = description.onClick;
@@ -194,8 +271,12 @@ auto mount(const Toggle &description, MountContext &context) -> NodeHandle {
 	context.document->bind(
 		identity,
 		description.text,
-		[](detail::Node &node, const std::string &value) -> void {
-			node.text = value;
+		[](detail::Node &node, const std::string &value) -> detail::Dirty {
+			return detail::assignRetained(
+				node.text,
+				value,
+				detail::Dirty::measure | detail::Dirty::paint | detail::Dirty::snapshot
+			);
 		}
 	);
 	const auto value = description.value;
@@ -204,8 +285,8 @@ auto mount(const Toggle &description, MountContext &context) -> NodeHandle {
 		Property<bool>{computed([value] -> bool {
 			return value.get();
 		})},
-		[](detail::Node &node, bool checked) -> void {
-			node.checked = checked;
+		[](detail::Node &node, bool checked) -> detail::Dirty {
+			return detail::assignRetained(node.checked, checked, detail::Dirty::snapshot);
 		}
 	);
 	context.document->find(identity)->onClick = [value] -> void {

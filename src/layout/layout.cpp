@@ -58,7 +58,35 @@ constrain(double value, std::optional<double> minimum, std::optional<double> max
 namespace detail {
 auto Document::measure(NodeId identity, Size available) -> Size {
 	auto *node = find(identity);
-	if (node == nullptr || node->visibility == Visibility::collapsed) {
+	if (node == nullptr) {
+		return {};
+	}
+	const bool text = node->kind == NodeKind::text || node->kind == NodeKind::button ||
+		node->kind == NodeKind::toggle;
+	const MeasureKey key{
+		.available = available,
+		.localInputs = node->work.measureInputs,
+		.descendantInputs = node->work.descendantInputs,
+		.textEnvironment = text ? textEnvironment_ : 0
+	};
+	if (node->work.measuredAt && std::is_eq(*node->work.measuredAt <=> key) &&
+		!has(node->work.local, Dirty::measure) && node->work.measureChildren.empty()) {
+		return node->measured;
+	}
+	++metrics_.measurements;
+	const auto previous = node->measured;
+	if (node->visibility == Visibility::collapsed) {
+		node->measured = {};
+		node->work.measuredAt = key;
+		node->work.local = without(node->work.local, Dirty::measure);
+		node->work.measureChildren.clear();
+		if (previous != node->measured) {
+			invalidate(identity, Dirty::arrange | Dirty::snapshot | Dirty::paint);
+			if (auto *parent = find(node->parent)) {
+				parent->work.childMeasurements = nextIdentity();
+				invalidate(parent->id, Dirty::arrange);
+			}
+		}
 		return {};
 	}
 	const auto padding = node->padding;
@@ -71,8 +99,20 @@ auto Document::measure(NodeId identity, Size available) -> Size {
 		node->kind == NodeKind::toggle) {
 		auto font = node->font;
 		font.size *= environment_.textScale;
+		requireNonnegative(font.size);
 		if (measureText_) {
-			intrinsic = measureText_(node->text, font, contentAvailable.width);
+			const auto inputText = node->text;
+			const auto provider = measureText_;
+			const auto stamp = mutationStamp_;
+			node = nullptr; // Never keep borrowed retained storage across a service callback.
+			intrinsic = provider(inputText, font, contentAvailable.width);
+			node = find(identity);
+			if (mutationStamp_ != stamp || node == nullptr ||
+				!ReactiveRuntime::current().pending.empty()) {
+				throw std::runtime_error("Retained inputs changed during text measurement");
+			}
+			requireNonnegative(intrinsic.width);
+			requireNonnegative(intrinsic.height);
 		} else {
 			intrinsic = {
 				.width = std::min(
@@ -86,10 +126,13 @@ auto Document::measure(NodeId identity, Size available) -> Size {
 		bool firstChild = true;
 		for (const auto child : node->children) {
 			const auto *childNode = find(child);
-			if (childNode == nullptr || childNode->visibility == Visibility::collapsed) {
+			if (childNode == nullptr) {
 				continue;
 			}
 			const auto size = measure(child, contentAvailable);
+			if (childNode->visibility == Visibility::collapsed) {
+				continue;
+			}
 			const double spacing = firstChild ? 0 : node->spacing;
 			firstChild = false;
 			if (node->kind == NodeKind::vstack || node->kind == NodeKind::group ||
@@ -119,13 +162,51 @@ auto Document::measure(NodeId identity, Size available) -> Size {
 			node->frame.maxHeight
 		)
 	};
+	requireNonnegative(node->measured.width);
+	requireNonnegative(node->measured.height);
+	node->work.measuredAt = key;
+	node->work.measureChildren.clear();
+	node->work.local = without(node->work.local, Dirty::measure);
+	if (previous != node->measured) {
+		// A fixed aggregate can stop size propagation while its internal placement stays dirty.
+		invalidate(identity, Dirty::arrange | Dirty::snapshot | Dirty::paint);
+		if (auto *parent = find(node->parent)) {
+			parent->work.childMeasurements = nextIdentity();
+			invalidate(parent->id, Dirty::arrange);
+		}
+	}
 	return node->measured;
 }
 
 void Document::arrange(NodeId identity, Rect bounds) {
+	requireFinite(bounds.origin.x);
+	requireFinite(bounds.origin.y);
+	requireNonnegative(bounds.size.width);
+	requireNonnegative(bounds.size.height);
 	auto *node = find(identity);
 	if (node == nullptr) {
 		return;
+	}
+	const ArrangeKey key{
+		.assigned = bounds,
+		.placementInputs = node->work.placementInputs,
+		.childMeasurements = node->work.childMeasurements,
+		.direction = environment_.direction
+	};
+	if (node->work.arrangedAt && std::is_eq(*node->work.arrangedAt <=> key) &&
+		!has(node->work.local, Dirty::arrange)) {
+		const auto routes = node->work.arrangeChildren;
+		for (const auto child : routes) {
+			if (const auto *record = find(child)) {
+				arrange(child, record->bounds);
+			}
+		}
+		node->work.arrangeChildren.clear();
+		return;
+	}
+	++metrics_.arrangements;
+	if (node->bounds != bounds) {
+		invalidate(identity, Dirty::paint | Dirty::snapshot);
 	}
 	node->bounds = bounds;
 	const double left = environment_.direction == Direction::leftToRight ? node->padding.leading
@@ -196,8 +277,15 @@ void Document::arrange(NodeId identity, Rect bounds) {
 				origin.x += content.size.width - childSize.width;
 			}
 		}
-		arrange(child, {.origin = origin, .size = childSize});
+		const Rect proposed{.origin = origin, .size = childSize};
+		if (record->bounds != proposed || has(record->work.local, Dirty::arrange) ||
+			!record->work.arrangeChildren.empty() || !record->work.arrangedAt) {
+			arrange(child, proposed);
+		}
 	}
+	node->work.arrangedAt = key;
+	node->work.arrangeChildren.clear();
+	node->work.local = without(node->work.local, Dirty::arrange);
 }
 } // namespace detail
 } // namespace stana

@@ -1,6 +1,7 @@
 module;
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <exception>
@@ -11,6 +12,8 @@ module;
 #include <memory>
 #include <optional>
 #include <ranges>
+#include <set>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -58,15 +61,21 @@ auto Document::focus(NodeId identity) -> std::expected<void, Error> {
 		(node->kind != NodeKind::button && node->kind != NodeKind::toggle)) {
 		return std::unexpected(Error::notFocusable);
 	}
+	if (focused_ == identity) {
+		return {};
+	}
+	if (focused_) {
+		invalidate(*focused_, Dirty::paint | Dirty::snapshot);
+	}
 	focused_ = identity;
-	invalidate();
+	invalidate(identity, Dirty::paint | Dirty::snapshot);
 	commit();
 	return {};
 }
 
 void Document::tab(bool backwards) {
 	std::vector<NodeId> candidates;
-	for (const auto &snapshot : snapshots_) {
+	for (const auto &snapshot : snapshots()) {
 		const auto *node = find(snapshot.id);
 		if (node != nullptr && isEligible(node->id) &&
 			(node->kind == NodeKind::button || node->kind == NodeKind::toggle)) {
@@ -95,19 +104,27 @@ auto Document::hitTestNode(NodeId identity, Point point) const -> std::optional<
 	if (!bounds) {
 		return std::nullopt;
 	}
-	if ((node->clip || node->kind == NodeKind::scroll) && !bounds->contains(point)) {
+	const auto geometry = geometryFind(
+		usesPresentationGeometry_ ? confirmedGeometry_
+								  : (render_ ? render_->geometry : GeometryRoot{}),
+		identity
+	);
+	if (!geometry || !geometry->rectangularClip.contains(point)) {
 		return std::nullopt;
 	}
-	for (const auto child : std::views::reverse(node->children)) {
-		if (const auto target = hitTestNode(child, point)) {
-			return target;
+
+	if (geometry->children) {
+		for (const auto child : std::views::reverse(*geometry->children)) {
+			if (const auto target = hitTestNode(child, point)) {
+				return target;
+			}
 		}
 	}
 	return bounds->contains(point) ? std::optional{identity} : std::nullopt;
 }
 
 auto Document::hitTest(Point point) const -> std::optional<NodeId> {
-	if (usesPresentationGeometry_ && confirmedRevision_ == 0) {
+	if (usesPresentationGeometry_ && (confirmedRevision_ == 0 || surfaceGated_)) {
 		return std::nullopt;
 	}
 	if (std::ranges::any_of(ambiguousRegions_, [point](Rect region) -> bool {
@@ -179,8 +196,11 @@ void Document::scroll(Point point, double delta) {
 			return;
 		}
 		if (node->kind == NodeKind::scroll) {
+			if (delta <= 0 && delta >= 0) {
+				return;
+			}
 			node->scrollOffset += delta;
-			invalidate();
+			invalidate(node->id, Dirty::arrange);
 			commit();
 			return;
 		}
@@ -193,15 +213,55 @@ void Document::enablePresentationTracking() {
 	rememberGeometry();
 }
 
-auto Document::beginPresentation(std::uint64_t epoch, std::uint64_t sceneRevision)
+auto Document::beginPresentation(std::uint64_t epoch, std::uint64_t revision)
 	-> std::expected<PresentationAttempt, Error> {
+	constexpr std::array tiles{TileId{0}};
+	return beginPresentation(epoch, revision, tiles);
+}
+
+auto Document::beginPresentation(
+	std::uint64_t epoch,
+	std::uint64_t revision,
+	std::span<const TileId> tiles
+) -> std::expected<PresentationAttempt, Error> {
 	if (!usesPresentationGeometry_) {
 		enablePresentationTracking();
 	}
-	if (isClosed_ || !geometryHistory_.contains(sceneRevision)) {
+	const auto found = geometryHistory_.find(revision);
+	if (isClosed_ || found == geometryHistory_.end()) {
 		return std::unexpected(Error::invalidValue);
 	}
-	return presentation_.begin(epoch, sceneRevision);
+	const auto attempt = presentation_.begin(epoch, revision, tiles);
+	if (attempt) {
+		if (epoch > presentationEpoch_) {
+			pinnedGeometry_.clear();
+			presentationEpoch_ = epoch;
+		}
+		pinnedGeometry_.emplace(
+			attempt->sequence,
+			PinnedGeometry{.attempt = *attempt, .root = found->second}
+		);
+	}
+	return attempt;
+}
+
+void Document::acceptPresentation(PresentationAttempt attempt) {
+	const auto pinned = pinnedGeometry_.find(attempt.sequence);
+	if (pinned == pinnedGeometry_.end()) {
+		return;
+	}
+	if (attempt.sceneRevision >= confirmedRevision_) {
+		confirmedGeometry_ = pinned->second.root;
+		confirmedRevision_ = attempt.sceneRevision;
+		if (attempt.epoch == presentationEpoch_) {
+			surfaceGated_ = false;
+		}
+		if (attempt.sceneRevision >= unknownRevision_ && !surfaceGated_) {
+			ambiguousRegions_.clear();
+			unknownRevision_ = 0;
+		}
+	}
+	pinnedGeometry_.erase(pinnedGeometry_.begin(), pinnedGeometry_.upper_bound(attempt.sequence));
 }
 
 auto Document::reportGPUCompletion(PresentationAttempt attempt, bool success) -> bool {
@@ -209,105 +269,94 @@ auto Document::reportGPUCompletion(PresentationAttempt attempt, bool success) ->
 		return false;
 	}
 	if (presentation_.reportGPU(attempt, success)) {
-		confirmPresentation(attempt.sceneRevision);
+		acceptPresentation(attempt);
 		return true;
 	}
 	if (!success) {
-		markPresentationUnknown(attempt.sceneRevision);
+		gatePendingPresentation(attempt);
+		pinnedGeometry_.erase(attempt.sequence);
 	}
 	return false;
 }
 
 auto Document::reportPresentation(PresentationAttempt attempt, double timestamp) -> bool {
-	if (isClosed_ || !presentation_.contains(attempt)) {
+	return reportPresentation(attempt, TilePresentation{.tile = TileId{0}, .timestamp = timestamp});
+}
+
+auto Document::reportPresentation(PresentationAttempt attempt, TilePresentation observation)
+	-> bool {
+	if (isClosed_ || !presentation_.contains(attempt, observation.tile)) {
 		return false;
 	}
-	if (presentation_.reportPresented(attempt, timestamp)) {
-		confirmPresentation(attempt.sceneRevision);
+	if (presentation_.reportPresented(attempt, observation)) {
+		acceptPresentation(attempt);
 		return true;
 	}
-	if (!std::isfinite(timestamp) || timestamp <= 0) {
-		markPresentationUnknown(attempt.sceneRevision);
+	if (!std::isfinite(observation.timestamp) || observation.timestamp <= 0) {
+		gatePendingPresentation(attempt);
 	}
 	return false;
 }
 
+void Document::gatePendingPresentation(PresentationAttempt attempt) {
+	const auto found = pinnedGeometry_.find(attempt.sequence);
+	if (isClosed_ || found == pinnedGeometry_.end() || found->second.attempt != attempt) {
+		return;
+	}
+	gateGeometry(attempt.sceneRevision, found->second.root);
+}
+
+void Document::gateSurface() {
+	if (isClosed_) {
+		return;
+	}
+	surfaceGated_ = true;
+	ambiguousRegions_ = {Rect{.size = viewport_}};
+}
+
 void Document::abandonPresentation(PresentationAttempt attempt) {
 	if (!isClosed_ && presentation_.retire(attempt)) {
-		markPresentationUnknown(attempt.sceneRevision);
+		gatePendingPresentation(attempt);
+		pinnedGeometry_.erase(attempt.sequence);
 	}
 }
 
 void Document::resetPresentation(std::uint64_t epoch) {
 	presentation_.reset(epoch);
+	presentationEpoch_ = epoch;
+	pinnedGeometry_.clear();
 }
 
 void Document::rememberGeometry() {
-	if (!usesPresentationGeometry_ || !scene_) {
+	if (!usesPresentationGeometry_ || !render_) {
 		return;
 	}
-	std::map<NodeId, Rect> bounds;
-	for (const auto &node : snapshots_) {
-		bounds.emplace(node.id, node.bounds);
-	}
-	geometryHistory_.insert_or_assign(scene_->revision, std::move(bounds));
+	geometryHistory_.insert_or_assign(render_->revision, render_->geometry);
 	constexpr std::size_t historyLimit = 64;
 	while (geometryHistory_.size() > historyLimit) {
-		markPresentationUnknown(geometryHistory_.begin()->first);
 		geometryHistory_.erase(geometryHistory_.begin());
 	}
 }
 
-void Document::confirmPresentation(std::uint64_t revision) {
-	const auto found = geometryHistory_.find(revision);
-	if (found == geometryHistory_.end() || revision < confirmedRevision_) {
-		return;
-	}
-	confirmedBounds_ = found->second;
-	confirmedRevision_ = revision;
-	if (revision >= unknownRevision_) {
-		ambiguousRegions_.clear();
-		unknownRevision_ = 0;
-	}
-	geometryHistory_.erase(geometryHistory_.begin(), found);
-}
-
-void Document::markPresentationUnknown(std::uint64_t revision) {
+void Document::gateGeometry(std::uint64_t revision, const GeometryRoot &root) {
 	if (revision < confirmedRevision_) {
 		return;
 	}
-	const auto found = geometryHistory_.find(revision);
-	if (found == geometryHistory_.end()) {
-		return;
-	}
 	unknownRevision_ = std::max(unknownRevision_, revision);
-	for (const auto &[id, bounds] : found->second) {
-		const auto previous = confirmedBounds_.find(id);
-		if (previous == confirmedBounds_.end() || previous->second != bounds) {
-			ambiguousRegions_.push_back(bounds);
-			if (previous != confirmedBounds_.end()) {
-				ambiguousRegions_.push_back(previous->second);
-			}
-		}
-	}
-	for (const auto &[id, bounds] : confirmedBounds_) {
-		if (!found->second.contains(id)) {
-			ambiguousRegions_.push_back(bounds);
-		}
-	}
-	constexpr std::size_t maximumAmbiguousRegions = 64;
-	if (ambiguousRegions_.size() > maximumAmbiguousRegions) {
+	geometryChanges(confirmedGeometry_, root, ambiguousRegions_);
+	constexpr std::size_t maximumGateRegions = 64;
+	if (ambiguousRegions_.size() > maximumGateRegions) {
 		ambiguousRegions_ = {Rect{.size = viewport_}};
 	}
 }
 
 auto Document::interactionBounds(NodeId identity) const -> std::optional<Rect> {
-	if (usesPresentationGeometry_) {
-		const auto found = confirmedBounds_.find(identity);
-		return found == confirmedBounds_.end() ? std::nullopt : std::optional{found->second};
-	}
-	const auto *node = find(identity);
-	return node == nullptr ? std::nullopt : std::optional{node->bounds};
+	const auto record = geometryFind(
+		usesPresentationGeometry_ ? confirmedGeometry_
+								  : (render_ ? render_->geometry : GeometryRoot{}),
+		identity
+	);
+	return record && record->eligible ? std::optional{record->bounds} : std::nullopt;
 }
 
 void Document::keyActivate() {

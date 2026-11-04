@@ -1,8 +1,10 @@
+#include <array>
 #include <exception>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 import stana;
 import stana.testing;
@@ -183,10 +185,178 @@ void staleFeedbackAndRecovery() {
 	host.reportPresentation(retry, 0);
 	require(host.nodes().empty(), "feedback after closure cannot resurrect content");
 }
+
+/// @brief P01-P09: exact bounded expected sets and independent observation ordering.
+void compositeEvidence() {
+	using namespace stana;
+	PresentationTracker tracker;
+	constexpr std::array tiles{TileId{0}, TileId{2}, TileId{3}};
+	const auto first = tracker.begin(1, 1, tiles);
+	require(first.has_value(), "composite admission");
+	require(!tracker.reportGPU(*first, true), "GPU alone cannot confirm composite");
+	require(
+		!tracker.reportPresented(*first, TilePresentation{.tile = tiles.front(), .timestamp = 1}),
+		"first tile alone"
+	);
+	require(
+		!tracker.reportPresented(*first, TilePresentation{.tile = TileId{1}, .timestamp = 1}),
+		"unknown tile ignored"
+	);
+	require(
+		!tracker.reportPresented(*first, TilePresentation{.tile = tiles.at(1), .timestamp = 1}),
+		"missing last tile"
+	);
+	require(
+		!tracker.reportPresented(*first, TilePresentation{.tile = tiles.front(), .timestamp = 0}),
+		"invalid duplicate retains positive"
+	);
+	require(
+		tracker.reportPresented(*first, TilePresentation{.tile = tiles.back(), .timestamp = 1}),
+		"all required times join"
+	);
+	const auto invalidTimes = tracker.begin(1, 2, tiles);
+	require(invalidTimes.has_value(), "invalid tile times admission");
+	require(!tracker.reportGPU(*invalidTimes, true), "GPU alone remains unconfirmed");
+	for (const auto time :
+		{0.0,
+			-1.0,
+			std::numeric_limits<double>::quiet_NaN(),
+			std::numeric_limits<double>::infinity()}) {
+		require(
+			!tracker.reportPresented(
+				*invalidTimes,
+				TilePresentation{.tile = tiles.front(), .timestamp = time}
+			),
+			"invalid typed time is never evidence"
+		);
+	}
+	require(tracker.retire(*invalidTimes), "retire invalid-time attempt");
+	const auto reverse = tracker.begin(1, 2, tiles);
+	require(reverse.has_value(), "reverse composite");
+	for (const auto tile : tiles) {
+		require(
+			!tracker.reportPresented(*reverse, TilePresentation{.tile = tile, .timestamp = 1}),
+			"times before GPU"
+		);
+	}
+	require(tracker.reportGPU(*reverse, true), "GPU joins complete tile set");
+	constexpr std::array duplicate{TileId{0}, TileId{0}};
+	constexpr std::size_t oversizedCount = 1025;
+	const std::vector<TileId> oversized(oversizedCount, TileId{0});
+	require(
+		!tracker.begin(1, 3, oversized),
+		"oversized expected set rejects before slot admission"
+	);
+	constexpr std::array outOfRange{TileId{1024}};
+	constexpr std::uint64_t rejectedEpoch = 100;
+	require(
+		!tracker.begin(rejectedEpoch, 3, std::span<const TileId>{}) &&
+			!tracker.begin(rejectedEpoch, 3, duplicate) &&
+			!tracker.begin(rejectedEpoch, 3, outOfRange),
+		"P04 invalid sets reject before epoch mutation"
+	);
+	require(tracker.begin(1, 3, tiles).has_value(), "invalid set did not advance epoch");
+	tracker.reset(2);
+	require(
+		!tracker.reportPresented(*reverse, TilePresentation{.tile = tiles.back(), .timestamp = 1}),
+		"stale tile evidence ignored"
+	);
+}
+
+/// @brief P10-P12/P24: composite pins survive >64 commits and pending geometry is gated.
+void compositePins() {
+	using namespace stana;
+	TestHost host;
+	int clicks = 0;
+	const Signal padding{Insets::all(0)};
+	const Signal color{Color::black()};
+	host.mount(
+		VStack{
+			.layout = {.padding = padding},
+			.children = children(
+				Button{
+					.text = "activate",
+					.onClick = [&] -> void {
+						++clicks;
+					},
+					.textStyle = {.foreground = color}
+				}
+			)
+		}
+	);
+	static_cast<void>(host.render());
+	constexpr double shifted = 100;
+	padding.set(Insets::all(shifted));
+	constexpr std::array tiles{TileId{0}, TileId{1}};
+	const auto attempt = host.renderComposite(tiles);
+	host.click({.x = 1, .y = 1});
+	host.click({.x = shifted + 1, .y = shifted + 1});
+	require(clicks == 0, "P10 old/new gated before GPU exposes pixels");
+	constexpr unsigned publications = 128;
+	for (unsigned index = 0; index < publications; ++index) {
+		color.set(index % 2 == 0 ? Color::accent() : Color::black());
+	}
+	host.reportTilePresentation(attempt, {.tile = TileId{0}, .timestamp = 1});
+	host.reportGPUCompletion(attempt, true);
+	host.click({.x = shifted + 1, .y = shifted + 1});
+	require(clicks == 0, "P03 missing one tile still gates");
+	host.reportTilePresentation(attempt, {.tile = TileId{1}, .timestamp = 1});
+	host.click({.x = shifted + 1, .y = shifted + 1});
+	require(clicks == 1, "P12 exact pinned geometry survives publication churn");
+	for (unsigned index = 0; index < publications; ++index) {
+		const auto next = host.renderComposite(tiles);
+		host.abandonPresentation(next);
+	}
+	const auto recovered = host.renderComposite(tiles);
+	host.reportGPUCompletion(recovered, true);
+	for (const auto tile : tiles) {
+		host.reportTilePresentation(recovered, {.tile = tile, .timestamp = 1});
+	}
+	host.click({.x = shifted + 1, .y = shifted + 1});
+	require(clicks == 2, "P24 pin retirement stays bounded");
+}
+
+/// @brief P11: an older target can install its pin but cannot clear newer uncertainty.
+void olderConfirmationKeepsNewerGate() {
+	using namespace stana;
+	const Signal padding{Insets::all(0)};
+	TestHost host;
+	int clicks = 0;
+	host.mount(
+		VStack{
+			.layout = {.padding = padding},
+			.children = children(Button{.text = "route", .onClick = [&] -> void {
+											++clicks;
+										}})
+		}
+	);
+	static_cast<void>(host.render());
+	constexpr double firstShift = 50;
+	constexpr double secondShift = 100;
+	constexpr std::array tile{TileId{0}};
+	padding.set(Insets::all(firstShift));
+	const auto older = host.renderComposite(tile);
+	padding.set(Insets::all(secondShift));
+	const auto newer = host.renderComposite(tile);
+	host.abandonPresentation(newer);
+	host.reportGPUCompletion(older, true);
+	host.reportTilePresentation(older, {.tile = tile.front(), .timestamp = 1});
+	host.click({.x = firstShift + 1, .y = firstShift + 1});
+	require(clicks == 0, "older confirmation cannot clear newer gate");
+	const auto current = host.renderComposite(tile);
+	host.reportGPUCompletion(current, true);
+	host.reportTilePresentation(current, {.tile = tile.front(), .timestamp = 1});
+	host.click({.x = secondShift + 1, .y = secondShift + 1});
+	require(clicks == 1, "newest confirmation clears its covered uncertainty");
+}
+
 } // namespace
 
 auto main() -> int {
 	try {
+		olderConfirmationKeepsNewerGate();
+		compositeEvidence();
+		compositePins();
 		evidenceMustJoin();
 		terminalAttemptsAndEpochs();
 		inputUsesConfirmedGeometry();

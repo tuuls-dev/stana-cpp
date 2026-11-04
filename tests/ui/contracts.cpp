@@ -224,10 +224,7 @@ void themeDefaultsFollowEnvironment() {
 	environment.theme = Theme::dark;
 	host.setEnvironment(environment);
 	const auto dark = host.scene();
-	require(
-		static_cast<bool>(dark) && host.metrics().mounts == mounts,
-		"theme does not remount"
-	);
+	require(static_cast<bool>(dark) && host.metrics().mounts == mounts, "theme does not remount");
 	require(dark->background == Color::black(), "dark viewport");
 	require(findText(*dark, "Count").color == Color::white(), "dark label");
 	require(findText(*dark, "Marked").color == marked, "explicit foreground survives theme");

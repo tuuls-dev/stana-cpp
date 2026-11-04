@@ -18,7 +18,7 @@ add_library(stana::stana ALIAS stana)
 target_sources(stana
 	PUBLIC FILE_SET modules TYPE CXX_MODULES BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/modules"
 		FILES modules/stana.cppm modules/primitives/primitives.cppm modules/reactive/reactive.cppm modules/tasks/tasks.cppm modules/graphics/graphics.cppm modules/graphics/presentation.cppm modules/core/core.cppm modules/ui/ui.cppm modules/testing/testing.cppm modules/application/application.cppm modules/text/text.cppm
-	PRIVATE src/version.cpp src/core/document.cpp src/core/input.cpp src/layout/layout.cpp src/scene/scene.cpp src/ui/mount.cpp src/application/application.cpp src/text/text.cpp)
+	PRIVATE src/version.cpp src/core/document.cpp src/core/input.cpp src/layout/layout.cpp src/scene/scene.cpp src/scene/geometry.cpp src/platform/tiles.cpp src/platform/scheduler.cpp src/ui/mount.cpp src/application/application.cpp src/text/text.cpp)
 target_compile_features(stana PUBLIC cxx_std_23)
 target_link_libraries(stana PRIVATE ICU::uc ICU::i18n ICU::data)
 set_target_properties(stana PROPERTIES
@@ -34,7 +34,7 @@ if(APPLE)
 	target_include_directories(stana SYSTEM PUBLIC "$<BUILD_INTERFACE:${CMAKE_OSX_SYSROOT}/usr/include/c++/v1>")
 	set(CMAKE_OBJCXX_COMPILER "${CMAKE_CXX_COMPILER}")
 	enable_language(OBJCXX)
-	target_sources(stana PRIVATE src/platform/macos/native_host.mm)
+	target_sources(stana PRIVATE src/platform/macos/native_host.mm src/platform/macos/renderer.mm src/platform/macos/presentation.mm)
 	target_compile_options(stana PRIVATE "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>")
 	target_link_libraries(stana PRIVATE "-framework AppKit" "-framework CoreGraphics"
 		"-framework CoreText" "-framework Metal" "-framework QuartzCore")
@@ -64,7 +64,8 @@ if(PROJECT_IS_TOP_LEVEL)
 		"${CMAKE_CURRENT_SOURCE_DIR}/modules/*.cppm"
 		"${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.hpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/src/*.mm" "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp"
-		"${CMAKE_CURRENT_SOURCE_DIR}/examples/*.cpp")
+		"${CMAKE_CURRENT_SOURCE_DIR}/examples/*.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.mm" "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.hpp")
 	add_custom_target(format-check
 		COMMAND "${STANA_CLANG_FORMAT}" --dry-run --Werror ${stana_format_sources}
 		VERBATIM)

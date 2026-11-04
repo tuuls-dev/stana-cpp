@@ -2,10 +2,13 @@ module;
 
 #include "../platform/native_contracts.hpp"
 
+#include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <exception>
 #include <functional>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -24,57 +27,136 @@ namespace {
 	return {.epoch = frame.epoch, .sequence = frame.sequence, .sceneRevision = frame.sceneRevision};
 }
 
-/// @brief Copies a portable scene into an owning module-free native transport value.
-/// No native callback borrows the document or its mutable retained records.
-[[nodiscard]] auto nativeScene(const SceneSnapshot &snapshot)
-	-> std::shared_ptr<const native::Scene> {
-	auto result = std::make_shared<native::Scene>();
-	result->revision = snapshot.revision;
-	result->red = snapshot.background.red;
-	result->green = snapshot.background.green;
-	result->blue = snapshot.background.blue;
-	result->commands.reserve(snapshot.commands.size());
-	for (const auto &command : snapshot.commands) {
-		native::PaintOperation operation{};
-		switch (command.kind) {
-		case PaintKind::fillRect:
-			operation = native::PaintOperation::fill;
-			break;
-		case PaintKind::strokeRect:
-			operation = native::PaintOperation::stroke;
-			break;
-		case PaintKind::text:
-			operation = native::PaintOperation::text;
-			break;
-		case PaintKind::line:
-			operation = native::PaintOperation::line;
-			break;
-		case PaintKind::pushClip:
-			operation = native::PaintOperation::pushClip;
-			break;
-		case PaintKind::popClip:
-			operation = native::PaintOperation::popClip;
-			break;
-		}
-		result->commands.push_back(
-			{.operation = operation,
-				.x = command.bounds.origin.x,
-				.y = command.bounds.origin.y,
-				.width = command.bounds.size.width,
-				.height = command.bounds.size.height,
-				.red = command.color.red,
-				.green = command.color.green,
-				.blue = command.color.blue,
-				.alpha = command.color.alpha,
-				.radius = command.cornerRadius,
-				.lineWidth = command.lineWidth,
-				.text = command.text,
-				.fontSize = command.font.size,
-				.fontWeight = command.font.weight}
-		);
+[[nodiscard]] auto convertCommand(const PaintCommand &command) -> native::Command {
+
+	native::PaintOperation operation{};
+	switch (command.kind) {
+	case PaintKind::fillRect:
+		operation = native::PaintOperation::fill;
+		break;
+	case PaintKind::strokeRect:
+		operation = native::PaintOperation::stroke;
+		break;
+	case PaintKind::text:
+		operation = native::PaintOperation::text;
+		break;
+	case PaintKind::line:
+		operation = native::PaintOperation::line;
+		break;
+	case PaintKind::pushClip:
+		operation = native::PaintOperation::pushClip;
+		break;
+	case PaintKind::popClip:
+		operation = native::PaintOperation::popClip;
+		break;
 	}
-	return result;
+	return {
+		.operation = operation,
+		.x = command.bounds.origin.x,
+		.y = command.bounds.origin.y,
+		.width = command.bounds.size.width,
+		.height = command.bounds.size.height,
+		.red = command.color.red,
+		.green = command.color.green,
+		.blue = command.color.blue,
+		.alpha = command.color.alpha,
+		.radius = command.cornerRadius,
+		.lineWidth = command.lineWidth,
+		.text = command.text,
+		.fontSize = command.font.size,
+		.fontWeight = command.font.weight
+	};
 }
+
+[[nodiscard]] auto convertRect(Rect rect) -> native::LogicalRect {
+	return {
+		.origin = {.x = rect.origin.x, .y = rect.origin.y},
+		.size = {.width = rect.size.width, .height = rect.size.height}
+	};
+}
+
+/// @brief One window's last paired roots; no process-global cache or borrowed-address lookup.
+struct SceneConversion {
+	std::shared_ptr<const detail::RenderSnapshot> source;
+	std::shared_ptr<const native::Scene> converted;
+
+	[[nodiscard]] static auto branch(
+		const std::shared_ptr<const detail::SceneBranch> &next,
+		const std::shared_ptr<const detail::SceneBranch> &old,
+		const std::shared_ptr<const native::SceneBranch> &previous
+	) -> std::shared_ptr<const native::SceneBranch> {
+		if (!next) {
+			return {};
+		}
+		if (old && previous && next->id == old->id && next->generation == old->generation) {
+			return previous;
+		}
+		auto result = std::make_shared<native::SceneBranch>();
+		result->id = {.document = next->id.document, .serial = next->id.serial};
+		result->generation = next->generation;
+		result->visible = next->context.visible;
+		if (old && previous && next->paint->identity == old->paint->identity) {
+			result->paint = previous->paint;
+		} else {
+			auto paint = std::make_shared<native::PaintSegments>();
+			paint->identity = next->paint->identity;
+			for (const auto &command : next->paint->prefix) {
+				paint->prefix.push_back(convertCommand(command));
+			}
+			for (const auto &command : next->paint->suffix) {
+				paint->suffix.push_back(convertCommand(command));
+			}
+			if (next->paint->childClipBounds) {
+				paint->childClipBounds = convertRect(*next->paint->childClipBounds);
+			}
+			result->paint = std::move(paint);
+		}
+		std::map<NodeId, std::size_t> pairs;
+		if (old && previous) {
+			for (std::size_t index = 0; index < old->children.size(); ++index) {
+				pairs.emplace(old->children.at(index)->id, index);
+			}
+		}
+		for (const auto &child : next->children) {
+			const auto paired = pairs.find(child->id);
+			result->children.push_back(
+				paired == pairs.end() ? branch(child, {}, {})
+									  : branch(
+											child,
+											old->children.at(paired->second),
+											previous->children.at(paired->second)
+										)
+			);
+		}
+		return result;
+	}
+
+	[[nodiscard]] auto convert(std::shared_ptr<const detail::RenderSnapshot> next)
+		-> std::shared_ptr<const native::Scene> {
+		if (next == source) {
+			return converted;
+		}
+		auto scene = std::make_shared<native::Scene>();
+		scene->revision = next->revision;
+		scene->size = {.width = next->size.width, .height = next->size.height};
+		scene->background = {
+			.red = next->background.red,
+			.green = next->background.green,
+			.blue = next->background.blue,
+			.alpha = next->background.alpha
+		};
+		scene->textEnvironment = next->textEnvironment;
+		scene->root = branch(
+			next->root,
+			source ? source->root : nullptr,
+			converted ? converted->root : nullptr
+		);
+		source = std::move(next);
+		converted = std::move(scene);
+		return converted;
+	}
+};
+
 } // namespace
 
 namespace detail {
@@ -89,25 +171,46 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 	try {
 		std::vector<native::Window> windows;
 		for (const auto &session : sessions) {
-			const auto document = session.document;
-			document->enablePresentationTracking();
-			document->setTextMeasure([](const std::string &text, Font font, double width) -> Size {
-				const auto [measuredWidth, measuredHeight] =
-					native::measureText(text, {.size = font.size, .weight = font.weight}, width);
-				return {.width = measuredWidth, .height = measuredHeight};
-			});
-			document->commit();
+			const auto sessionDocument = session.document;
+			sessionDocument->enablePresentationTracking();
+			sessionDocument->setTextMeasure(
+				[](const std::string &text, Font font, double width) -> Size {
+					const auto [measuredWidth, measuredHeight] = native::measureText(
+						text,
+						{.size = font.size, .weight = font.weight},
+						width
+					);
+					return {.width = measuredWidth, .height = measuredHeight};
+				}
+			);
+			sessionDocument->commit();
+			const auto weakDocument = std::weak_ptr{sessionDocument};
+			const auto conversion = std::make_shared<SceneConversion>();
 			windows.push_back(
 				{.title = session.title,
 					.width = session.size.width,
 					.height = session.size.height,
-					.scene = [document] -> std::shared_ptr<const native::Scene> {
-						return nativeScene(*document->scene());
+					.scene = [weakDocument, conversion] -> native::SceneResult {
+						if (const auto owner = weakDocument.lock()) {
+							const auto snapshot = owner->renderSnapshot();
+							if (snapshot) {
+								return conversion->convert(snapshot);
+							}
+						}
+						return std::unexpected("Window document closed");
 					},
-					.resize = [document](double width, double height) -> void {
+					.resize = [weakDocument](double width, double height) -> void {
+						const auto document = weakDocument.lock();
+						if (!document) {
+							return;
+						}
 						document->resize({.width = width, .height = height});
 					},
-					.appearance = [document](bool isDark) -> void {
+					.appearance = [weakDocument](bool isDark) -> void {
+						const auto document = weakDocument.lock();
+						if (!document) {
+							return;
+						}
 						auto environment = document->environment();
 						const auto theme = isDark ? Theme::dark : Theme::light;
 						if (environment.theme == theme) {
@@ -116,16 +219,32 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 						environment.theme = theme;
 						document->setEnvironment(environment);
 					},
-					.pointerDown = [document](double x, double y) -> void {
+					.pointerDown = [weakDocument](double x, double y) -> void {
+						const auto document = weakDocument.lock();
+						if (!document) {
+							return;
+						}
 						document->pointerDown({.x = x, .y = y});
 					},
-					.pointerUp = [document](double x, double y) -> void {
+					.pointerUp = [weakDocument](double x, double y) -> void {
+						const auto document = weakDocument.lock();
+						if (!document) {
+							return;
+						}
 						document->pointerUp({.x = x, .y = y});
 					},
-					.scroll = [document](double x, double y, double delta) -> void {
+					.scroll = [weakDocument](double x, double y, double delta) -> void {
+						const auto document = weakDocument.lock();
+						if (!document) {
+							return;
+						}
 						document->scroll({.x = x, .y = y}, delta);
 					},
-					.key = [document](native::KeyAction action) -> void {
+					.key = [weakDocument](native::KeyAction action) -> void {
+						const auto document = weakDocument.lock();
+						if (!document) {
+							return;
+						}
 						switch (action) {
 						case native::KeyAction::tabForward:
 							document->tab();
@@ -138,9 +257,19 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 							break;
 						}
 					},
-					.beginPresentation = [document](std::uint64_t epoch, std::uint64_t revision)
+					.beginPresentation = [weakDocument](const native::PresentationRequest &request)
 						-> std::expected<native::FrameIdentity, std::string> {
-						const auto attempt = document->beginPresentation(epoch, revision);
+						const auto owner = weakDocument.lock();
+						if (!owner) {
+							return std::unexpected("Window document closed");
+						}
+						std::vector<TileId> tiles;
+						tiles.reserve(request.expectedTiles.size());
+						for (const auto tile : request.expectedTiles) {
+							tiles.push_back(TileId{tile.value});
+						}
+						const auto attempt =
+							owner->beginPresentation(request.epoch, request.sceneRevision, tiles);
 						if (!attempt) {
 							return std::unexpected("Presentation admission failed");
 						}
@@ -150,23 +279,61 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 							.sceneRevision = attempt->sceneRevision
 						};
 					},
-					.gpuCompleted = [document](native::FrameIdentity frame, bool success) -> bool {
-						return document->reportGPUCompletion(portableAttempt(frame), success);
+					.gpuCompleted =
+						[weakDocument](native::FrameIdentity frame, bool success) -> bool {
+						const auto owner = weakDocument.lock();
+						return owner && owner->reportGPUCompletion(portableAttempt(frame), success);
 					},
-					.drawablePresented =
-						[document](native::FrameIdentity frame, double timestamp) -> bool {
-						return document->reportPresentation(portableAttempt(frame), timestamp);
+					.drawablePresented = [weakDocument](
+											 native::FrameIdentity frame,
+											 native::TilePresentation observation
+										 ) -> bool {
+						const auto owner = weakDocument.lock();
+						return owner &&
+							owner->reportPresentation(
+								portableAttempt(frame),
+								TilePresentation{
+									.tile = TileId{observation.tile.value},
+									.timestamp = observation.timestamp
+								}
+							);
 					},
-					.abandonPresentation = [document](native::FrameIdentity frame) -> void {
+					.abandonPresentation = [weakDocument](native::FrameIdentity frame) -> void {
+						const auto document = weakDocument.lock();
+						if (!document) {
+							return;
+						}
 						document->abandonPresentation(portableAttempt(frame));
 					},
-					.resetPresentation = [document](std::uint64_t epoch) -> void {
+					.resetPresentation = [weakDocument](std::uint64_t epoch) -> void {
+						const auto document = weakDocument.lock();
+						if (!document) {
+							return;
+						}
 						document->resetPresentation(epoch);
 					},
-					.close = [document] -> void {
+					.gatePendingPresentation = [weakDocument](native::FrameIdentity frame) -> void {
+						if (const auto owner = weakDocument.lock()) {
+							owner->gatePendingPresentation(portableAttempt(frame));
+						}
+					},
+					.gateSurface = [weakDocument] -> void {
+						if (const auto owner = weakDocument.lock()) {
+							owner->gateSurface();
+						}
+					},
+					.close = [weakDocument] -> void {
+						const auto document = weakDocument.lock();
+						if (!document) {
+							return;
+						}
 						document->close();
 					},
-					.ready = [document](std::function<void()> invalidate) -> void {
+					.ready = [weakDocument](std::function<void()> invalidate) -> void {
+						const auto document = weakDocument.lock();
+						if (!document) {
+							return;
+						}
 						document->setOnPublish(std::move(invalidate));
 					}}
 			);
@@ -201,7 +368,24 @@ auto Application::renderingDiagnostics() -> std::vector<WindowDiagnostics> {
 					? std::nullopt
 					: std::optional{window.confirmedRevision},
 				.lastFailure =
-					window.failure.empty() ? std::nullopt : std::optional{window.failure}}
+					window.failure.empty() ? std::nullopt : std::optional{window.failure},
+				.renderingWork = {
+					.tileCount = window.renderingWork.tileCount,
+					.rasterizedTiles = window.renderingWork.rasterizedTiles,
+					.presentedTiles = window.renderingWork.presentedTiles,
+					.rasterizedPixels = window.renderingWork.rasterizedPixels,
+					.copiedBytes = window.renderingWork.copiedBytes,
+					.cpuUploadBytes = window.renderingWork.cpuUploadBytes,
+					.bufferAllocations = window.renderingWork.bufferAllocations,
+					.rasterBytes = window.renderingWork.rasterBytes,
+					.peakRasterBytes = window.renderingWork.peakRasterBytes,
+					.estimatedDrawableBytes = window.renderingWork.estimatedDrawableBytes,
+					.fullDamageFallbacks = window.renderingWork.fullDamageFallbacks,
+					.recoveries = window.renderingWork.recoveries,
+					.anchorAttempts = window.renderingWork.anchorAttempts,
+					.hasActiveBatch = window.renderingWork.hasActiveBatch,
+					.hasPendingScene = window.renderingWork.hasPendingScene
+				}}
 		);
 	}
 	return result;

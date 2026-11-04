@@ -424,6 +424,16 @@ template <typename Items, typename Key, typename Content> struct ForEach {
 };
 
 namespace detail {
+/// @brief Resolved-value no-op suppression, including ordered floating comparisons.
+template <typename T>
+[[nodiscard]] auto assignRetained(T &target, const T &value, Dirty domains) -> Dirty {
+	if (std::is_eq(target <=> value)) {
+		return Dirty::none;
+	}
+	target = value;
+	return domains;
+}
+
 void applyLayout(const LayoutProperties &properties, NodeId identity, MountContext &context);
 void applyTextStyle(const TextProperties &properties, NodeId identity, MountContext &context);
 void applyAppearance(
@@ -501,10 +511,18 @@ template <typename Description>
 mountContainer(const Description &description, NodeKind kind, MountContext &context) -> NodeHandle {
 	const auto identity = createConfigured(description, kind, context);
 	if constexpr (requires { description.spacing; }) {
-		context.document->bind(identity, description.spacing, [](Node &node, double value) -> void {
-			requireNonnegative(value);
-			node.spacing = value;
-		});
+		context.document->bind(
+			identity,
+			description.spacing,
+			[](Node &node, double value) -> Dirty {
+				requireNonnegative(value);
+				return assignRetained(
+					node.spacing,
+					value,
+					Dirty::measure | Dirty::arrange | Dirty::snapshot
+				);
+			}
+		);
 	}
 	if constexpr (requires { description.alignment; }) {
 		context.document->find(identity)->alignment = description.alignment;
