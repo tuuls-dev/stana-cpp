@@ -1,5 +1,5 @@
 #include "canvas_fixture.hpp"
-#include "../../../src/rendering/limits.hpp"
+#include "../../../src/gpu/limits.hpp"
 #include <array>
 #include <cstdint>
 #include <map>

@@ -148,10 +148,7 @@ auto chart(int update) -> stana::rendering::Drawing {
 auto main(int argc, char **) -> int {
 	try {
 		auto initial = program();
-		const auto validation = stana::testing::validateGPUProgram(initial);
-		if (!validation) {
-			throw std::runtime_error(validation.error().message);
-		}
+		// Headless mode checks descriptor/drawing construction, not shader compilation.
 		if (argc > 1) {
 			static_cast<void>(graphics(initial));
 			return 0;

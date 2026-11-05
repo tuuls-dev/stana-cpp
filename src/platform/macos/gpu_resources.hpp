@@ -1,7 +1,7 @@
 #ifndef STANA_MACOS_GPU_RESOURCES_HPP
 #define STANA_MACOS_GPU_RESOURCES_HPP
-#include "../allocation.hpp"
-#include "../gpu_contracts.hpp"
+#include "../../gpu/allocation.hpp"
+#include "../../gpu/contracts.hpp"
 #import <Metal/Metal.h>
 #include <cstddef>
 #include <expected>
@@ -14,6 +14,35 @@
 #include <vector>
 
 namespace stana::platform::detail::gpu {
+using stana::gpu::detail::AllocationLease;
+using stana::gpu::detail::AllocationLedger;
+using stana::gpu::detail::Binding;
+using stana::gpu::detail::Buffer;
+using stana::gpu::detail::Bytes;
+using stana::gpu::detail::Color;
+using stana::gpu::detail::ColorMode;
+using stana::gpu::detail::Command;
+using stana::gpu::detail::ComputePass;
+using stana::gpu::detail::deviceAllocationLimit;
+using stana::gpu::detail::Diagnostic;
+using stana::gpu::detail::Encoding;
+using stana::gpu::detail::Format;
+using stana::gpu::detail::Mesh;
+using stana::gpu::detail::Polyline;
+using stana::gpu::detail::Program;
+using stana::gpu::detail::Rect;
+using stana::gpu::detail::RenderPass;
+using stana::gpu::detail::Resource;
+using stana::gpu::detail::Sampler;
+using stana::gpu::detail::Shape;
+using stana::gpu::detail::Stage;
+using stana::gpu::detail::State;
+using stana::gpu::detail::Storage;
+using stana::gpu::detail::Target;
+using stana::gpu::detail::Texture;
+using stana::gpu::detail::Vertex;
+using stana::gpu::detail::windowAllocationLimit;
+
 struct Failure {
 	Diagnostic::Category category = Diagnostic::Category::capability;
 	std::string message;

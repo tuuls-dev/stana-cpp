@@ -623,7 +623,7 @@ RasterTile::RasterTile(
 		layout.allocationBytes > maximumRasterBytes - accounting->bytes.load()) {
 		throw std::runtime_error("Shared raster allocation budget exceeded");
 	}
-	const auto reserved = AllocationLease::reserve(
+	const auto reserved = stana::gpu::detail::AllocationLease::reserve(
 		accounting->deviceBudget,
 		accounting->windowBudget,
 		layout.allocationBytes

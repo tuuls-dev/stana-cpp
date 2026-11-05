@@ -2,7 +2,7 @@ module;
 
 #include "../platform/native_contracts.hpp"
 
-#include "../rendering/limits.hpp"
+#include "../gpu/limits.hpp"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -34,16 +34,16 @@ namespace {
 using stana::application::detail::convertMode;
 using stana::application::detail::SceneConversion;
 
-[[nodiscard]] auto diagnosticCategory(stana::platform::detail::gpu::Diagnostic::Category value)
+[[nodiscard]] auto diagnosticCategory(stana::gpu::detail::Diagnostic::Category value)
 	-> stana::rendering::GPUDiagnostic::Category {
 	switch (value) {
-	case stana::platform::detail::gpu::Diagnostic::Category::compiler:
+	case stana::gpu::detail::Diagnostic::Category::compiler:
 		return stana::rendering::GPUDiagnostic::Category::compiler;
-	case stana::platform::detail::gpu::Diagnostic::Category::binding:
+	case stana::gpu::detail::Diagnostic::Category::binding:
 		return stana::rendering::GPUDiagnostic::Category::binding;
-	case stana::platform::detail::gpu::Diagnostic::Category::capability:
+	case stana::gpu::detail::Diagnostic::Category::capability:
 		return stana::rendering::GPUDiagnostic::Category::capability;
-	case stana::platform::detail::gpu::Diagnostic::Category::execution:
+	case stana::gpu::detail::Diagnostic::Category::execution:
 		return stana::rendering::GPUDiagnostic::Category::execution;
 	}
 	throw std::logic_error("Unknown GPU diagnostic category");
@@ -148,8 +148,7 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 					.width = session.size.width,
 					.height = session.size.height,
 					.colorMode = convertMode(session.renderingColorMode),
-					.gpuError = [weakDocument](stana::platform::detail::gpu::Diagnostic diagnostic)
-						-> void {
+					.gpuError = [weakDocument](stana::gpu::detail::Diagnostic diagnostic) -> void {
 						if (const auto owner = weakDocument.lock()) {
 							owner->queueGPUDiagnostic(
 								{.category = diagnosticCategory(diagnostic.category),

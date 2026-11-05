@@ -1,7 +1,7 @@
 #ifndef STANA_NATIVE_CONTRACTS_HPP
 #define STANA_NATIVE_CONTRACTS_HPP
 
-#include "gpu_contracts.hpp"
+#include "../gpu/contracts.hpp"
 #include <chrono>
 #include <compare>
 #include <cstdint>
@@ -87,7 +87,7 @@ struct NodeIdentity {
 struct GPUCanvasLeaf {
 	NodeIdentity instance;
 	LogicalRect bounds;
-	std::shared_ptr<const gpu::Drawing> drawing;
+	std::shared_ptr<const stana::gpu::detail::Drawing> drawing;
 	double opacity = 1;
 };
 
@@ -184,8 +184,8 @@ struct Window {
 	std::string title{}; ///< Initial UTF-8 native title.
 	double width = 0;	 ///< Initial content width in logical points.
 	double height = 0;	 ///< Initial content height in logical points.
-	gpu::ColorMode colorMode = gpu::ColorMode::automatic;
-	std::function<void(gpu::Diagnostic)> gpuError{};
+	stana::gpu::detail::ColorMode colorMode = stana::gpu::detail::ColorMode::automatic;
+	std::function<void(stana::gpu::detail::Diagnostic)> gpuError{};
 	std::function<SceneResult()> scene{};		  ///< Produces an owning current scene.
 	std::function<void(double, double)> resize{}; ///< Reflows the retained viewport.
 	std::function<void(bool isDark)>

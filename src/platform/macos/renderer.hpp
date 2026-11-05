@@ -1,6 +1,6 @@
 #ifndef STANA_MACOS_RENDERER_HPP
 #define STANA_MACOS_RENDERER_HPP
-#include "../allocation.hpp"
+#include "../../gpu/allocation.hpp"
 #include "../tiles.hpp"
 #import <CoreGraphics/CoreGraphics.h>
 #import <CoreText/CoreText.h>
@@ -105,10 +105,12 @@ void rasterRun(CGContextRef, double scale, PixelRect, const std::vector<Prepared
 
 /// @brief Independent atomic accounting survives off-main GPU resource cleanup.
 struct RasterAccounting {
-	std::shared_ptr<AllocationLedger> deviceBudget = std::make_shared<AllocationLedger>();
-	std::shared_ptr<AllocationLedger> windowBudget = std::make_shared<AllocationLedger>();
+	std::shared_ptr<stana::gpu::detail::AllocationLedger> deviceBudget =
+		std::make_shared<stana::gpu::detail::AllocationLedger>();
+	std::shared_ptr<stana::gpu::detail::AllocationLedger> windowBudget =
+		std::make_shared<stana::gpu::detail::AllocationLedger>();
 
-	RasterAccounting() { deviceBudget->limit = deviceAllocationLimit; }
+	RasterAccounting() { deviceBudget->limit = stana::gpu::detail::deviceAllocationLimit; }
 
 	std::atomic<std::size_t> bytes{0};
 	std::atomic<std::size_t> peak{0};
@@ -123,7 +125,7 @@ struct RasterTile {
 	CGContextRef bitmapContext = nullptr;
 	mutable bool cpuDirty = true;
 	std::shared_ptr<RasterAccounting> accounting;
-	std::shared_ptr<AllocationLease> combinedLease;
+	std::shared_ptr<stana::gpu::detail::AllocationLease> combinedLease;
 	RasterTile(TileLayout, id<MTLDevice>, std::shared_ptr<RasterAccounting>);
 	RasterTile(const RasterTile &) = delete;
 	RasterTile(RasterTile &&) = delete;

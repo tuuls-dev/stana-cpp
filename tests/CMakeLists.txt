@@ -120,6 +120,13 @@ target_link_libraries(stana-gpu-values PRIVATE stana::stana)
 stana_apply_safety(stana-gpu-values)
 add_test(NAME stana.gpu-values COMMAND stana-gpu-values)
 
+if(APPLE)
+	add_executable(stana-metal-shader-contracts platform/macos/shader_compiler.cpp)
+	target_link_libraries(stana-metal-shader-contracts PRIVATE stana::stana)
+	stana_apply_safety(stana-metal-shader-contracts)
+	add_test(NAME stana.shaders.metal COMMAND stana-metal-shader-contracts)
+endif()
+
 add_executable(stana-shader-contracts rendering/shader/compiler.cpp)
 target_link_libraries(stana-shader-contracts PRIVATE stana::stana)
 stana_apply_safety(stana-shader-contracts)

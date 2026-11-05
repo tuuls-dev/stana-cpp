@@ -1,6 +1,7 @@
 #ifndef STANA_MACOS_GPU_PROGRAMS_HPP
 #define STANA_MACOS_GPU_PROGRAMS_HPP
 #include "gpu_resources.hpp"
+#include "shader_compiler.hpp"
 #include <array>
 #include <cstdint>
 #include <functional>
@@ -13,13 +14,13 @@
 
 namespace stana::platform::detail::gpu {
 struct RenderPipeline {
-	stana::rendering::detail::shader::Entry vertex;
-	stana::rendering::detail::shader::Entry fragment;
+	stana::platform::detail::gpu::shader::Entry vertex;
+	stana::platform::detail::gpu::shader::Entry fragment;
 	id<MTLRenderPipelineState> state = nil;
 };
 
 struct ComputePipeline {
-	stana::rendering::detail::shader::Entry entry;
+	stana::platform::detail::gpu::shader::Entry entry;
 	id<MTLComputePipelineState> state = nil;
 };
 

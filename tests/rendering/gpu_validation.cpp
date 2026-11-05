@@ -1,5 +1,5 @@
-#include "../../src/platform/allocation.hpp"
-#include "../../src/rendering/color.hpp"
+#include "../../src/gpu/allocation.hpp"
+#include "../../src/gpu/color.hpp"
 #include <array>
 #include <cmath>
 #include <compare>
@@ -31,11 +31,11 @@ void halvesAndColor() {
 	for (std::uint32_t bits = 0; bits < halfCount; ++bits) {
 		const std::array bytes{
 			static_cast<std::byte>(bits & byteMask),
-			static_cast<std::byte>(bits >> stana::rendering::detail::byteBits)
+			static_cast<std::byte>(bits >> stana::gpu::detail::byteBits)
 		};
-		const double value = stana::rendering::detail::halfAt(bytes, 0);
+		const double value = stana::gpu::detail::halfAt(bytes, 0);
 		if (std::isfinite(value)) {
-			const auto encoded = stana::rendering::detail::toHalf(value);
+			const auto encoded = stana::gpu::detail::toHalf(value);
 			require(encoded.has_value() && *encoded == bits, "binary16 exact round-trip");
 		}
 	}
@@ -44,34 +44,33 @@ void halvesAndColor() {
 	for (const double value : {negative, 0.0, 1.0, 2.0}) {
 		require(
 			std::abs(
-				stana::rendering::detail::decodeSRGB(stana::rendering::detail::encodeSRGB(value)) -
-				value
+				stana::gpu::detail::decodeSRGB(stana::gpu::detail::encodeSRGB(value)) - value
 			) < tolerance,
 			"signed sRGB transfer round-trip"
 		);
 	}
-	const auto mapped = stana::rendering::detail::displayMap({2, 1, 0, 1}, 1);
+	const auto mapped = stana::gpu::detail::displayMap({2, 1, 0, 1}, 1);
 	require(
 		mapped.front() < 1 && mapped.front() > mapped.at(1),
 		"headroom-one mapping is finite and hue-preserving"
 	);
 	require(
-		stana::rendering::detail::displayMap({0, 0, 0, 0}, 1) == std::array<double, 4>{},
+		stana::gpu::detail::displayMap({0, 0, 0, 0}, 1) == std::array<double, 4>{},
 		"alpha-zero mapping canonical"
 	);
 }
 
 void budgets() {
 
-	const auto device = std::make_shared<stana::platform::detail::AllocationLedger>();
-	const auto window = std::make_shared<stana::platform::detail::AllocationLedger>();
+	const auto device = std::make_shared<stana::gpu::detail::AllocationLedger>();
+	const auto window = std::make_shared<stana::gpu::detail::AllocationLedger>();
 	constexpr std::size_t cap = 128;
 	device->limit = cap;
 	window->limit = cap;
-	auto reservation = stana::platform::detail::AllocationLease::reserve(device, window, cap);
+	auto reservation = stana::gpu::detail::AllocationLease::reserve(device, window, cap);
 	require(
 		reservation.has_value() && device->bytes == cap &&
-			!stana::platform::detail::AllocationLease::reserve(device, window, 1),
+			!stana::gpu::detail::AllocationLease::reserve(device, window, 1),
 		"atomic peak admission"
 	);
 	auto retired = (*reservation)->split(cap / 2);

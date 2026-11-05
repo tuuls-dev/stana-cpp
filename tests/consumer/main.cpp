@@ -40,7 +40,7 @@ auto main() -> int {
 		{.shader = *shader,
 			.passes = {stana::rendering::GPURenderPass{.vertex = "vs", .fragment = "fs"}}}
 	);
-	if (!program || !stana::testing::validateGPUProgram(*program)) {
+	if (!program) {
 		return 1;
 	}
 	stana::rendering::GPUDrawing graphics{*program};

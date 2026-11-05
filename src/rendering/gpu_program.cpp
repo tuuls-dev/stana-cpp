@@ -1,5 +1,5 @@
 module;
-#include "limits.hpp"
+#include "../gpu/limits.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -33,7 +33,7 @@ using ResourceMap = std::map<std::string, GPUResource, std::less<>>;
 }
 
 [[nodiscard]] auto validName(std::string_view value) -> bool {
-	if (value.empty() || value.size() > stana::rendering::detail::nameLimit ||
+	if (value.empty() || value.size() > stana::gpu::detail::nameLimit ||
 		value.find('\0') != std::string_view::npos) {
 		return false;
 	}
@@ -136,10 +136,10 @@ struct PassPlan {
 [[nodiscard]] auto validate(const GPUProgramDescriptor &descriptor)
 	-> std::expected<std::vector<std::size_t>, GPUError> {
 	const auto &resources = descriptor.resources;
-	if (resources.empty() || resources.size() > stana::rendering::detail::descriptorLimit ||
+	if (resources.empty() || resources.size() > stana::gpu::detail::descriptorLimit ||
 		descriptor.passes.empty() ||
-		descriptor.passes.size() > stana::rendering::detail::descriptorLimit ||
-		descriptor.constants.size() > stana::rendering::detail::descriptorLimit) {
+		descriptor.passes.size() > stana::gpu::detail::descriptorLimit ||
+		descriptor.constants.size() > stana::gpu::detail::descriptorLimit) {
 		return invalid("Program resource/pass/constant count exceeds limits");
 	}
 	if (!validName(descriptor.output) || !resources.contains(descriptor.output) ||
@@ -151,7 +151,7 @@ struct PassPlan {
 	if ((descriptor.outputColor != GPUColorEncoding::encodedSRGB &&
 			descriptor.outputColor != GPUColorEncoding::extendedLinear) ||
 		!std::isfinite(descriptor.sourcePeak) || descriptor.sourcePeak <= 0 ||
-		descriptor.sourcePeak > stana::rendering::detail::halfMaximum ||
+		descriptor.sourcePeak > stana::gpu::detail::halfMaximum ||
 		(descriptor.samplingRadius &&
 			(!std::isfinite(*descriptor.samplingRadius) || *descriptor.samplingRadius < 0))) {
 		return invalid("Invalid program color peak or sampling radius");
@@ -172,8 +172,7 @@ struct PassPlan {
 						? value.descriptor().initialBytes.size()
 						: 0;
 				} else if constexpr (std::is_same_v<T, GPUStorage>) {
-					if (value.length == 0 ||
-						value.length > stana::rendering::detail::payloadLimit) {
+					if (value.length == 0 || value.length > stana::gpu::detail::payloadLimit) {
 						return invalid("Invalid transient storage length");
 					}
 					return 0;
@@ -182,12 +181,8 @@ struct PassPlan {
 					if (bpp == 0) {
 						return invalid("Invalid target format");
 					}
-					const auto length = stana::rendering::detail::textureBytes(
-						value.width,
-						value.height,
-						bpp,
-						true
-					);
+					const auto length =
+						stana::gpu::detail::textureBytes(value.width, value.height, bpp, true);
 					if (!length) {
 						return invalid(length.error());
 					}
@@ -205,7 +200,7 @@ struct PassPlan {
 		if (!allocation) {
 			return std::unexpected(allocation.error());
 		}
-		if (*allocation > stana::rendering::detail::payloadLimit - ownedBytes) {
+		if (*allocation > stana::gpu::detail::payloadLimit - ownedBytes) {
 			return invalid("Aggregate program input exceeds budget");
 		}
 		ownedBytes += *allocation;
@@ -228,7 +223,7 @@ struct PassPlan {
 		}
 		const std::vector<GPUBinding> &bindings =
 			render != nullptr ? render->bindings : compute->bindings;
-		if (bindings.size() > stana::rendering::detail::descriptorLimit * 2) {
+		if (bindings.size() > stana::gpu::detail::descriptorLimit * 2) {
 			return invalid("Too many stage binding declarations");
 		}
 		if (render != nullptr) {
@@ -259,7 +254,7 @@ struct PassPlan {
 			}
 			std::uint64_t product = 1;
 			for (const auto axis : compute->workgroupCount) {
-				if (axis == 0 || axis > stana::rendering::detail::invocationLimit / product) {
+				if (axis == 0 || axis > stana::gpu::detail::invocationLimit / product) {
 					return invalid("Compute workgroup count exceeds portable invocation limit");
 				}
 				product *= axis;
@@ -273,8 +268,7 @@ struct PassPlan {
 					binding.stage != GPUBinding::Stage::compute) ||
 				(binding.access != GPUBinding::Access::read &&
 					binding.access != GPUBinding::Access::write) ||
-				binding.group >= 4 ||
-				binding.binding >= stana::rendering::detail::descriptorLimit ||
+				binding.group >= 4 || binding.binding >= stana::gpu::detail::descriptorLimit ||
 				!resources.contains(binding.resource)) {
 				return invalid("Invalid logical binding coordinate or missing resource");
 			}
@@ -295,7 +289,7 @@ struct PassPlan {
 				continue;
 			}
 			coordinates.emplace(coordinate, binding);
-			if (coordinates.size() > stana::rendering::detail::descriptorLimit) {
+			if (coordinates.size() > stana::gpu::detail::descriptorLimit) {
 				return invalid("Too many distinct logical bindings");
 			}
 			const auto &resource = resources.at(binding.resource);

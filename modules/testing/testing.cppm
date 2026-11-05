@@ -26,9 +26,6 @@ struct GPUCanvasPaint {
 };
 
 using MixedPaint = std::variant<::stana::rendering::PaintCommand, GPUCanvasPaint>;
-/// @brief Production WGSL validation/inspection/lowering without a native device or fake execution.
-[[nodiscard]] auto validateGPUProgram(const ::stana::rendering::GPUProgram &)
-	-> std::expected<void, ::stana::rendering::GPUError>;
 
 /// @brief Deterministic consumer host. Uses the production mount/document path without
 /// creating NSApplication, a native window, or a wall-clock-driven scheduler.

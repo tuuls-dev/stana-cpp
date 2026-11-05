@@ -1,5 +1,5 @@
-#ifndef STANA_GRAPHICS_COLOR_HPP
-#define STANA_GRAPHICS_COLOR_HPP
+#ifndef STANA_GPU_COLOR_HPP
+#define STANA_GPU_COLOR_HPP
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -12,7 +12,7 @@
 #include <span>
 #include <stdexcept>
 
-namespace stana::rendering::detail {
+namespace stana::gpu::detail {
 inline constexpr unsigned halfFractionBits = 10;
 inline constexpr unsigned halfExponentMask = 31;
 inline constexpr unsigned halfSignShift = 15;
@@ -143,5 +143,5 @@ inline constexpr double mappingKnee = 0.75;
 	}
 	return color;
 }
-} // namespace stana::rendering::detail
+} // namespace stana::gpu::detail
 #endif

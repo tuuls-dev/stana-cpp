@@ -1,5 +1,5 @@
-#ifndef STANA_ALLOCATION_HPP
-#define STANA_ALLOCATION_HPP
+#ifndef STANA_GPU_ALLOCATION_HPP
+#define STANA_GPU_ALLOCATION_HPP
 #include <algorithm>
 #include <cstddef>
 #include <expected>
@@ -9,7 +9,7 @@
 #include <string>
 #include <utility>
 
-namespace stana::platform::detail {
+namespace stana::gpu::detail {
 inline constexpr std::size_t windowAllocationLimit = 256ULL * 1024 * 1024;
 inline constexpr std::size_t deviceAllocationLimit = 512ULL * 1024 * 1024;
 
@@ -82,5 +82,5 @@ class AllocationLease {
 	std::shared_ptr<AllocationLedger> window_;
 	std::size_t bytes_;
 };
-} // namespace stana::platform::detail
+} // namespace stana::gpu::detail
 #endif

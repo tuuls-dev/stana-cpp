@@ -1,6 +1,6 @@
 #include "compositor.hpp"
-#include "../../rendering/color.hpp"
-#include "../../rendering/limits.hpp"
+#include "../../gpu/color.hpp"
+#include "../../gpu/limits.hpp"
 #import <Foundation/Foundation.h>
 #include <algorithm>
 #include <array>
@@ -112,8 +112,8 @@ struct BuiltinFunctions {
 	for (std::size_t channel = 0; channel < 3; ++channel) {
 		double value = color.rgba.at(channel);
 		if (color.linear != linear) {
-			value = linear ? stana::rendering::detail::decodeSRGB(value)
-						   : stana::rendering::detail::encodeSRGB(value);
+			value = linear ? stana::gpu::detail::decodeSRGB(value)
+						   : stana::gpu::detail::encodeSRGB(value);
 		}
 		result.at(channel) = static_cast<float>(value * color.rgba.back());
 	}
@@ -154,7 +154,7 @@ struct BuiltinFunctions {
 
 [[nodiscard]] auto backing(double logicalSize, double scale) -> Result<std::uint32_t> {
 	const double pixels = std::ceil(logicalSize * scale);
-	if (!std::isfinite(pixels) || pixels < 0 || pixels > stana::rendering::detail::axisLimit) {
+	if (!std::isfinite(pixels) || pixels < 0 || pixels > stana::gpu::detail::axisLimit) {
 		return failed(
 			Diagnostic::Category::capability,
 			"Canvas backing extent exceeds the portable/device profile"
@@ -651,7 +651,7 @@ auto Compositor::prepare(
 			);
 		}
 		packedClips.push_back({.bounds = floats(leaf.bounds)});
-		if (packedClips.size() > stana::rendering::detail::payloadLimit / sizeof(Clip)) {
+		if (packedClips.size() > stana::gpu::detail::payloadLimit / sizeof(Clip)) {
 			return failed(
 				Diagnostic::Category::capability,
 				"Clip stack exceeds bounded upload size"
@@ -969,9 +969,9 @@ auto Compositor::prepare(
 		color.storeAction = samples_ > 1 ? MTLStoreActionMultisampleResolve : MTLStoreActionStore;
 		const auto background = packet->scene->source->background;
 		color.clearColor = MTLClearColorMake(
-			linear ? stana::rendering::detail::decodeSRGB(background.red) : background.red,
-			linear ? stana::rendering::detail::decodeSRGB(background.green) : background.green,
-			linear ? stana::rendering::detail::decodeSRGB(background.blue) : background.blue,
+			linear ? stana::gpu::detail::decodeSRGB(background.red) : background.red,
+			linear ? stana::gpu::detail::decodeSRGB(background.green) : background.green,
+			linear ? stana::gpu::detail::decodeSRGB(background.blue) : background.blue,
 			1
 		);
 		id<MTLRenderCommandEncoder> const encoder =
@@ -1153,7 +1153,7 @@ void capture(
 	const auto bpp = pixelBytes(format);
 	const auto pitch = ((grid.viewport.width * bpp + rasterRowAlignment - 1) / rasterRowAlignment) *
 		rasterRowAlignment;
-	if (pitch > stana::rendering::detail::payloadLimit / grid.viewport.height) {
+	if (pitch > stana::gpu::detail::payloadLimit / grid.viewport.height) {
 		deliver(failed(Diagnostic::Category::capability, "Readback exceeds bounded payload size"));
 		return;
 	}

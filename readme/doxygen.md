@@ -103,9 +103,10 @@ bringing entire subsystems into scope with namespace directives.
 - Private helpers belong to `<function>::detail`. Shared primitive utilities are
   the only exception: root `stana::detail` is restricted to `nextIdentity`,
   `requireFinite`, and `requireNonnegative`.
-- Platform implementation types belong to `stana::platform::detail` and its `gpu`
-  namespace; native test fixtures belong to
-  `stana::testing::fixtures::platform::macos`.
+- Portable GPU internals belong to `stana::gpu::detail` in `src/gpu`; public GPU
+  APIs remain in `stana::rendering`. Metal and other macOS-specific code stays in
+  `src/platform/macos` under `stana::platform::detail` and its `gpu` namespace.
+  Native test fixtures belong to `stana::testing::fixtures::platform::macos`.
 - C++ class member definitions remain in their class's namespace even when the
   implementation file belongs to another function. For example, document layout
   methods stay in `stana::document::detail` inside `src/layout/layout.cpp`.

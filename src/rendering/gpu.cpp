@@ -1,6 +1,6 @@
 module;
-#include "color.hpp"
-#include "limits.hpp"
+#include "../gpu/color.hpp"
+#include "../gpu/limits.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -82,7 +82,7 @@ struct GPUShader::Data {
 };
 
 auto GPUShader::source(std::string source) -> std::expected<GPUShader, GPUError> {
-	if (source.empty() || source.size() > stana::rendering::detail::sourceLimit ||
+	if (source.empty() || source.size() > stana::gpu::detail::sourceLimit ||
 		source.find('\0') != std::string::npos) {
 		return invalid("WGSL source is empty, oversized or contains NUL");
 	}
@@ -107,7 +107,7 @@ struct GPUBuffer::Data {
 };
 
 auto GPUBuffer::create(std::span<const std::byte> bytes) -> std::expected<GPUBuffer, GPUError> {
-	if (bytes.size() > stana::rendering::detail::payloadLimit) {
+	if (bytes.size() > stana::gpu::detail::payloadLimit) {
 		return invalid("Buffer payload exceeds budget");
 	}
 	return GPUBuffer{std::make_shared<const Data>(Data{.bytes = {bytes.begin(), bytes.end()}})};
@@ -137,8 +137,7 @@ auto GPUTexture::create(GPUTextureDescriptor descriptor) -> std::expected<GPUTex
 			descriptor.encoding != GPUColorEncoding::extendedLinear)) {
 		return invalid("Unknown texture format or color encoding");
 	}
-	const auto length =
-		stana::rendering::detail::textureBytes(descriptor.width, descriptor.height, *bpp);
+	const auto length = stana::gpu::detail::textureBytes(descriptor.width, descriptor.height, *bpp);
 	if (!length) {
 		return invalid(length.error());
 	}
@@ -146,12 +145,12 @@ auto GPUTexture::create(GPUTextureDescriptor descriptor) -> std::expected<GPUTex
 		return invalid("Texture byte length must match tightly packed extent");
 	}
 	if (!std::isfinite(descriptor.sourcePeak) || descriptor.sourcePeak <= 0 ||
-		descriptor.sourcePeak > stana::rendering::detail::halfMaximum) {
+		descriptor.sourcePeak > stana::gpu::detail::halfMaximum) {
 		return invalid("Invalid texture source peak");
 	}
 	if (descriptor.format == GPUTextureFormat::r8Unorm &&
 		(descriptor.encoding != GPUColorEncoding::encodedSRGB || !descriptor.premultiplied ||
-			std::is_neq(descriptor.sourcePeak <=> stana::rendering::detail::defaultSourcePeak))) {
+			std::is_neq(descriptor.sourcePeak <=> stana::gpu::detail::defaultSourcePeak))) {
 		return invalid("Scalar textures cannot carry color metadata");
 	}
 	const auto bytes = std::span<const std::byte>{descriptor.bytes};
@@ -159,13 +158,12 @@ auto GPUTexture::create(GPUTextureDescriptor descriptor) -> std::expected<GPUTex
 		constexpr std::size_t stride = 8;
 		constexpr std::size_t alphaOffset = 6;
 		for (std::size_t offset = 0; offset < bytes.size(); offset += stride) {
-			const double alpha = stana::rendering::detail::halfAt(bytes, offset + alphaOffset);
+			const double alpha = stana::gpu::detail::halfAt(bytes, offset + alphaOffset);
 			if (!std::isfinite(alpha) || alpha < 0 || alpha > 1) {
 				return invalid("Invalid half-float alpha");
 			}
 			for (std::size_t channel = 0; channel < 3; ++channel) {
-				const double component =
-					stana::rendering::detail::halfAt(bytes, offset + 2 * channel);
+				const double component = stana::gpu::detail::halfAt(bytes, offset + 2 * channel);
 				if (!std::isfinite(component) ||
 					(descriptor.premultiplied && std::is_eq(alpha <=> 0.0) &&
 						std::is_neq(component <=> 0.0))) {
@@ -178,10 +176,10 @@ auto GPUTexture::create(GPUTextureDescriptor descriptor) -> std::expected<GPUTex
 	} else if (descriptor.format == GPUTextureFormat::bgra8Unorm && descriptor.premultiplied) {
 		constexpr std::size_t stride = 4;
 		for (std::size_t offset = 0; offset < bytes.size(); offset += stride) {
-			if (stana::rendering::detail::byteAt(bytes, offset + 3) == std::byte{0} &&
-				(stana::rendering::detail::byteAt(bytes, offset) != std::byte{0} ||
-					stana::rendering::detail::byteAt(bytes, offset + 1) != std::byte{0} ||
-					stana::rendering::detail::byteAt(bytes, offset + 2) != std::byte{0})) {
+			if (stana::gpu::detail::byteAt(bytes, offset + 3) == std::byte{0} &&
+				(stana::gpu::detail::byteAt(bytes, offset) != std::byte{0} ||
+					stana::gpu::detail::byteAt(bytes, offset + 1) != std::byte{0} ||
+					stana::gpu::detail::byteAt(bytes, offset + 2) != std::byte{0})) {
 				return invalid("Nonzero premultiplied transparent color");
 			}
 		}
@@ -216,15 +214,14 @@ auto GPUStateSlot::create(GPUStateSlotDescriptor descriptor)
 	if (!bpp) {
 		return invalid("Unknown texture format");
 	}
-	const auto length =
-		stana::rendering::detail::textureBytes(descriptor.width, descriptor.height, *bpp);
+	const auto length = stana::gpu::detail::textureBytes(descriptor.width, descriptor.height, *bpp);
 	if (!length) {
 		return invalid(length.error());
 	}
 	if (!descriptor.initialBytes.empty() && descriptor.initialBytes.size() != *length) {
 		return invalid("State initializer byte length mismatch");
 	}
-	if (descriptor.resetKey.size() > stana::rendering::detail::nameLimit ||
+	if (descriptor.resetKey.size() > stana::gpu::detail::nameLimit ||
 		descriptor.resetKey.find('\0') != std::string::npos) {
 		return invalid("Invalid state reset key");
 	}
@@ -250,8 +247,7 @@ ExtendedColor::ExtendedColor(double red, double green, double blue, double alpha
 	  alpha_(alpha) {
 	const std::array components{red, green, blue, alpha};
 	for (const double component : components) {
-		if (!std::isfinite(component) ||
-			std::abs(component) > stana::rendering::detail::halfMaximum) {
+		if (!std::isfinite(component) || std::abs(component) > stana::gpu::detail::halfMaximum) {
 			throw std::invalid_argument("Invalid extended linear color");
 		}
 	}
@@ -271,8 +267,8 @@ GPUMesh::GPUMesh(std::shared_ptr<const Data> data) : data_(std::move(data)) {
 
 auto GPUMesh::create(std::span<const GPUVertex> vertices, std::span<const std::uint32_t> indices)
 	-> std::expected<GPUMesh, GPUError> {
-	if (vertices.size() > stana::rendering::detail::pointLimit ||
-		indices.size() > stana::rendering::detail::indexLimit || indices.size() % 3 != 0) {
+	if (vertices.size() > stana::gpu::detail::pointLimit ||
+		indices.size() > stana::gpu::detail::indexLimit || indices.size() % 3 != 0) {
 		return invalid("Mesh count exceeds limits or contains incomplete triangles");
 	}
 	for (const auto index : indices) {
@@ -342,7 +338,7 @@ auto stana::rendering::detail::GPUAccess::commands(const GPUDrawing &drawing) no
 }
 
 void GPUDrawing::append(stana::rendering::detail::GPUCommand command) {
-	if (data_ && data_->commands.size() >= stana::rendering::detail::commandLimit) {
+	if (data_ && data_->commands.size() >= stana::gpu::detail::commandLimit) {
 		throw std::invalid_argument("GPU drawing command limit");
 	}
 	std::map<std::uint64_t, std::size_t> additions;
@@ -395,7 +391,7 @@ void GPUDrawing::append(stana::rendering::detail::GPUCommand command) {
 		command
 	);
 	std::size_t bytes = data_ ? data_->bytes : 0;
-	if (direct > stana::rendering::detail::payloadLimit - bytes) {
+	if (direct > stana::gpu::detail::payloadLimit - bytes) {
 		throw std::invalid_argument("GPU drawing aggregate input exceeds budget");
 	}
 	bytes += direct;
@@ -403,7 +399,7 @@ void GPUDrawing::append(stana::rendering::detail::GPUCommand command) {
 		if (data_ && data_->owned.contains(iterator->first)) {
 			iterator = additions.erase(iterator);
 		} else {
-			if (iterator->second > stana::rendering::detail::payloadLimit - bytes) {
+			if (iterator->second > stana::gpu::detail::payloadLimit - bytes) {
 				throw std::invalid_argument("GPU drawing aggregate input exceeds budget");
 			}
 			bytes += iterator->second;
@@ -492,7 +488,7 @@ void GPUDrawing::polyline(
 	bool closed
 ) {
 	stana::detail::requireNonnegative(width);
-	if (points.size() > stana::rendering::detail::pointLimit) {
+	if (points.size() > stana::gpu::detail::pointLimit) {
 		throw std::invalid_argument("Polyline point limit");
 	}
 	point({.x = width, .y = width});

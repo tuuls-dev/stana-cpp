@@ -1,11 +1,11 @@
-#ifndef STANA_GRAPHICS_LIMITS_HPP
-#define STANA_GRAPHICS_LIMITS_HPP
+#ifndef STANA_GPU_LIMITS_HPP
+#define STANA_GPU_LIMITS_HPP
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <string>
 
-namespace stana::rendering::detail {
+namespace stana::gpu::detail {
 inline constexpr std::size_t payloadLimit = 256ULL * 1024 * 1024;
 inline constexpr std::uint32_t axisLimit = 16384;
 inline constexpr std::size_t sourceLimit = 16ULL * 1024 * 1024;
@@ -35,5 +35,5 @@ inline constexpr double defaultSourcePeak = 16;
 	}
 	return static_cast<std::size_t>(width) * height * bytesPerPixel;
 }
-} // namespace stana::rendering::detail
+} // namespace stana::gpu::detail
 #endif

@@ -1,5 +1,5 @@
+#include "../../../src/gpu/color.hpp"
 #include "../../../src/platform/macos/compositor.hpp"
-#include "../../../src/rendering/color.hpp"
 #include "canvas_fixture.hpp"
 #import <Foundation/Foundation.h>
 #include <chrono>
@@ -80,8 +80,7 @@ void mixed() {
 		);
 		require(compositor.has_value(), compositor ? "" : compositor.error().message);
 		const auto encoded =
-			(*compositor)
-				->prepare(scene, grid, 1, stana::platform::detail::gpu::ColorMode::automatic);
+			(*compositor)->prepare(scene, grid, 1, stana::gpu::detail::ColorMode::automatic);
 		require(encoded.has_value(), encoded ? "" : encoded.error().message);
 		pump([&] -> bool {
 			return !(*compositor)->isInFlight() && (*compositor)->readyPacket() != nullptr;
@@ -112,8 +111,7 @@ void mixed() {
 		);
 		const auto before = (*compositor)->statistics();
 		const auto retry =
-			(*compositor)
-				->prepare(scene, grid, 1, stana::platform::detail::gpu::ColorMode::automatic);
+			(*compositor)->prepare(scene, grid, 1, stana::gpu::detail::ColorMode::automatic);
 		require(
 			retry.has_value() && *retry &&
 				(*compositor)->statistics().cpuRasterPixels == before.cpuRasterPixels &&
@@ -134,7 +132,7 @@ void mixed() {
 								 stana::platform::detail::prepareScene(source, 1),
 								 grid,
 								 1,
-								 stana::platform::detail::gpu::ColorMode::automatic
+								 stana::gpu::detail::ColorMode::automatic
 							 );
 	require(encoded.has_value(), encoded ? "" : encoded.error().message);
 	pump([&] -> bool {
@@ -146,8 +144,8 @@ void mixed() {
 	constexpr double extendedRed = 2.0;
 	const auto offset = (middle * pixels.width + middle) * halfPixelBytes;
 	require(
-		pixels.format == stana::platform::detail::gpu::Format::rgba16 &&
-			std::is_eq(stana::rendering::detail::halfAt(pixels.bytes, offset) <=> extendedRed),
+		pixels.format == stana::gpu::detail::Format::rgba16 &&
+			std::is_eq(stana::gpu::detail::halfAt(pixels.bytes, offset) <=> extendedRed),
 		"extended color above one did not survive complete offscreen capture"
 	);
 	(*compositor)->close();
@@ -185,12 +183,8 @@ void builtinsAndReconstruction() {
 				[&](
 					const std::shared_ptr<stana::platform::detail::gpu::Compositor> &compositor
 				) -> stana::platform::detail::gpu::Capture {
-				const auto result = compositor->prepare(
-					scene,
-					grid,
-					1,
-					stana::platform::detail::gpu::ColorMode::automatic
-				);
+				const auto result =
+					compositor->prepare(scene, grid, 1, stana::gpu::detail::ColorMode::automatic);
 				require(result.has_value(), result ? "" : result.error().message);
 				pump([&] -> bool {
 					return !compositor->isInFlight() && compositor->readyPacket() &&
@@ -230,14 +224,14 @@ void builtinsAndReconstruction() {
 				"incremental built-ins differ from fresh full reconstruction"
 			);
 			require(
-				actual.format == stana::platform::detail::gpu::Format::rgba16,
+				actual.format == stana::gpu::detail::Format::rgba16,
 				"mesh/extended scene requires linear composition"
 			);
 			const auto sample = [&](std::array<double, 2> point, std::size_t component) -> double {
 				constexpr std::size_t halfStride = 8;
 				const auto column = static_cast<std::size_t>(point.front() * scale);
 				const auto row = static_cast<std::size_t>(point.back() * scale);
-				return stana::rendering::detail::halfAt(
+				return stana::gpu::detail::halfAt(
 					actual.bytes,
 					(row * actual.width + column) * halfStride + component * 2
 				);

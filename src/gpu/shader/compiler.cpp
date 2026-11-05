@@ -1,20 +1,13 @@
 #include "compiler.hpp"
 #include "../limits.hpp"
+#include "parsed.hpp"
 #include <algorithm>
-#include <array>
 #include <cmath>
-#include <compare>
-#include <limits>
-#include <optional>
-#include <set>
-#include <src/tint/lang/msl/writer/writer.h>
 #include <src/tint/lang/wgsl/inspector/inspector.h>
-#include <src/tint/lang/wgsl/reader/reader.h>
-#include <src/tint/utils/diagnostic/diagnostic.h>
-#include <type_traits>
+#include <stdexcept>
 #include <utility>
 
-namespace stana::rendering::detail::shader {
+namespace stana::gpu::detail::shader {
 namespace {
 using RB = tint::inspector::ResourceBinding;
 
@@ -95,9 +88,11 @@ using RB = tint::inspector::ResourceBinding;
 }
 } // namespace
 
-auto validateBindings(const Entry &entry, const std::vector<Binding> &bindings)
-	-> std::expected<void, Error> {
-	for (const auto &required : entry.bindings) {
+auto validateBindings(
+	std::span<const BindingRequirement> requirements,
+	std::span<const Binding> bindings
+) -> std::expected<void, Error> {
+	for (const auto &required : requirements) {
 		const auto found = std::ranges::find_if(bindings, [&](const Binding &value) -> bool {
 			return value.group == required.logical.group &&
 				value.binding == required.logical.binding;
@@ -117,12 +112,12 @@ auto validateBindings(const Entry &entry, const std::vector<Binding> &bindings)
 	return {};
 }
 
-auto compile(const Request &request) -> std::expected<Entry, Error> {
-	if (request.source.empty() || request.source.size() > stana::rendering::detail::sourceLimit) {
+auto validate(const Request &request) -> std::expected<ValidatedEntry, Error> {
+	if (request.source.empty() || request.source.size() > stana::gpu::detail::sourceLimit) {
 		return failure(Error::Category::compiler, "WGSL source exceeds the supported profile");
 	}
-	const tint::Source::File file{"application.wgsl", request.source};
-	const auto program = tint::wgsl::reader::Parse(&file);
+	const auto parsed = std::make_shared<ParsedShader>(request.source);
+	const auto &program = parsed->program;
 	if (!program.IsValid()) {
 		return failure(Error::Category::compiler, program.Diagnostics().Str());
 	}
@@ -156,14 +151,7 @@ auto compile(const Request &request) -> std::expected<Entry, Error> {
 			"Entry point uses features outside the canvas profile"
 		);
 	}
-	tint::msl::writer::Options options;
-	options.entry_point_name = request.entry;
-	options.remapped_entry_point_name = "stana_entry";
-	options.immediate_binding_point =
-		tint::BindingPoint{.group = 0, .binding = immediateBufferSlot};
-	constexpr std::uint32_t immediateHeaderBytes = 16;
-	options.non_constant_zero_offset = 0;
-	options.array_length_from_constants.buffer_sizes_offset = immediateHeaderBytes;
+	ValidatedEntry result{.parsed = parsed, .function = request.entry, .stage = request.stage};
 	const auto overrides = inspector.GetNamedOverrideIds();
 	for (const auto &[name, value] : request.constants) {
 		const auto id = overrides.find(name);
@@ -181,8 +169,8 @@ auto compile(const Request &request) -> std::expected<Entry, Error> {
 		if (!typeMatched) {
 			return failure(Error::Category::compiler, "WGSL override type mismatch: " + name);
 		}
-		options.substitute_overrides_config.map.emplace(
-			id->second,
+		result.constants.emplace(
+			id->second.value,
 			std::visit(
 				[](auto constant) -> double {
 					return static_cast<double>(constant);
@@ -191,15 +179,11 @@ auto compile(const Request &request) -> std::expected<Entry, Error> {
 			)
 		);
 	}
-	Entry result{.function = options.remapped_entry_point_name, .stage = request.stage};
-	std::array<std::uint32_t, 3> nextSlot{};
 	auto resources = inspector.GetResourceBindings(request.entry);
 	std::ranges::sort(resources, [](const RB &left, const RB &right) -> bool {
 		return std::pair{left.bind_group, left.binding} <
 			std::pair{right.bind_group, right.binding};
 	});
-	result.immediateWords.resize(immediateHeaderBytes / sizeof(std::uint32_t));
-	std::uint32_t storageIndex = 0;
 	for (const auto &resource : resources) {
 		const auto bound =
 			std::ranges::find_if(request.bindings, [&](const Binding &value) -> bool {
@@ -212,105 +196,19 @@ auto compile(const Request &request) -> std::expected<Entry, Error> {
 					" binding " + std::to_string(resource.binding)
 			);
 		}
-		SlotKind kind = SlotKind::buffer;
-		if (bound->kind == Kind::sampler) {
-			kind = SlotKind::sampler;
-		} else if (bound->kind == Kind::texture || bound->kind == Kind::target ||
-			bound->kind == Kind::state) {
-			kind = SlotKind::texture;
-		}
-		auto &next = nextSlot.at(static_cast<std::size_t>(kind));
-		constexpr std::uint32_t samplerLimit = 16;
-		constexpr std::uint32_t textureLimit = 128;
-		const auto limit = kind == SlotKind::buffer
-			? immediateBufferSlot
-			: (kind == SlotKind::sampler ? samplerLimit : textureLimit);
-		if (next >= limit) {
-			return failure(
-				Error::Category::capability,
-				"Entry point exceeds adapter binding profile"
-			);
-		}
-		const auto slot = next++;
-		std::optional<std::uint32_t> sizeWord;
-		const tint::BindingPoint logical{.group = resource.bind_group, .binding = resource.binding};
-		const tint::BindingPoint mapped{.group = 0, .binding = slot};
-		if (kind == SlotKind::sampler) {
-			options.bindings.sampler.emplace(logical, mapped);
-		} else if (kind == SlotKind::texture) {
-			if (bound->writable) {
-				options.bindings.storage_texture.emplace(logical, mapped);
-			} else {
-				options.bindings.texture.emplace(logical, mapped);
-			}
-		} else if (resource.resource_type == RB::ResourceType::kUniformBuffer) {
-			options.bindings.uniform.emplace(logical, mapped);
-		} else {
-			options.bindings.storage.emplace(logical, mapped);
-			sizeWord = immediateHeaderBytes / sizeof(std::uint32_t) + storageIndex;
-			options.array_length_from_constants.bindpoint_to_size_index.emplace(
-				mapped,
-				storageIndex++
-			);
-			if (bound->byteLength > std::numeric_limits<std::uint32_t>::max()) {
-				return failure(
-					Error::Category::binding,
-					"Buffer size cannot be represented by the lowered shader"
-				);
-			}
-			result.immediateWords.push_back(static_cast<std::uint32_t>(bound->byteLength));
-		}
 		result.bindings.push_back(
 			{.logical = *bound,
-				.kind = kind,
-				.slot = slot,
 				.minimumBytes = resource.size,
-				.sizeWord = sizeWord}
+				.uniform = resource.resource_type == RB::ResourceType::kUniformBuffer}
 		);
 	}
 	if (inspector.has_error()) {
 		return failure(Error::Category::compiler, inspector.error());
 	}
-	const auto checked = validateBindings(result, request.bindings);
+	const auto checked = validateBindings(result.bindings, request.bindings);
 	if (!checked) {
 		return std::unexpected(checked.error());
 	}
-	while (result.immediateWords.size() % 4 != 0) {
-		result.immediateWords.push_back(0);
-	}
-	auto ir = tint::wgsl::reader::ProgramToLoweredIR(program);
-	if (ir != tint::Success) {
-		return failure(Error::Category::compiler, ir.Failure().reason);
-	}
-	auto output = tint::msl::writer::Generate(ir.Get(), options);
-	if (output != tint::Success) {
-		return failure(Error::Category::compiler, output.Failure().reason);
-	}
-	result.source = std::move(output->msl);
-	if (request.stage == Stage::compute) {
-		const auto &work = output->workgroup_info;
-		constexpr std::uint64_t threadsLimit = 256;
-		constexpr std::uint64_t memoryLimit = 16ULL * 1024;
-		std::uint64_t product = 1;
-		for (const auto axis : {work.x, work.y, work.z}) {
-			if (axis == 0 || axis > threadsLimit / product) {
-				return failure(
-					Error::Category::capability,
-					"WGSL workgroup exceeds portable thread limit"
-				);
-			}
-			product *= axis;
-		}
-		if (work.storage_size > memoryLimit || work.subgroup_size) {
-			return failure(
-				Error::Category::capability,
-				"WGSL workgroup memory/subgroup exceeds portable profile"
-			);
-		}
-		result.workgroupSize = {work.x, work.y, work.z};
-		result.workgroupBytes = work.storage_size;
-		result.dynamicWorkgroupBytes = std::move(output->workgroup_allocations);
-	}
 	return result;
 }
-} // namespace stana::rendering::detail::shader
+} // namespace stana::gpu::detail::shader
