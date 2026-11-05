@@ -4,9 +4,11 @@
 #include <array>
 #include <bit>
 #include <cmath>
+#include <compare>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <span>
 #include <stdexcept>
 
@@ -77,6 +79,49 @@ inline constexpr double mappingKnee = 0.75;
 			1 + static_cast<double>(fraction) / halfFractionScale,
 			static_cast<int>(exponent) - static_cast<int>(halfBias)
 		);
+}
+
+/// @brief IEEE binary16 nearest-even conversion, independent of the host rounding mode.
+[[nodiscard]] inline auto toHalf(double value) -> std::optional<std::uint16_t> {
+	constexpr double maximum = 65504;
+	constexpr int minimumExponent = -14;
+	constexpr int maximumExponent = 15;
+	constexpr int subnormalShift = 24;
+	const auto sign = static_cast<std::uint16_t>(std::signbit(value) ? (1U << halfSignShift) : 0U);
+	const double magnitude = std::abs(value);
+	if (!std::isfinite(value) || magnitude > maximum) {
+		return {};
+	}
+	if (std::is_eq(magnitude <=> 0.0)) {
+		return sign;
+	}
+	const auto nearestEven = [](double scaled) -> std::uint32_t {
+		const auto low = static_cast<std::uint32_t>(std::floor(scaled));
+		const double fraction = scaled - low;
+		constexpr double midpoint = 0.5;
+		return low +
+			static_cast<std::uint32_t>(
+				fraction > midpoint || (std::is_eq(fraction <=> midpoint) && low % 2 != 0)
+			);
+	};
+	if (magnitude < std::ldexp(1.0, minimumExponent)) {
+		return static_cast<std::uint16_t>(
+			sign | nearestEven(std::ldexp(magnitude, subnormalShift))
+		);
+	}
+	int exponent = 0;
+	const double fraction = std::frexp(magnitude, &exponent);
+	auto mantissa = nearestEven((fraction * 2 - 1) * halfFractionScale);
+	--exponent;
+	if (mantissa == static_cast<std::uint32_t>(halfFractionScale)) {
+		mantissa = 0;
+		++exponent;
+	}
+	if (exponent > maximumExponent) {
+		return {};
+	}
+	const auto encodedExponent = static_cast<std::uint32_t>(exponent + static_cast<int>(halfBias));
+	return static_cast<std::uint16_t>(sign | (encodedExponent << halfFractionBits) | mantissa);
 }
 
 [[nodiscard]] inline auto displayMap(std::array<double, 4> color, double headroom)

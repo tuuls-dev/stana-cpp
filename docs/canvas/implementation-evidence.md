@@ -55,3 +55,26 @@ own evidence; this Apple Silicon machine cannot establish those passes.
   explicitly excludes GPU pixels from CPU compatibility flattening.
 - Native GPU execution, cross-host compiler builds, installed/relocated GPU
   consumers and native color/presentation gates remain unqualified at this checkpoint.
+
+### Native executor checkpoint (offscreen only)
+
+- Hardware: Apple M1 Pro; macOS 27.0.1 (26A434), arm64; Clang 22.1.8;
+  macOS deployment target remains 26.0. No Intel/AMD execution claim.
+- Strict debug build: pass, including Objective-C++ analysis. Combined allocation
+  ledgers retain live/candidate/retired ownership; admitted peak reservations split
+  into individual owner charges rather than staying charged to unrelated resources.
+- `ctest --preset debug -E 'stana.consumer|stana.native'`: 14/14 pass
+  (83.92 seconds), including existing CPU raster regressions.
+- `MTL_DEBUG_LAYER=1 MTL_SHADER_VALIDATION=1 build/debug/tests/stana-canvas-offscreen`:
+  pass with actual Metal API Validation and GPU Validation enabled. The sandbox
+  cannot enumerate a device; qualification ran with native device access.
+- The native test uses 1,000 public validated `updatingResources` program versions,
+  the production owning converter, Tint/native pipeline compilation and reflection,
+  production dependency encoding, successful asynchronous GPU completion, and
+  half-float readback of each independently expected integer counter. It creates
+  no application window and claims no presentation evidence.
+- Built-in shader source is deterministically embedded; no runtime shader file or
+  Swift checkout lookup. First real shader compilation caught/fixed an MSL
+  reserved-word local in the built-in mesh function.
+- Ordered composition and presentation integration are the next checkpoint, not
+  established by the temporal-only offscreen test.

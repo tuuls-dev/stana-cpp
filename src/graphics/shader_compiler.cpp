@@ -232,6 +232,7 @@ auto compile(const Request &request) -> std::expected<Entry, Error> {
 			);
 		}
 		const auto slot = next++;
+		std::optional<std::uint32_t> sizeWord;
 		const tint::BindingPoint logical{.group = resource.bind_group, .binding = resource.binding};
 		const tint::BindingPoint mapped{.group = 0, .binding = slot};
 		if (kind == SlotKind::sampler) {
@@ -246,6 +247,7 @@ auto compile(const Request &request) -> std::expected<Entry, Error> {
 			options.bindings.uniform.emplace(logical, mapped);
 		} else {
 			options.bindings.storage.emplace(logical, mapped);
+			sizeWord = immediateHeaderBytes / sizeof(std::uint32_t) + storageIndex;
 			options.array_length_from_constants.bindpoint_to_size_index.emplace(
 				mapped,
 				storageIndex++
@@ -259,7 +261,11 @@ auto compile(const Request &request) -> std::expected<Entry, Error> {
 			result.immediateWords.push_back(static_cast<std::uint32_t>(bound->byteLength));
 		}
 		result.bindings.push_back(
-			{.logical = *bound, .kind = kind, .slot = slot, .minimumBytes = resource.size}
+			{.logical = *bound,
+				.kind = kind,
+				.slot = slot,
+				.minimumBytes = resource.size,
+				.sizeWord = sizeWord}
 		);
 	}
 	if (inspector.has_error()) {

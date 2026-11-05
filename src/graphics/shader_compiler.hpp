@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <expected>
 #include <map>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -45,6 +46,7 @@ struct ReflectedBinding {
 	SlotKind kind = SlotKind::buffer;
 	std::uint32_t slot = 0;
 	std::uint64_t minimumBytes = 0;
+	std::optional<std::uint32_t> sizeWord{};
 };
 
 struct Entry {

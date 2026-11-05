@@ -101,6 +101,18 @@ constexpr unsigned char firstNonAscii = 128;
 }
 
 [[nodiscard]] auto prepareOperation(const Command &command, double scale) -> PreparedOperation {
+	const bool emptyStroke = (command.operation == PaintOperation::stroke ||
+								 command.operation == PaintOperation::line) &&
+		command.lineWidth <= 0;
+	const bool emptyRectangle = (command.operation == PaintOperation::fill ||
+									command.operation == PaintOperation::stroke) &&
+		(command.width <= 0 || command.height <= 0);
+	const bool emptyText = command.operation == PaintOperation::text &&
+		(command.text.empty() || command.fontSize <= 0);
+	if (emptyStroke || emptyRectangle || emptyText) {
+		return PreparedOperation{.command = command};
+	}
+
 	PreparedOperation operation{.command = command};
 	LogicalRect bounds{
 		.origin = {.x = command.x, .y = command.y},
@@ -222,6 +234,9 @@ void prepareOperations(
 		prepareOperations(source->paint->suffix, scale, paint->suffix, clips, paint->suffixInk);
 		if (clips.size() != 1) {
 			throw std::invalid_argument("Native unbalanced clips");
+		}
+		if (source->paint->gpu) {
+			paint->prefixInk = unite(paint->prefixInk, Ink{.bounds = source->paint->gpu->bounds});
 		}
 		result->paint = std::move(paint);
 	}
@@ -351,6 +366,21 @@ void diff(
 }
 
 void replayOperation(CGContextRef context, const PreparedOperation &operation) {
+	if ((operation.command.operation == PaintOperation::stroke ||
+			operation.command.operation == PaintOperation::line) &&
+		operation.command.lineWidth <= 0) {
+		return;
+	}
+	if ((operation.command.operation == PaintOperation::fill ||
+			operation.command.operation == PaintOperation::stroke) &&
+		(operation.command.width <= 0 || operation.command.height <= 0)) {
+		return;
+	}
+	if (operation.command.operation == PaintOperation::text &&
+		(operation.command.text.empty() || operation.command.fontSize <= 0)) {
+		return;
+	}
+
 	const auto &command = operation.command;
 	switch (command.operation) {
 	case PaintOperation::fill:
@@ -531,6 +561,31 @@ void rasterScene(
 	CGContextFlush(context);
 }
 
+void rasterRun(
+	CGContextRef context,
+	double scale,
+	PixelRect pixels,
+	const std::vector<PreparedOperation> &operations
+) {
+	CGContextSaveGState(context);
+	CGContextClearRect(
+		context,
+		CGRectMake(0, 0, static_cast<double>(pixels.width), static_cast<double>(pixels.height))
+	);
+	CGContextTranslateCTM(context, 0, static_cast<double>(pixels.height));
+	CGContextScaleCTM(context, scale, -scale);
+	CGContextTranslateCTM(
+		context,
+		-static_cast<double>(pixels.x) / scale,
+		-static_cast<double>(pixels.y) / scale
+	);
+	for (const auto &operation : operations) {
+		replayOperation(context, operation);
+	}
+	CGContextRestoreGState(context);
+	CGContextFlush(context);
+}
+
 RasterTile::RasterTile(
 	TileLayout value,
 	id<MTLDevice> device,
@@ -542,9 +597,19 @@ RasterTile::RasterTile(
 		layout.allocationBytes > maximumRasterBytes - accounting->bytes.load()) {
 		throw std::runtime_error("Shared raster allocation budget exceeded");
 	}
-	buffer = [device
-		newBufferWithLength:layout.allocationBytes
-					options:MTLResourceStorageModeShared | MTLResourceCPUCacheModeDefaultCache];
+	const auto reserved = AllocationLease::reserve(
+		accounting->deviceBudget,
+		accounting->windowBudget,
+		layout.allocationBytes
+	);
+	if (!reserved) {
+		throw std::runtime_error(reserved.error());
+	}
+	combinedLease = *reserved;
+	buffer = [device newBufferWithLength:layout.allocationBytes
+								 options:(device.hasUnifiedMemory ? MTLResourceStorageModeShared
+																  : MTLResourceStorageModeManaged) |
+		MTLResourceCPUCacheModeDefaultCache];
 	if (buffer == nil || buffer.contents == nullptr) {
 		throw std::runtime_error("Unable to allocate shared Metal tile buffer");
 	}
@@ -581,6 +646,10 @@ RasterTile::~RasterTile() {
 }
 
 void encodeTile(id<MTLBlitCommandEncoder> encoder, const RasterTile &tile, id<MTLTexture> texture) {
+	if (tile.buffer.storageMode == MTLStorageModeManaged) {
+		[tile.buffer didModifyRange:NSMakeRange(0, tile.layout.allocationBytes)];
+	}
+
 	if (encoder == nil || texture == nil || texture.width != tile.layout.pixels.width ||
 		texture.height != tile.layout.pixels.height ||
 		texture.pixelFormat != MTLPixelFormatBGRA8Unorm || texture.device != tile.buffer.device) {

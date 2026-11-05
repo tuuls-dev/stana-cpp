@@ -38,7 +38,14 @@ if(APPLE)
 	target_include_directories(stana SYSTEM PUBLIC "$<BUILD_INTERFACE:${CMAKE_OSX_SYSROOT}/usr/include/c++/v1>")
 	set(CMAKE_OBJCXX_COMPILER "${CMAKE_CXX_COMPILER}")
 	enable_language(OBJCXX)
-	target_sources(stana PRIVATE src/platform/macos/native_host.mm src/platform/macos/renderer.mm src/platform/macos/presentation.mm)
+	add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated/stana_shader.hpp"
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_shader.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/platform/macos/shaders/stana.metal"
+            "${CMAKE_CURRENT_BINARY_DIR}/generated/stana_shader.hpp"
+        DEPENDS tools/embed_shader.py src/platform/macos/shaders/stana.metal VERBATIM)
+    target_include_directories(stana PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+    target_sources(stana PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated/stana_shader.hpp"
+        src/platform/macos/gpu_resources.mm src/platform/macos/gpu_programs.mm src/platform/macos/native_host.mm src/platform/macos/renderer.mm src/platform/macos/presentation.mm)
 	target_compile_options(stana PRIVATE "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>")
 	target_link_libraries(stana PRIVATE "-framework AppKit" "-framework CoreGraphics"
 		"-framework CoreText" "-framework Metal" "-framework QuartzCore")
