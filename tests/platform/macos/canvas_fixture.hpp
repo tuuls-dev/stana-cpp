@@ -4,9 +4,10 @@
 #include <memory>
 #include <vector>
 
-namespace stana::native::fixtures {
-[[nodiscard]] auto mixedScene(bool extended = false) -> std::shared_ptr<const Scene>;
-[[nodiscard]] auto builtinScenes() -> std::vector<std::shared_ptr<const Scene>>;
-[[nodiscard]] auto counterScenes() -> std::vector<std::shared_ptr<const Scene>>;
-} // namespace stana::native::fixtures
+namespace stana::testing::fixtures::platform::macos {
+[[nodiscard]] auto mixedScene(bool extended = false)
+	-> std::shared_ptr<const stana::platform::detail::Scene>;
+[[nodiscard]] auto builtinScenes()
+	-> std::vector<std::shared_ptr<const stana::platform::detail::Scene>>;
+} // namespace stana::testing::fixtures::platform::macos
 #endif

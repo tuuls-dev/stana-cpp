@@ -13,10 +13,8 @@
 #include <vector>
 
 import stana;
-import stana.testing;
 
 namespace {
-using namespace stana;
 
 void require(bool condition, const std::string &message) {
 	if (!condition) {
@@ -96,9 +94,10 @@ struct Payload {
 	auto operator==(const Payload &other) const -> bool { return identity == other.identity; }
 };
 
-[[nodiscard]] auto findKind(const TestHost &host, const std::string &kind) -> NodeSnapshot {
+[[nodiscard]] auto findKind(const stana::testing::TestHost &host, const std::string &kind)
+	-> stana::document::NodeSnapshot {
 	const auto nodes = host.nodes();
-	const auto found = std::ranges::find(nodes, kind, &NodeSnapshot::kind);
+	const auto found = std::ranges::find(nodes, kind, &stana::document::NodeSnapshot::kind);
 	if (found == nodes.end()) {
 		throw std::runtime_error("Missing node: " + kind);
 	}
@@ -112,10 +111,10 @@ void apiOrderingAndSettlement() {
 	const auto owner = std::this_thread::get_id();
 
 	{
-		TestHost host;
-		const Signal value{0};
+		stana::testing::TestHost host;
+		const stana::reactive::Signal value{0};
 		std::thread::id delivered{};
-		const auto subscription = observe(value, [&](int) -> void {
+		const auto subscription = stana::reactive::observe(value, [&](int) -> void {
 			delivered = std::this_thread::get_id();
 		});
 		worker([value] -> void {
@@ -127,16 +126,16 @@ void apiOrderingAndSettlement() {
 	}
 
 	{
-		TestHost host;
-		const Signal value{0};
-		const Signal batched{0};
+		stana::testing::TestHost host;
+		const stana::reactive::Signal value{0};
+		const stana::reactive::Signal batched{0};
 		int deliveries = 0;
-		const auto subscription = observe(batched, [&](int) -> void {
+		const auto subscription = stana::reactive::observe(batched, [&](int) -> void {
 			++deliveries;
 		});
 		value.setThreadSafe(first);
 		require(value.get() == 0, "S02 owner queue defers");
-		Transaction::perform([&] -> void {
+		stana::reactive::Transaction::perform([&] -> void {
 			value.setThreadSafe(second);
 			batched.set(first);
 			batched.set(second);
@@ -149,11 +148,11 @@ void apiOrderingAndSettlement() {
 	}
 
 	{
-		TestHost host;
-		const Signal left{0};
-		const Signal right{0};
+		stana::testing::TestHost host;
+		const stana::reactive::Signal left{0};
+		const stana::reactive::Signal right{0};
 		std::vector<int> order;
-		const auto leftSubscription = observe(left, [&](int value) -> void {
+		const auto leftSubscription = stana::reactive::observe(left, [&](int value) -> void {
 			if (value == first) {
 				require(right.get() == 0, "S03 independent settlement");
 			}
@@ -161,7 +160,7 @@ void apiOrderingAndSettlement() {
 				order.push_back(value);
 			}
 		});
-		const auto rightSubscription = observe(right, [&](int value) -> void {
+		const auto rightSubscription = stana::reactive::observe(right, [&](int value) -> void {
 			if (value != 0) {
 				order.push_back(value);
 			}
@@ -174,12 +173,12 @@ void apiOrderingAndSettlement() {
 	}
 
 	{
-		TestHost host;
+		stana::testing::TestHost host;
 		constexpr int producers = 4;
 		constexpr int writesEach = 8;
-		const Signal value{0};
+		const stana::reactive::Signal value{0};
 		std::vector<int> applied;
-		const auto subscription = observe(value, [&](int next) -> void {
+		const auto subscription = stana::reactive::observe(value, [&](int next) -> void {
 			if (next != 0) {
 				applied.push_back(next);
 			}
@@ -219,14 +218,14 @@ void apiOrderingAndSettlement() {
 	}
 
 	{
-		TestHost host;
+		stana::testing::TestHost host;
 		const auto ownerThread = std::this_thread::get_id();
 		std::thread::id compared{};
 		bool treatEqual = false;
-		const Signal value{0, [&](int left, int right) -> bool {
-							   compared = std::this_thread::get_id();
-							   return treatEqual || left == right;
-						   }};
+		const stana::reactive::Signal value{0, [&](int left, int right) -> bool {
+												compared = std::this_thread::get_id();
+												return treatEqual || left == right;
+											}};
 		worker([value] -> void {
 			value.setThreadSafe(first);
 		}).get();
@@ -241,8 +240,8 @@ void apiOrderingAndSettlement() {
 	}
 
 	{
-		TestHost host;
-		const Signal value{0};
+		stana::testing::TestHost host;
+		const stana::reactive::Signal value{0};
 		value.setThreadSafe(first);
 		value.set(second);
 		require(value.get() == second, "S06 synchronous set overtakes the queue");
@@ -251,9 +250,9 @@ void apiOrderingAndSettlement() {
 	}
 
 	{
-		TestHost host;
-		const Signal value{0};
-		const auto subscription = observe(value, [&](int next) -> void {
+		stana::testing::TestHost host;
+		const stana::reactive::Signal value{0};
+		const auto subscription = stana::reactive::observe(value, [&](int next) -> void {
 			if (next == first) {
 				value.setThreadSafe(second);
 			}
@@ -263,8 +262,8 @@ void apiOrderingAndSettlement() {
 		require(value.get() == first, "S07 observer enqueue waits for a later turn");
 		host.flush();
 		require(value.get() == second, "S07 later turn applies the nested write");
-		const Signal nested{0};
-		Transaction::perform([&] -> void {
+		const stana::reactive::Signal nested{0};
+		stana::reactive::Transaction::perform([&] -> void {
 			nested.setThreadSafe(first);
 			host.flush();
 			require(nested.get() == 0, "S07 nested pump during a transaction defers");
@@ -275,9 +274,9 @@ void apiOrderingAndSettlement() {
 	}
 
 	{
-		TestHost host;
-		const Signal value{0};
-		const auto invalid = computed([&] -> int {
+		stana::testing::TestHost host;
+		const stana::reactive::Signal value{0};
+		const auto invalid = stana::reactive::computed([&] -> int {
 			value.setThreadSafe(first);
 			return 0;
 		});
@@ -297,9 +296,9 @@ void apiOrderingAndSettlement() {
 }
 
 void retainedUi() {
-	const Signal label{std::string{"Ready"}};
-	TestHost host;
-	host.mount(Text{.text = label});
+	const stana::reactive::Signal label{std::string{"Ready"}};
+	stana::testing::TestHost host;
+	host.mount(stana::ui::Text{.text = label});
 	const auto initial = findKind(host, "text");
 	const auto mounts = host.metrics().mounts;
 	worker([label] -> void {
@@ -315,7 +314,7 @@ void activationIsolationAndOwnership() {
 	constexpr int first = 1;
 	constexpr int second = 2;
 	constexpr int third = 3;
-	const Signal adopted{0};
+	const stana::reactive::Signal adopted{0};
 	require(
 		throwsLogic([&] -> void {
 			adopted.setThreadSafe(first);
@@ -323,16 +322,16 @@ void activationIsolationAndOwnership() {
 		"L01 dormant submission rejects"
 	);
 	{
-		TestHost host;
+		stana::testing::TestHost host;
 		adopted.setThreadSafe(first);
 		host.flush();
 		require(adopted.get() == first, "L01 activation adopts the pre-host signal");
 	}
 
 	{
-		TestHost firstHost;
-		TestHost secondHost;
-		const Signal value{0};
+		stana::testing::TestHost firstHost;
+		stana::testing::TestHost secondHost;
+		const stana::reactive::Signal value{0};
 		value.setThreadSafe(first);
 		firstHost.close();
 		secondHost.flush();
@@ -341,11 +340,11 @@ void activationIsolationAndOwnership() {
 	}
 
 	{
-		std::promise<Signal<int>> ready;
+		std::promise<stana::reactive::Signal<int>> ready;
 		std::promise<void> apply;
 		auto isolated = worker([&ready, &apply] -> void {
-			TestHost host;
-			const Signal value{0};
+			stana::testing::TestHost host;
+			const stana::reactive::Signal value{0};
 			ready.set_value(value);
 			apply.get_future().wait();
 			host.flush();
@@ -355,16 +354,16 @@ void activationIsolationAndOwnership() {
 		worker([foreign] -> void {
 			foreign.setThreadSafe(first);
 		}).get();
-		TestHost local;
+		stana::testing::TestHost local;
 		local.flush();
 		apply.set_value();
 		isolated.get();
 	}
 
 	{
-		TestHost host;
+		stana::testing::TestHost host;
 		const auto live = std::make_shared<int>(0);
-		std::optional<Signal<Payload>> value{std::in_place, Payload{live, 0}};
+		std::optional<stana::reactive::Signal<Payload>> value{std::in_place, Payload{live, 0}};
 		require(*live == 1, "L04 initial payload");
 		value->setThreadSafe(Payload{live, first});
 		value.reset();
@@ -373,11 +372,11 @@ void activationIsolationAndOwnership() {
 	}
 
 	{
-		const TestHost host;
+		const stana::testing::TestHost host;
 		const auto live = std::make_shared<int>(0);
-		const Signal value{Payload{live, 0}};
+		const stana::reactive::Signal value{Payload{live, 0}};
 		value.setThreadSafe(Payload{live, first});
-		const auto endpoint = detail::ExecutorEndpoint::current();
+		const auto endpoint = stana::reactive::detail::ExecutorEndpoint::current();
 		endpoint->close();
 		require(*live == 1, "L05 unapplied payload released");
 		require(
@@ -391,9 +390,9 @@ void activationIsolationAndOwnership() {
 	}
 
 	{
-		const TestHost host;
-		const Signal value{0};
-		const auto endpoint = detail::ExecutorEndpoint::current();
+		const stana::testing::TestHost host;
+		const stana::reactive::Signal value{0};
+		const auto endpoint = stana::reactive::detail::ExecutorEndpoint::current();
 		std::promise<void> entered;
 		std::promise<void> closed;
 		endpoint->setAdmissionProbe(
@@ -415,10 +414,10 @@ void activationIsolationAndOwnership() {
 	}
 
 	{
-		std::promise<Signal<int>> ready;
+		std::promise<stana::reactive::Signal<int>> ready;
 		auto finished = worker([&ready] -> void {
-			const TestHost host;
-			ready.set_value(Signal<int>{0});
+			const stana::testing::TestHost host;
+			ready.set_value(stana::reactive::Signal<int>{0});
 		});
 		const auto orphaned = ready.get_future().get();
 		finished.get();
@@ -428,8 +427,8 @@ void activationIsolationAndOwnership() {
 			}),
 			"L07 submission rejects after the owner thread exits"
 		);
-		TestHost host;
-		const Signal fresh{0};
+		stana::testing::TestHost host;
+		const stana::reactive::Signal fresh{0};
 		fresh.setThreadSafe(third);
 		host.flush();
 		require(fresh.get() == third, "L07 new-epoch signals accept queued writes");
@@ -440,9 +439,10 @@ void capacityAndFailure() {
 	constexpr int first = 1;
 	constexpr int second = 2;
 	{
-		TestHost host;
-		const Signal value{0};
-		for (std::size_t index = 0; index < detail::maximumPendingSignalWrites; ++index) {
+		stana::testing::TestHost host;
+		const stana::reactive::Signal value{0};
+		for (std::size_t index = 0; index < stana::reactive::detail::maximumPendingSignalWrites;
+			++index) {
 			value.setThreadSafe(static_cast<int>(index + 1));
 		}
 		require(
@@ -452,14 +452,14 @@ void capacityAndFailure() {
 			"F01 overflow rejects without displacement"
 		);
 		require(
-			detail::ExecutorEndpoint::current()->pendingWrites() ==
-				detail::maximumPendingSignalWrites,
+			stana::reactive::detail::ExecutorEndpoint::current()->pendingWrites() ==
+				stana::reactive::detail::maximumPendingSignalWrites,
 			"F01 capacity stays full"
 		);
 		host.flush();
 		require(
-			value.get() == static_cast<int>(detail::maximumPendingSignalWrites) &&
-				detail::ExecutorEndpoint::current()->pendingWrites() == 0,
+			value.get() == static_cast<int>(stana::reactive::detail::maximumPendingSignalWrites) &&
+				stana::reactive::detail::ExecutorEndpoint::current()->pendingWrites() == 0,
 			"F01 applying returns capacity"
 		);
 		value.setThreadSafe(first);
@@ -468,10 +468,10 @@ void capacityAndFailure() {
 	}
 
 	{
-		TestHost host;
-		const Signal value{0};
+		stana::testing::TestHost host;
+		const stana::reactive::Signal value{0};
 		int deliveries = 0;
-		const auto subscription = observe(value, [&](int next) -> void {
+		const auto subscription = stana::reactive::observe(value, [&](int next) -> void {
 			++deliveries;
 			if (next == first) {
 				require(
@@ -482,22 +482,23 @@ void capacityAndFailure() {
 				);
 			}
 		});
-		for (std::size_t index = 0; index < detail::maximumPendingSignalWrites; ++index) {
+		for (std::size_t index = 0; index < stana::reactive::detail::maximumPendingSignalWrites;
+			++index) {
 			value.setThreadSafe(static_cast<int>(index + 1));
 		}
 		host.flush();
 		require(
-			deliveries == static_cast<int>(detail::maximumPendingSignalWrites) + 1,
+			deliveries == static_cast<int>(stana::reactive::detail::maximumPendingSignalWrites) + 1,
 			"F01 drain"
 		);
 	}
 
 	{
-		TestHost host;
+		stana::testing::TestHost host;
 		const auto live = std::make_shared<int>(0);
-		const Signal value{0};
-		const Signal extra{Payload{live, 0}};
-		const auto subscription = observe(value, [&](int next) -> void {
+		const stana::reactive::Signal value{0};
+		const stana::reactive::Signal extra{Payload{live, 0}};
+		const auto subscription = stana::reactive::observe(value, [&](int next) -> void {
 			if (next == first) {
 				throw std::runtime_error("apply failed");
 			}
@@ -520,14 +521,14 @@ void capacityAndFailure() {
 	}
 
 	{
-		const TestHost host;
-		const auto target = std::make_shared<Signal<int>>(0);
+		const stana::testing::TestHost host;
+		const auto target = std::make_shared<stana::reactive::Signal<int>>(0);
 
 		struct Reentrant {
-			std::shared_ptr<Signal<int>> other;
+			std::shared_ptr<stana::reactive::Signal<int>> other;
 			int identity = 0;
 
-			Reentrant(std::shared_ptr<Signal<int>> source, int value)
+			Reentrant(std::shared_ptr<stana::reactive::Signal<int>> source, int value)
 				: other(std::move(source)),
 				  identity(value) {}
 
@@ -553,9 +554,9 @@ void capacityAndFailure() {
 			}
 		};
 
-		const Signal value{Reentrant{target, 0}};
+		const stana::reactive::Signal value{Reentrant{target, 0}};
 		value.setThreadSafe(Reentrant{target, first});
-		detail::ExecutorEndpoint::current()->close();
+		stana::reactive::detail::ExecutorEndpoint::current()->close();
 		require(true, "F03 reentrant cleanup does not deadlock");
 	}
 }

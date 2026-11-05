@@ -7,7 +7,7 @@
 #include <limits>
 #include <vector>
 
-namespace stana::native {
+namespace stana::platform::detail {
 inline constexpr std::size_t tilePixels = 512;
 inline constexpr std::size_t rasterRowAlignment = 256;
 inline constexpr std::size_t bytesPerPixel = 4;
@@ -61,5 +61,5 @@ void selectTiles(const TileGrid &, double scale, LogicalRect damage, TileMask &)
 [[nodiscard]] auto tileIds(const TileGrid &, const TileMask &) -> std::vector<TileId>;
 /// @brief Includes checked row padding in allocation size, not copied pixel payload.
 [[nodiscard]] auto alignedRasterRow(std::size_t width) -> std::size_t;
-} // namespace stana::native
+} // namespace stana::platform::detail
 #endif

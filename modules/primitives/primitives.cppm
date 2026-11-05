@@ -11,7 +11,7 @@ module;
 #include <stdexcept>
 #include <string>
 
-export module stana.primitives;
+export module stana:primitives;
 
 export namespace stana {
 namespace defaults {
@@ -403,20 +403,6 @@ struct Environment {
 };
 
 namespace detail {
-/// @brief The direction-resolved content box shared by text and both canvas projections.
-[[nodiscard]] inline auto contentRect(Rect outer, Insets padding, Direction direction) -> Rect {
-	return {
-		.origin =
-			{.x = outer.origin.x +
-					(direction == Direction::leftToRight ? padding.leading : padding.trailing),
-				.y = outer.origin.y + padding.top},
-		.size = {
-			.width = std::max(0.0, outer.size.width - padding.leading - padding.trailing),
-			.height = std::max(0.0, outer.size.height - padding.top - padding.bottom)
-		}
-	};
-}
-
 /// @brief Reserves a never-reused process-local token for documents, nodes and resources.
 /// Relaxed atomic ordering guarantees uniqueness only, not publication of UI state.
 /// Throws on exhaustion instead of wrapping into an existing identity.

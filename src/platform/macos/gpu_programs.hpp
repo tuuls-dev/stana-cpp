@@ -11,15 +11,15 @@
 #include <variant>
 #include <vector>
 
-namespace stana::native::gpu {
+namespace stana::platform::detail::gpu {
 struct RenderPipeline {
-	shader_detail::Entry vertex;
-	shader_detail::Entry fragment;
+	stana::rendering::detail::shader::Entry vertex;
+	stana::rendering::detail::shader::Entry fragment;
 	id<MTLRenderPipelineState> state = nil;
 };
 
 struct ComputePipeline {
-	shader_detail::Entry entry;
+	stana::rendering::detail::shader::Entry entry;
 	id<MTLComputePipelineState> state = nil;
 };
 
@@ -67,5 +67,5 @@ struct ProgramCandidate {
 	std::uint32_t height,
 	const std::shared_ptr<const ProgramBundle> &previous
 ) -> Result<ProgramCandidate>;
-} // namespace stana::native::gpu
+} // namespace stana::platform::detail::gpu
 #endif

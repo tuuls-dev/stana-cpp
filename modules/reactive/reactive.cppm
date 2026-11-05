@@ -17,10 +17,10 @@ module;
 #include <variant>
 #include <vector>
 
-export module stana.reactive;
-import stana.primitives;
+export module stana:reactive;
+import :primitives;
 
-export namespace stana {
+export namespace stana::reactive {
 namespace detail {
 struct ScopeAccess;
 // The supported system libc++ does not yet provide C++23 move_only_function.
@@ -125,7 +125,7 @@ struct ReactiveRuntime {
 	std::vector<std::shared_ptr<Source>> *collector = nullptr;
 	std::deque<std::weak_ptr<Observer>>
 		pending; ///< Weak observations waiting for the next prepare/deliver batch.
-	std::deque<detail::MoveOnlyFunction<void()>> effects;
+	std::deque<::stana::reactive::detail::MoveOnlyFunction<void()>> effects;
 	std::map<std::uint64_t, std::function<void()>> commits;
 
 	[[nodiscard]] static auto current() -> ReactiveRuntime & {
@@ -369,7 +369,7 @@ template <typename T>
 /// Invalidation marks the cache dirty and propagates through weak reverse edges;
 /// read() reevaluates on demand, replaces dependencies and rejects evaluation cycles.
 struct ComputedState final : Source, Observer, std::enable_shared_from_this<ComputedState<T>> {
-	detail::MoveOnlyFunction<T()>
+	::stana::reactive::detail::MoveOnlyFunction<T()>
 		evaluate; ///< Owned pure evaluation operation; invoked only when this cache is dirty.
 	std::optional<T>
 		value; ///< Last successful computed result, absent before the first evaluation.
@@ -378,7 +378,7 @@ struct ComputedState final : Source, Observer, std::enable_shared_from_this<Comp
 	bool evaluating =
 		false; ///< Detects actual recursive evaluation rather than obsolete dependency edges.
 
-	explicit ComputedState(detail::MoveOnlyFunction<T()> operation)
+	explicit ComputedState(::stana::reactive::detail::MoveOnlyFunction<T()> operation)
 		: evaluate(std::move(operation)) {}
 
 	void markDirty() {
@@ -431,7 +431,7 @@ class Subscription {
   public:
 	Subscription() = default;
 
-	explicit Subscription(std::shared_ptr<detail::Observer> observer)
+	explicit Subscription(std::shared_ptr<::stana::reactive::detail::Observer> observer)
 		: observer_(std::move(observer)) {}
 
 	Subscription(const Subscription &) = delete;
@@ -456,15 +456,16 @@ class Subscription {
 	}
 
   private:
-	std::shared_ptr<detail::Observer> observer_; ///< Owns the consumer until cancellation; sources
-												 ///< retain only weak reverse edges.
+	std::shared_ptr<::stana::reactive::detail::Observer>
+		observer_; ///< Owns the consumer until cancellation; sources
+				   ///< retain only weak reverse edges.
 };
 
 /// @brief Synchronous UI-executor batch. Source writes persist even if the operation throws.
 class Transaction {
   public:
 	template <std::invocable F> static void perform(F &&operation) {
-		auto &runtime = detail::ReactiveRuntime::current();
+		auto &runtime = ::stana::reactive::detail::ReactiveRuntime::current();
 		if (runtime.collector != nullptr) {
 			throw std::logic_error("Stana cannot mutate inside a computed evaluation");
 		}
@@ -516,20 +517,22 @@ template <typename T> class Signal {
 	template <typename Equal>
 	Signal(T initial, Equal comparator)
 		: state_(
-			  std::make_shared<detail::SignalState<T>>(
+			  std::make_shared<::stana::reactive::detail::SignalState<T>>(
 				  std::move(initial),
 				  std::move(comparator),
-				  detail::ExecutorEndpoint::current()
+				  ::stana::reactive::detail::ExecutorEndpoint::current()
 			  )
 		  ) {}
 
 	[[nodiscard]] auto get() const -> T {
 		state_->checkThread();
-		detail::track(state_);
+		::stana::reactive::detail::track(state_);
 		return state_->value;
 	}
 
-	void set(T value) const { detail::assignSignalValue(state_, std::move(value)); }
+	void set(T value) const {
+		::stana::reactive::detail::assignSignalValue(state_, std::move(value));
+	}
 
 	/// @brief Queues an owning value for application on this signal's executor.
 	/// @param value Value transferred into the executor's bounded mailbox.
@@ -540,21 +543,21 @@ template <typename T> class Signal {
 	/// @throws Other exceptions from value construction or mailbox allocation.
 	void setThreadSafe(T value) const {
 		if (state_->owner == std::this_thread::get_id() &&
-			detail::ReactiveRuntime::current().collector != nullptr) {
+			::stana::reactive::detail::ReactiveRuntime::current().collector != nullptr) {
 			throw std::logic_error("Stana cannot mutate inside a computed evaluation");
 		}
 
-		struct Write final : detail::ExecutorCommand {
-			std::weak_ptr<detail::SignalState<T>> state;
+		struct Write final : ::stana::reactive::detail::ExecutorCommand {
+			std::weak_ptr<::stana::reactive::detail::SignalState<T>> state;
 			T payload;
 
-			Write(std::weak_ptr<detail::SignalState<T>> source, T incoming)
+			Write(std::weak_ptr<::stana::reactive::detail::SignalState<T>> source, T incoming)
 				: state(std::move(source)),
 				  payload(std::move(incoming)) {}
 
 			void apply() override {
 				if (const auto locked = state.lock()) {
-					detail::assignSignalValue(locked, std::move(payload));
+					::stana::reactive::detail::assignSignalValue(locked, std::move(payload));
 				}
 			}
 		};
@@ -579,7 +582,7 @@ template <typename T> class Signal {
 	}
 
   private:
-	std::shared_ptr<detail::SignalState<T>>
+	std::shared_ptr<::stana::reactive::detail::SignalState<T>>
 		state_; ///< Shared mutable source storage; copied Signal handles observe the same value.
 };
 
@@ -594,7 +597,9 @@ template <typename T> class Computed {
   public:
 	template <typename F>
 	explicit Computed(F operation)
-		: state_(std::make_shared<detail::ComputedState<T>>(std::move(operation))) {
+		: state_(
+			  std::make_shared<::stana::reactive::detail::ComputedState<T>>(std::move(operation))
+		  ) {
 		const auto weakState = std::weak_ptr{state_};
 		state_->onInvalidate = [weakState] -> void {
 			if (const auto state = weakState.lock()) {
@@ -605,7 +610,7 @@ template <typename T> class Computed {
 
 	[[nodiscard]] auto get() const -> T {
 		auto value = state_->read();
-		detail::track(state_);
+		::stana::reactive::detail::track(state_);
 		return value;
 	}
 
@@ -618,7 +623,7 @@ template <typename T> class Computed {
 	}
 
   private:
-	std::shared_ptr<detail::ComputedState<T>>
+	std::shared_ptr<::stana::reactive::detail::ComputedState<T>>
 		state_; ///< Shared lazy cache and dependency graph for all copies of this computed.
 };
 
@@ -702,14 +707,17 @@ template <typename T>
 /// compares against the previous delivery. Subscription cancellation disconnects it.
 struct Observation final : Observer, std::enable_shared_from_this<Observation<T>> {
 	Property<T> source; ///< Normalized constant/reactive input read during observation preparation.
-	detail::MoveOnlyFunction<void(const T &)>
+	::stana::reactive::detail::MoveOnlyFunction<void(const T &)>
 		callback; ///< Retained assignment/action invoked only after batch values are demanded.
 	std::vector<std::shared_ptr<Source>> dependencies;
 	std::optional<T>
 		delivered; ///< Previous delivered output used to skip equal retained assignments.
 	std::optional<T> prepared; ///< Next demanded output, held until this batch enters delivery.
 
-	Observation(Property<T> value, detail::MoveOnlyFunction<void(const T &)> action)
+	Observation(
+		Property<T> value,
+		::stana::reactive::detail::MoveOnlyFunction<void(const T &)> action
+	)
 		: source(std::move(value)),
 		  callback(std::move(action)) {}
 
@@ -757,8 +765,10 @@ struct Observation final : Observer, std::enable_shared_from_this<Observation<T>
 template <typename T, typename F>
 [[nodiscard]] auto observe(Property<T> source, F callback, bool structural = false)
 	-> Subscription {
-	auto observation =
-		std::make_shared<detail::Observation<T>>(std::move(source), std::move(callback));
+	auto observation = std::make_shared<::stana::reactive::detail::Observation<T>>(
+		std::move(source),
+		std::move(callback)
+	);
 	observation->structural = structural;
 	const auto weakObservation = std::weak_ptr{observation};
 	observation->onInvalidate = [weakObservation] -> void {
@@ -781,8 +791,8 @@ template <typename T, typename F>
 			state->disconnect();
 		}
 	};
-	detail::ReactiveRuntime::current().enqueue(observation);
-	detail::ReactiveRuntime::current().flush();
+	::stana::reactive::detail::ReactiveRuntime::current().enqueue(observation);
+	::stana::reactive::detail::ReactiveRuntime::current().flush();
 	return Subscription{std::move(observation)};
 }
 
@@ -806,10 +816,10 @@ template <typename T, typename F>
 [[nodiscard]] auto effect(Property<T> source, F operation) -> Subscription {
 	const auto isAlive = std::make_shared<bool>(true);
 	const auto action = std::make_shared<F>(std::move(operation));
-	const auto owner = std::make_shared<detail::Observer>();
+	const auto owner = std::make_shared<::stana::reactive::detail::Observer>();
 	const auto observation = std::make_shared<Subscription>(
 		observe(std::move(source), [isAlive, action](const T &value) -> void {
-			detail::ReactiveRuntime::current().effects.emplace_back(
+			::stana::reactive::detail::ReactiveRuntime::current().effects.emplace_back(
 				[isAlive, action, captured = value] -> void {
 					if (*isAlive) {
 						std::invoke(*action, captured);
@@ -853,10 +863,10 @@ class Scope {
 		State(State &&) = delete;
 		auto operator=(const State &) -> State & = delete;
 		auto operator=(State &&) -> State & = delete;
-		std::uint64_t identity = detail::nextIdentity();
+		std::uint64_t identity = ::stana::detail::nextIdentity();
 		std::uint64_t revision = 0;
 		bool alive = true;
-		std::map<std::uint64_t, detail::MoveOnlyFunction<void()>> resources;
+		std::map<std::uint64_t, ::stana::reactive::detail::MoveOnlyFunction<void()>> resources;
 
 		void dispose() {
 			if (!std::exchange(alive, false)) {
@@ -888,7 +898,7 @@ class Scope {
 	void dispose() const { state_->dispose(); }
 
 	template <typename F> [[nodiscard]] auto own(F cleanup) const -> std::uint64_t {
-		const auto token = detail::nextIdentity();
+		const auto token = ::stana::detail::nextIdentity();
 		if (alive()) {
 			state_->resources.emplace(token, std::move(cleanup));
 		} else {
@@ -906,7 +916,7 @@ class Scope {
 	void disown(std::uint64_t token) const { state_->resources.erase(token); }
 
 	[[nodiscard]] auto beginRequest() const -> RequestToken {
-		state_->revision = detail::nextIdentity();
+		state_->revision = ::stana::detail::nextIdentity();
 		return {.scope = state_->identity, .revision = state_->revision};
 	}
 
@@ -915,7 +925,7 @@ class Scope {
 	}
 
   private:
-	friend struct detail::ScopeAccess;
+	friend struct ::stana::reactive::detail::ScopeAccess;
 	std::shared_ptr<State>
 		state_; ///< Shared lifetime control block; explicit disposal ends every copied capability.
 };
@@ -944,4 +954,4 @@ struct ScopeAccess {
 	}
 };
 } // namespace detail
-} // namespace stana
+} // namespace stana::reactive

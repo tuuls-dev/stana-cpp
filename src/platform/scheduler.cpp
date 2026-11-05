@@ -2,7 +2,7 @@
 #include <limits>
 #include <stdexcept>
 
-namespace stana::native {
+namespace stana::platform::detail {
 auto FrameScheduler::matches(FrameIdentity frame) const -> bool {
 	return active_ && active_->epoch == frame.epoch && active_->sequence == frame.sequence &&
 		active_->sceneRevision == frame.sceneRevision;
@@ -197,4 +197,4 @@ void FrameScheduler::close() {
 	retryAt_.reset();
 	deadline_.reset();
 }
-} // namespace stana::native
+} // namespace stana::platform::detail

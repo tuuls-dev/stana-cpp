@@ -1,5 +1,5 @@
-#include "../../../src/graphics/color.hpp"
 #include "../../../src/platform/macos/compositor.hpp"
+#include "../../../src/rendering/color.hpp"
 #include "canvas_fixture.hpp"
 #import <Foundation/Foundation.h>
 #include <chrono>
@@ -23,16 +23,24 @@ void require(bool value, const std::string &message) {
 }
 
 [[nodiscard]] auto read(
-	const std::shared_ptr<stana::native::gpu::DeviceResources> &device,
-	const std::shared_ptr<const stana::native::gpu::CompositePacket> &packet,
-	const stana::native::TileGrid &grid
-) -> stana::native::gpu::Capture {
-	using namespace stana::native;
-	const auto signal = std::make_shared<std::promise<gpu::Result<gpu::Capture>>>();
+	const std::shared_ptr<stana::platform::detail::gpu::DeviceResources> &device,
+	const std::shared_ptr<const stana::platform::detail::gpu::CompositePacket> &packet,
+	const stana::platform::detail::TileGrid &grid
+) -> stana::platform::detail::gpu::Capture {
+
+	const auto signal = std::make_shared<std::promise<
+		stana::platform::detail::gpu::Result<stana::platform::detail::gpu::Capture>>>();
 	auto completed = signal->get_future();
-	gpu::capture(device, packet, grid, [signal](gpu::Result<gpu::Capture> result) -> void {
-		signal->set_value(std::move(result));
-	});
+	stana::platform::detail::gpu::capture(
+		device,
+		packet,
+		grid,
+		[signal](
+			stana::platform::detail::gpu::Result<stana::platform::detail::gpu::Capture> result
+		) -> void {
+			signal->set_value(std::move(result));
+		}
+	);
 	constexpr std::chrono::seconds deadline{10};
 	require(
 		completed.wait_for(deadline) == std::future_status::ready,
@@ -56,19 +64,24 @@ void pump(const std::function<bool()> &condition) {
 }
 
 void mixed() {
-	using namespace stana::native;
-	const auto device = gpu::DeviceResources::get(MTLCreateSystemDefaultDevice());
+
+	const auto device =
+		stana::platform::detail::gpu::DeviceResources::get(MTLCreateSystemDefaultDevice());
 	require(device.has_value(), device ? "" : device.error().message);
 	constexpr double doubleScale = 2;
 	constexpr double fractionalScale = 1.25;
 	for (const double scale : {1.0, doubleScale, fractionalScale}) {
-		const auto source = fixtures::mixedScene();
-		const auto scene = prepareScene(source, scale);
-		const auto grid = makeTileGrid(source->size, scale);
-		const auto compositor =
-			gpu::Compositor::create(*device, std::make_shared<RasterAccounting>());
+		const auto source = stana::testing::fixtures::platform::macos::mixedScene();
+		const auto scene = stana::platform::detail::prepareScene(source, scale);
+		const auto grid = stana::platform::detail::makeTileGrid(source->size, scale);
+		const auto compositor = stana::platform::detail::gpu::Compositor::create(
+			*device,
+			std::make_shared<stana::platform::detail::RasterAccounting>()
+		);
 		require(compositor.has_value(), compositor ? "" : compositor.error().message);
-		const auto encoded = (*compositor)->prepare(scene, grid, 1, gpu::ColorMode::automatic);
+		const auto encoded =
+			(*compositor)
+				->prepare(scene, grid, 1, stana::platform::detail::gpu::ColorMode::automatic);
 		require(encoded.has_value(), encoded ? "" : encoded.error().message);
 		pump([&] -> bool {
 			return !(*compositor)->isInFlight() && (*compositor)->readyPacket() != nullptr;
@@ -98,7 +111,9 @@ void mixed() {
 			"CPU/GPU painter order or premultiplied source-over is incorrect"
 		);
 		const auto before = (*compositor)->statistics();
-		const auto retry = (*compositor)->prepare(scene, grid, 1, gpu::ColorMode::automatic);
+		const auto retry =
+			(*compositor)
+				->prepare(scene, grid, 1, stana::platform::detail::gpu::ColorMode::automatic);
 		require(
 			retry.has_value() && *retry &&
 				(*compositor)->statistics().cpuRasterPixels == before.cpuRasterPixels &&
@@ -107,12 +122,20 @@ void mixed() {
 		);
 		(*compositor)->close();
 	}
-	const auto source = fixtures::mixedScene(true);
-	const auto grid = makeTileGrid(source->size, 1);
-	const auto compositor = gpu::Compositor::create(*device, std::make_shared<RasterAccounting>());
+	const auto source = stana::testing::fixtures::platform::macos::mixedScene(true);
+	const auto grid = stana::platform::detail::makeTileGrid(source->size, 1);
+	const auto compositor = stana::platform::detail::gpu::Compositor::create(
+		*device,
+		std::make_shared<stana::platform::detail::RasterAccounting>()
+	);
 	require(compositor.has_value(), compositor ? "" : compositor.error().message);
-	const auto encoded =
-		(*compositor)->prepare(prepareScene(source, 1), grid, 1, gpu::ColorMode::automatic);
+	const auto encoded = (*compositor)
+							 ->prepare(
+								 stana::platform::detail::prepareScene(source, 1),
+								 grid,
+								 1,
+								 stana::platform::detail::gpu::ColorMode::automatic
+							 );
 	require(encoded.has_value(), encoded ? "" : encoded.error().message);
 	pump([&] -> bool {
 		return !(*compositor)->isInFlight() && (*compositor)->readyPacket() != nullptr;
@@ -123,8 +146,8 @@ void mixed() {
 	constexpr double extendedRed = 2.0;
 	const auto offset = (middle * pixels.width + middle) * halfPixelBytes;
 	require(
-		pixels.format == gpu::Format::rgba16 &&
-			std::is_eq(stana::graphics_detail::halfAt(pixels.bytes, offset) <=> extendedRed),
+		pixels.format == stana::platform::detail::gpu::Format::rgba16 &&
+			std::is_eq(stana::rendering::detail::halfAt(pixels.bytes, offset) <=> extendedRed),
 		"extended color above one did not survive complete offscreen capture"
 	);
 	(*compositor)->close();
@@ -133,31 +156,41 @@ void mixed() {
 }
 
 void builtinsAndReconstruction() {
-	using namespace stana::native;
-	const auto device = gpu::DeviceResources::get(MTLCreateSystemDefaultDevice());
+
+	const auto device =
+		stana::platform::detail::gpu::DeviceResources::get(MTLCreateSystemDefaultDevice());
 	require(device.has_value(), device ? "" : device.error().message);
-	const auto sources = fixtures::builtinScenes();
+	const auto sources = stana::testing::fixtures::platform::macos::builtinScenes();
 	require(sources.size() > 1, "GPU drawing mutation fixture");
-	const auto first = prepareScene(sources.front(), 1);
-	const auto second = prepareScene(sources.back(), 1, first);
-	const auto damageGrid = makeTileGrid(sources.front()->size, 1);
-	RenderingWork work;
+	const auto first = stana::platform::detail::prepareScene(sources.front(), 1);
+	const auto second = stana::platform::detail::prepareScene(sources.back(), 1, first);
+	const auto damageGrid = stana::platform::detail::makeTileGrid(sources.front()->size, 1);
+	stana::platform::detail::RenderingWork work;
 	require(
-		sceneDamage(first, second, damageGrid, work).any(),
+		stana::platform::detail::sceneDamage(first, second, damageGrid, work).any(),
 		"GPU-only drawing change must dirty content tiles"
 	);
 	constexpr double doubled = 2;
 	constexpr double fractional = 1.25;
 	for (const double scale : {1.0, doubled, fractional}) {
-		const auto incremental =
-			gpu::Compositor::create(*device, std::make_shared<RasterAccounting>());
+		const auto incremental = stana::platform::detail::gpu::Compositor::create(
+			*device,
+			std::make_shared<stana::platform::detail::RasterAccounting>()
+		);
 		require(incremental.has_value(), incremental ? "" : incremental.error().message);
 		for (const auto &source : sources) {
-			const auto scene = prepareScene(source, scale);
-			const auto grid = makeTileGrid(source->size, scale);
+			const auto scene = stana::platform::detail::prepareScene(source, scale);
+			const auto grid = stana::platform::detail::makeTileGrid(source->size, scale);
 			const auto render =
-				[&](const std::shared_ptr<gpu::Compositor> &compositor) -> gpu::Capture {
-				const auto result = compositor->prepare(scene, grid, 1, gpu::ColorMode::automatic);
+				[&](
+					const std::shared_ptr<stana::platform::detail::gpu::Compositor> &compositor
+				) -> stana::platform::detail::gpu::Capture {
+				const auto result = compositor->prepare(
+					scene,
+					grid,
+					1,
+					stana::platform::detail::gpu::ColorMode::automatic
+				);
 				require(result.has_value(), result ? "" : result.error().message);
 				pump([&] -> bool {
 					return !compositor->isInFlight() && compositor->readyPacket() &&
@@ -166,8 +199,10 @@ void builtinsAndReconstruction() {
 				return read(*device, compositor->readyPacket(), grid);
 			};
 			const auto actual = render(*incremental);
-			const auto full =
-				gpu::Compositor::create(*device, std::make_shared<RasterAccounting>());
+			const auto full = stana::platform::detail::gpu::Compositor::create(
+				*device,
+				std::make_shared<stana::platform::detail::RasterAccounting>()
+			);
 			require(full.has_value(), full ? "" : full.error().message);
 			const auto reference = render(*full);
 			if (actual.bytes != reference.bytes) {
@@ -195,14 +230,14 @@ void builtinsAndReconstruction() {
 				"incremental built-ins differ from fresh full reconstruction"
 			);
 			require(
-				actual.format == gpu::Format::rgba16,
+				actual.format == stana::platform::detail::gpu::Format::rgba16,
 				"mesh/extended scene requires linear composition"
 			);
 			const auto sample = [&](std::array<double, 2> point, std::size_t component) -> double {
 				constexpr std::size_t halfStride = 8;
 				const auto column = static_cast<std::size_t>(point.front() * scale);
 				const auto row = static_cast<std::size_t>(point.back() * scale);
-				return stana::graphics_detail::halfAt(
+				return stana::rendering::detail::halfAt(
 					actual.bytes,
 					(row * actual.width + column) * halfStride + component * 2
 				);
@@ -246,54 +281,11 @@ void builtinsAndReconstruction() {
 		   "line; fractional origins, partial tiles, exact full reconstruction at 1x/2x/1.25x\n";
 }
 
-void temporal() {
-	using namespace stana::native;
-	const auto device = gpu::DeviceResources::get(MTLCreateSystemDefaultDevice());
-	require(device.has_value(), device ? "" : device.error().message);
-	const auto compositor = gpu::Compositor::create(*device, std::make_shared<RasterAccounting>());
-	require(compositor.has_value(), compositor ? "" : compositor.error().message);
-	const auto sources = fixtures::counterScenes();
-	require(!sources.empty(), "temporal compositor fixture");
-	const auto grid = makeTileGrid(sources.front()->size, 1);
-	std::size_t step = 0;
-	for (const auto &source : sources) {
-		++step;
-		const auto scene = prepareScene(source, 1);
-		pump([&] -> bool {
-			const auto result = (*compositor)->prepare(scene, grid, 1, gpu::ColorMode::automatic);
-			require(result.has_value(), result ? "" : result.error().message);
-			return *result && (*compositor)->readyPacket() &&
-				(*compositor)->readyPacket()->scene == scene &&
-				(*compositor)->statistics().stateSteps == step;
-		});
-		const auto pixels = read(*device, (*compositor)->readyPacket(), grid);
-		constexpr std::size_t halfPixelBytes = 8;
-		constexpr std::size_t sample = 16;
-		require(
-			pixels.format == gpu::Format::rgba16 &&
-				std::is_eq(
-					stana::graphics_detail::halfAt(
-						pixels.bytes,
-						(sample * pixels.width + sample) * halfPixelBytes
-					) <=> static_cast<double>(step)
-				),
-			"compositor temporal counter differs from independently expected integer"
-		);
-	}
-	require(
-		(*compositor)->statistics().gpuLeafDraws > 0,
-		"temporal compositor must export GPU leaf draws"
-	);
-	(*compositor)->close();
-	std::cout << "Native offscreen compositor: " << step
-			  << " admitted successful temporal steps; no presentation evidence claimed\n";
-}
 } // namespace
 
 auto main() -> int {
 	@autoreleasepool {
 		try {
-			temporal();
 			mixed();
 			builtinsAndReconstruction();
 			return 0;

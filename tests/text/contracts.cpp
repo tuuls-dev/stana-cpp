@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-import stana.text;
+import stana;
 
 namespace {
 void require(bool condition, const std::string &message) {
@@ -16,38 +16,46 @@ void require(bool condition, const std::string &message) {
 
 /// @brief Covers grapheme-based editing and exact byte/code-unit conversion boundaries.
 void unicodeBoundaries() {
-	using namespace stana;
+
 	const std::string combining = "e\xCC\x81";
 	const std::string emoji = "\xF0\x9F\x98\x80";
 	const std::string family = "👩‍👩‍👧‍👦";
-	require(isValidUtf8(combining) && isValidUtf8(emoji), "valid scalars");
 	require(
-		!isValidUtf8("\xC0\x80") && !isValidUtf8("\xED\xA0\x80") && !isValidUtf8("\xF0\x9F"),
+		stana::text::isValidUtf8(combining) && stana::text::isValidUtf8(emoji),
+		"valid scalars"
+	);
+	require(
+		!stana::text::isValidUtf8("\xC0\x80") && !stana::text::isValidUtf8("\xED\xA0\x80") &&
+			!stana::text::isValidUtf8("\xF0\x9F"),
 		"reject noncanonical or truncated UTF-8"
 	);
 	require(
-		graphemeBoundaries(combining) == std::vector<std::size_t>({0, combining.size()}),
+		stana::text::graphemeBoundaries(combining) ==
+			std::vector<std::size_t>({0, combining.size()}),
 		"combining cluster"
 	);
 	require(
-		graphemeBoundaries(family) == std::vector<std::size_t>({0, family.size()}),
+		stana::text::graphemeBoundaries(family) == std::vector<std::size_t>({0, family.size()}),
 		"ZWJ family cluster"
 	);
-	require(utf16Offset(emoji, emoji.size()) == 2, "supplementary UTF-16 length");
-	require(utf8Offset(emoji, 2) == emoji.size(), "UTF-16 round trip");
-	require(!utf8Offset(emoji, 1) && !utf16Offset(emoji, 1), "reject split surrogate/scalar");
+	require(stana::text::utf16Offset(emoji, emoji.size()) == 2, "supplementary UTF-16 length");
+	require(stana::text::utf8Offset(emoji, 2) == emoji.size(), "UTF-16 round trip");
+	require(
+		!stana::text::utf8Offset(emoji, 1) && !stana::text::utf16Offset(emoji, 1),
+		"reject split surrogate/scalar"
+	);
 	const std::string embeddedNul{"a\0b", 3};
 	require(
-		graphemeBoundaries(embeddedNul).size() == embeddedNul.size() + 1,
+		stana::text::graphemeBoundaries(embeddedNul).size() == embeddedNul.size() + 1,
 		"embedded NUL is content"
 	);
-	TextBuffer joining{"\xCC\x81"};
+	stana::text::TextBuffer joining{"\xCC\x81"};
 	require(joining.replaceSelection("e").has_value(), "insert before a combining mark");
 	require(
 		joining.selection().head.utf8Offset == joining.text().size(),
 		"insertion caret stays at a resulting grapheme boundary"
 	);
-	TextBuffer buffer{combining};
+	stana::text::TextBuffer buffer{combining};
 	const auto revision = buffer.revision();
 	require(
 		!buffer.select(
@@ -79,8 +87,8 @@ void unicodeBoundaries() {
 
 /// @brief Ensures equal external binding echoes do not cancel a native IME composition.
 void compositionAndUndo() {
-	using namespace stana;
-	TextBuffer buffer;
+
+	stana::text::TextBuffer buffer;
 	require(buffer.replaceSelection("a").has_value(), "initial insertion");
 	require(buffer.replaceSelection("b", true).has_value(), "grouped insertion");
 	require(buffer.undo() && buffer.text().empty(), "one undo per group");

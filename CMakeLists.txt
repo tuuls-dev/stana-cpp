@@ -13,14 +13,16 @@ include(cmake/ShaderCompiler.cmake)
 add_custom_target(stana-source-policy ALL
 	COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/policy.py"
 					"${CMAKE_CURRENT_SOURCE_DIR}"
-	COMMENT "Checking Stana source policy" VERBATIM)
+	COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/namespace_policy.py"
+				"${CMAKE_CURRENT_SOURCE_DIR}"
+	COMMENT "Checking Stana source and namespace policy" VERBATIM)
 
 add_library(stana STATIC)
 add_library(stana::stana ALIAS stana)
 target_sources(stana
 	PUBLIC FILE_SET modules TYPE CXX_MODULES BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/modules"
-		FILES modules/stana.cppm modules/primitives/primitives.cppm modules/reactive/reactive.cppm modules/tasks/tasks.cppm modules/graphics/graphics.cppm modules/graphics/presentation.cppm modules/graphics/program.cppm modules/graphics/gpu.cppm modules/core/core.cppm modules/ui/ui.cppm modules/testing/testing.cppm modules/application/application.cppm modules/text/text.cppm
-	PRIVATE src/testing/shaders.cpp src/graphics/shader_compiler.cpp src/graphics/drawing.cpp src/graphics/gpu.cpp src/graphics/gpu_program.cpp src/version.cpp src/core/document.cpp src/core/input.cpp src/layout/layout.cpp src/scene/scene.cpp src/scene/geometry.cpp src/platform/tiles.cpp src/platform/scheduler.cpp src/ui/mount.cpp src/application/application.cpp src/text/text.cpp src/reactive/executor.cpp)
+		FILES modules/stana.cppm modules/primitives/primitives.cppm modules/reactive/reactive.cppm modules/tasks/tasks.cppm modules/rendering/rendering.cppm modules/rendering/presentation.cppm modules/rendering/program.cppm modules/rendering/gpu.cppm modules/document/document.cppm modules/layout/layout.cppm modules/rendering/diagnostics.cppm modules/ui/ui.cppm modules/testing/testing.cppm modules/application/application.cppm modules/text/text.cppm
+	PRIVATE src/testing/shaders.cpp src/rendering/shader/compiler.cpp src/rendering/drawing.cpp src/rendering/gpu.cpp src/rendering/gpu_program.cpp src/version.cpp src/document/document.cpp src/document/input.cpp src/layout/layout.cpp src/rendering/scene/scene.cpp src/rendering/scene/geometry.cpp src/platform/tiles.cpp src/platform/scheduler.cpp src/ui/mount.cpp src/application/application.cpp src/text/text.cpp src/reactive/executor.cpp)
 target_compile_features(stana PUBLIC cxx_std_23)
 target_link_libraries(stana PUBLIC Threads::Threads PRIVATE ICU::uc ICU::i18n ICU::data stana::tint)
 if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
@@ -28,8 +30,8 @@ if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
 else()
     set(_stana_tint_include "-isystem${STANA_TINT_ROOT}/include")
 endif()
-set_property(SOURCE src/graphics/shader_compiler.cpp APPEND PROPERTY COMPILE_OPTIONS "${_stana_tint_include}")
-set_source_files_properties(src/graphics/shader_compiler.cpp PROPERTIES
+set_property(SOURCE src/rendering/shader/compiler.cpp APPEND PROPERTY COMPILE_OPTIONS "${_stana_tint_include}")
+set_source_files_properties(src/rendering/shader/compiler.cpp PROPERTIES
     COMPILE_DEFINITIONS "DAWN_HAVE_UTILS_BUILD_CONFIG;DAWN_ENABLE_ASSERTS")
 set_target_properties(stana PROPERTIES
 	CXX_STANDARD 23 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO

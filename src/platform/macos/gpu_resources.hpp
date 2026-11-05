@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-namespace stana::native::gpu {
+namespace stana::platform::detail::gpu {
 struct Failure {
 	Diagnostic::Category category = Diagnostic::Category::capability;
 	std::string message;
@@ -107,5 +107,5 @@ static_assert(
 	sizeof(Clip) == clipBytes && sizeof(Vertex) == vertexBytes &&
 	offsetof(Vertex, color) == vertexColorOffset
 );
-} // namespace stana::native::gpu
+} // namespace stana::platform::detail::gpu
 #endif

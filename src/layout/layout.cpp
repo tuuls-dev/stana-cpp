@@ -15,18 +15,19 @@ module;
 #include <utility>
 #include <vector>
 
-module stana.core;
-import stana.primitives;
-import stana.reactive;
-import stana.graphics;
+module stana;
+import :document;
+import :primitives;
+import :reactive;
+import :rendering;
 
-namespace stana {
+namespace stana::layout::detail {
 namespace {
 constexpr double defaultGlyphAdvance = 0.56;
 constexpr double lineHeightMultiplier = 1.4;
 
 [[nodiscard]] auto resolveLength(Length length, double intrinsic, double available) -> double {
-	detail::requireNonnegative(length.value);
+	stana::detail::requireNonnegative(length.value);
 	switch (length.kind) {
 	case Length::Kind::automatic:
 		return intrinsic;
@@ -44,18 +45,20 @@ constexpr double lineHeightMultiplier = 1.4;
 [[nodiscard]] auto
 constrain(double value, std::optional<double> minimum, std::optional<double> maximum) -> double {
 	if (minimum) {
-		detail::requireNonnegative(*minimum);
+		stana::detail::requireNonnegative(*minimum);
 		value = std::max(value, *minimum);
 	}
 	if (maximum) {
-		detail::requireNonnegative(*maximum);
+		stana::detail::requireNonnegative(*maximum);
 		value = std::min(value, *maximum);
 	}
 	return std::max(0.0, value);
 }
 } // namespace
 
-namespace detail {
+} // namespace stana::layout::detail
+
+namespace stana::document::detail {
 auto Document::measure(NodeId identity, Size available) -> Size {
 	auto *node = find(identity);
 	if (node == nullptr) {
@@ -63,7 +66,7 @@ auto Document::measure(NodeId identity, Size available) -> Size {
 	}
 	const bool text = node->kind == NodeKind::text || node->kind == NodeKind::button ||
 		node->kind == NodeKind::toggle;
-	const MeasureKey key{
+	const stana::layout::detail::MeasureKey key{
 		.available = available,
 		.localInputs = node->work.measureInputs,
 		.descendantInputs = node->work.descendantInputs,
@@ -83,7 +86,7 @@ auto Document::measure(NodeId identity, Size available) -> Size {
 		if (previous != node->measured) {
 			invalidate(identity, Dirty::arrange | Dirty::snapshot | Dirty::paint);
 			if (auto *parent = find(node->parent)) {
-				parent->work.childMeasurements = nextIdentity();
+				parent->work.childMeasurements = stana::detail::nextIdentity();
 				invalidate(parent->id, Dirty::arrange);
 			}
 		}
@@ -99,7 +102,7 @@ auto Document::measure(NodeId identity, Size available) -> Size {
 		node->kind == NodeKind::toggle) {
 		auto font = node->font;
 		font.size *= environment_.textScale;
-		requireNonnegative(font.size);
+		stana::detail::requireNonnegative(font.size);
 		if (measureText_) {
 			const auto inputText = node->text;
 			const auto provider = measureText_;
@@ -108,18 +111,19 @@ auto Document::measure(NodeId identity, Size available) -> Size {
 			intrinsic = provider(inputText, font, contentAvailable.width);
 			node = find(identity);
 			if (mutationStamp_ != stamp || node == nullptr ||
-				!ReactiveRuntime::current().pending.empty()) {
+				!stana::reactive::detail::ReactiveRuntime::current().pending.empty()) {
 				throw std::runtime_error("Retained inputs changed during text measurement");
 			}
-			requireNonnegative(intrinsic.width);
-			requireNonnegative(intrinsic.height);
+			stana::detail::requireNonnegative(intrinsic.width);
+			stana::detail::requireNonnegative(intrinsic.height);
 		} else {
 			intrinsic = {
 				.width = std::min(
 					contentAvailable.width,
-					static_cast<double>(node->text.size()) * font.size * defaultGlyphAdvance
+					static_cast<double>(node->text.size()) * font.size *
+						stana::layout::detail::defaultGlyphAdvance
 				),
-				.height = font.size * lineHeightMultiplier
+				.height = font.size * stana::layout::detail::lineHeightMultiplier
 			};
 		}
 	} else {
@@ -151,19 +155,27 @@ auto Document::measure(NodeId identity, Size available) -> Size {
 	intrinsic.width += padding.leading + padding.trailing;
 	intrinsic.height += padding.top + padding.bottom;
 	node->measured = {
-		.width = constrain(
-			resolveLength(node->frame.width, intrinsic.width, available.width),
+		.width = stana::layout::detail::constrain(
+			stana::layout::detail::resolveLength(
+				node->frame.width,
+				intrinsic.width,
+				available.width
+			),
 			node->frame.minWidth,
 			node->frame.maxWidth
 		),
-		.height = constrain(
-			resolveLength(node->frame.height, intrinsic.height, available.height),
+		.height = stana::layout::detail::constrain(
+			stana::layout::detail::resolveLength(
+				node->frame.height,
+				intrinsic.height,
+				available.height
+			),
 			node->frame.minHeight,
 			node->frame.maxHeight
 		)
 	};
-	requireNonnegative(node->measured.width);
-	requireNonnegative(node->measured.height);
+	stana::detail::requireNonnegative(node->measured.width);
+	stana::detail::requireNonnegative(node->measured.height);
 	node->work.measuredAt = key;
 	node->work.measureChildren.clear();
 	node->work.local = without(node->work.local, Dirty::measure);
@@ -171,7 +183,7 @@ auto Document::measure(NodeId identity, Size available) -> Size {
 		// A fixed aggregate can stop size propagation while its internal placement stays dirty.
 		invalidate(identity, Dirty::arrange | Dirty::snapshot | Dirty::paint);
 		if (auto *parent = find(node->parent)) {
-			parent->work.childMeasurements = nextIdentity();
+			parent->work.childMeasurements = stana::detail::nextIdentity();
 			invalidate(parent->id, Dirty::arrange);
 		}
 	}
@@ -179,15 +191,15 @@ auto Document::measure(NodeId identity, Size available) -> Size {
 }
 
 void Document::arrange(NodeId identity, Rect bounds) {
-	requireFinite(bounds.origin.x);
-	requireFinite(bounds.origin.y);
-	requireNonnegative(bounds.size.width);
-	requireNonnegative(bounds.size.height);
+	stana::detail::requireFinite(bounds.origin.x);
+	stana::detail::requireFinite(bounds.origin.y);
+	stana::detail::requireNonnegative(bounds.size.width);
+	stana::detail::requireNonnegative(bounds.size.height);
 	auto *node = find(identity);
 	if (node == nullptr) {
 		return;
 	}
-	const ArrangeKey key{
+	const stana::layout::detail::ArrangeKey key{
 		.assigned = bounds,
 		.placementInputs = node->work.placementInputs,
 		.childMeasurements = node->work.childMeasurements,
@@ -287,5 +299,4 @@ void Document::arrange(NodeId identity, Rect bounds) {
 	node->work.arrangeChildren.clear();
 	node->work.local = without(node->work.local, Dirty::arrange);
 }
-} // namespace detail
-} // namespace stana
+} // namespace stana::document::detail

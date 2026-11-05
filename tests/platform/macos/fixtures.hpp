@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace stana::native::fixtures {
+namespace stana::testing::fixtures::platform::macos {
 inline void require(bool condition, const std::string &message) {
 	if (!condition) {
 		throw std::runtime_error(message);
@@ -23,34 +23,34 @@ inline constexpr double longLineHeight = 700.25;
 inline constexpr double fixtureWidth = 1025;
 inline constexpr double fixtureHeight = 769;
 
-[[nodiscard]] inline auto scene() -> std::shared_ptr<const Scene> {
-	auto source = std::make_shared<Scene>();
+[[nodiscard]] inline auto scene() -> std::shared_ptr<const stana::platform::detail::Scene> {
+	auto source = std::make_shared<stana::platform::detail::Scene>();
 	source->revision = 1;
 	source->size = {.width = fixtureWidth, .height = fixtureHeight};
 	source->background = {.red = 1, .green = 1, .blue = 1};
-	auto paint = std::make_shared<PaintSegments>();
+	auto paint = std::make_shared<stana::platform::detail::PaintSegments>();
 	paint->identity = 1;
 	paint->prefix = {
-		{.operation = PaintOperation::fill,
+		{.operation = stana::platform::detail::PaintOperation::fill,
 			.x = 0,
 			.y = 0,
 			.width = markerSize,
 			.height = markerSize,
 			.red = 1},
-		{.operation = PaintOperation::fill,
+		{.operation = stana::platform::detail::PaintOperation::fill,
 			.x = fixtureWidth - markerSize,
 			.y = fixtureHeight - markerSize,
 			.width = markerSize,
 			.height = markerSize,
 			.blue = 1},
-		{.operation = PaintOperation::fill,
+		{.operation = stana::platform::detail::PaintOperation::fill,
 			.x = edge,
 			.y = edge,
 			.width = markerSize,
 			.height = markerSize,
 			.green = 1,
 			.alpha = translucent},
-		{.operation = PaintOperation::stroke,
+		{.operation = stana::platform::detail::PaintOperation::stroke,
 			.x = edge,
 			.y = 0,
 			.width = markerSize,
@@ -58,33 +58,33 @@ inline constexpr double fixtureHeight = 769;
 			.red = 1,
 			.radius = radius,
 			.lineWidth = 0},
-		{.operation = PaintOperation::line,
+		{.operation = stana::platform::detail::PaintOperation::line,
 			.x = edge + markerSize,
 			.y = edge,
 			.width = -markerSize,
 			.height = markerSize,
 			.blue = 1,
 			.lineWidth = 2},
-		{.operation = PaintOperation::text,
+		{.operation = stana::platform::detail::PaintOperation::text,
 			.x = edge,
 			.y = edge,
 			.text = "Italic phase ffi",
 			.fontSize = markerSize},
-		{.operation = PaintOperation::pushClip,
+		{.operation = stana::platform::detail::PaintOperation::pushClip,
 			.x = edge,
 			.y = markerSize,
 			.width = markerSize,
 			.height = markerSize,
 			.radius = radius},
-		{.operation = PaintOperation::fill,
+		{.operation = stana::platform::detail::PaintOperation::fill,
 			.x = edge - markerSize,
 			.y = markerSize,
 			.width = markerSize * 3,
 			.height = markerSize * 2,
 			.blue = 1,
 			.alpha = translucent},
-		{.operation = PaintOperation::popClip},
-		{.operation = PaintOperation::line,
+		{.operation = stana::platform::detail::PaintOperation::popClip},
+		{.operation = stana::platform::detail::PaintOperation::line,
 			.x = longLineX,
 			.y = longLineY,
 			.width = longLineWidth,
@@ -92,7 +92,7 @@ inline constexpr double fixtureHeight = 769;
 			.red = 1,
 			.alpha = translucent}
 	};
-	auto root = std::make_shared<SceneBranch>();
+	auto root = std::make_shared<stana::platform::detail::SceneBranch>();
 	root->id = {.document = 1, .serial = 1};
 	root->generation = 1;
 	root->paint = paint;
@@ -102,20 +102,23 @@ inline constexpr double fixtureHeight = 769;
 
 /// @brief Ordinary bitmap only for explicit CPU reference fixtures, never a host fallback.
 struct Bitmap {
-	PixelRect pixels;
+	stana::platform::detail::PixelRect pixels;
 	std::size_t bytesPerRow;
 	std::vector<std::byte> bytes;
-	CoreOwner<CGContextRef> context;
+	stana::platform::detail::CoreOwner<CGContextRef> context;
 
-	explicit Bitmap(PixelRect rect)
+	explicit Bitmap(stana::platform::detail::PixelRect rect)
 		: pixels(rect),
-		  bytesPerRow(alignedRasterRow(rect.width)),
+		  bytesPerRow(stana::platform::detail::alignedRasterRow(rect.width)),
 		  bytes(bytesPerRow * rect.height),
 		  context(makeContext(bytes.data(), rect, bytesPerRow)) {}
 
-	[[nodiscard]] static auto makeContext(void *storage, PixelRect rect, std::size_t row)
+	[[nodiscard]] static auto
+	makeContext(void *storage, stana::platform::detail::PixelRect rect, std::size_t row)
 		-> CGContextRef {
-		const CoreOwner color{CGColorSpaceCreateWithName(kCGColorSpaceSRGB)};
+		const stana::platform::detail::CoreOwner color{
+			CGColorSpaceCreateWithName(kCGColorSpaceSRGB)
+		};
 		constexpr std::size_t componentBits = 8;
 		const auto info = static_cast<CGBitmapInfo>(
 			static_cast<std::uint32_t>(kCGImageAlphaPremultipliedFirst) |
@@ -136,5 +139,5 @@ struct Bitmap {
 		return result;
 	}
 };
-} // namespace stana::native::fixtures
+} // namespace stana::testing::fixtures::platform::macos
 #endif

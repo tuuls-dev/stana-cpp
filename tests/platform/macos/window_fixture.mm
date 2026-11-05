@@ -2,7 +2,7 @@
 #import <AppKit/AppKit.h>
 #include <stdexcept>
 
-namespace stana::fixtures {
+namespace stana::testing::fixtures::platform::macos {
 namespace {
 [[nodiscard]] auto findWindow(const std::string &title) -> NSWindow * {
 	for (NSUInteger index = 0; index < NSApp.windows.count; ++index) {
@@ -57,4 +57,4 @@ auto resultPath() -> std::string {
 auto processIdentity() -> std::int32_t {
 	return NSProcessInfo.processInfo.processIdentifier;
 }
-} // namespace stana::fixtures
+} // namespace stana::testing::fixtures::platform::macos

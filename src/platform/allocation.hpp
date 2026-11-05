@@ -9,7 +9,7 @@
 #include <string>
 #include <utility>
 
-namespace stana::native {
+namespace stana::platform::detail {
 inline constexpr std::size_t windowAllocationLimit = 256ULL * 1024 * 1024;
 inline constexpr std::size_t deviceAllocationLimit = 512ULL * 1024 * 1024;
 
@@ -82,5 +82,5 @@ class AllocationLease {
 	std::shared_ptr<AllocationLedger> window_;
 	std::size_t bytes_;
 };
-} // namespace stana::native
+} // namespace stana::platform::detail
 #endif

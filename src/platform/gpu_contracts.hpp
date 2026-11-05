@@ -1,6 +1,6 @@
 #ifndef STANA_GPU_CONTRACTS_HPP
 #define STANA_GPU_CONTRACTS_HPP
-#include "../graphics/shader_compiler.hpp"
+#include "../rendering/shader/compiler.hpp"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -11,12 +11,12 @@
 #include <variant>
 #include <vector>
 
-namespace stana::native::gpu {
+namespace stana::platform::detail::gpu {
 inline constexpr double defaultSourcePeak = 16;
 using Bytes = std::vector<std::byte>;
 using ByteOwner = std::shared_ptr<const Bytes>;
-using Format = shader_detail::Format;
-using Stage = shader_detail::Stage;
+using Format = stana::rendering::detail::shader::Format;
+using Stage = stana::rendering::detail::shader::Stage;
 enum class Encoding : std::uint8_t { encoded, linear };
 enum class ColorMode : std::uint8_t { automatic, sdr, extendedLinear };
 
@@ -116,7 +116,7 @@ struct Program {
 	std::string output;
 	Encoding outputColor = Encoding::linear;
 	double sourcePeak = defaultSourcePeak;
-	std::map<std::string, shader_detail::Constant, std::less<>> constants;
+	std::map<std::string, stana::rendering::detail::shader::Constant, std::less<>> constants;
 };
 
 struct Shape {
@@ -163,5 +163,5 @@ struct Diagnostic {
 	std::uint64_t programVersion;
 	std::uint64_t epoch;
 };
-} // namespace stana::native::gpu
+} // namespace stana::platform::detail::gpu
 #endif

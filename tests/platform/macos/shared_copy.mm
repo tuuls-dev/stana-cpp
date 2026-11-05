@@ -10,25 +10,31 @@
 namespace {
 /// @brief Actual shared CGContext -> Metal transfer, warm reuse and independent in-flight
 /// ownership.
-void transfer(id<MTLDevice> device, stana::native::LogicalSize size, double scale) {
-	using namespace stana::native;
-	using namespace stana::native::fixtures;
+void transfer(id<MTLDevice> device, stana::platform::detail::LogicalSize size, double scale) {
+
 	id<MTLCommandQueue> const queue = [device newCommandQueue];
-	require(queue != nil, "command queue");
-	auto source = std::make_shared<Scene>(*scene());
+	stana::testing::fixtures::platform::macos::require(queue != nil, "command queue");
+	auto source = std::make_shared<stana::platform::detail::Scene>(
+		*stana::testing::fixtures::platform::macos::scene()
+	);
 	source->size = size;
-	const auto prepared = prepareScene(source, scale);
-	const auto grid = makeTileGrid(size, scale, {.maximumBufferLength = device.maxBufferLength});
-	const auto accounting = std::make_shared<RasterAccounting>();
-	std::vector<std::shared_ptr<RasterTile>> tiles;
+	const auto prepared = stana::platform::detail::prepareScene(source, scale);
+	const auto grid = stana::platform::detail::makeTileGrid(
+		size,
+		scale,
+		{.maximumBufferLength = device.maxBufferLength}
+	);
+	const auto accounting = std::make_shared<stana::platform::detail::RasterAccounting>();
+	std::vector<std::shared_ptr<stana::platform::detail::RasterTile>> tiles;
 	tiles.reserve(grid.tiles.size());
 	std::vector<id<MTLTexture>> textures;
 	textures.reserve(grid.tiles.size());
 	id<MTLCommandBuffer> const buffer = [queue commandBuffer];
 	id<MTLBlitCommandEncoder> const encoder = [buffer blitCommandEncoder];
 	for (const auto &layout : grid.tiles) {
-		auto tile = std::make_shared<RasterTile>(layout, device, accounting);
-		rasterScene(tile->bitmapContext, *prepared, layout.pixels);
+		auto tile =
+			std::make_shared<stana::platform::detail::RasterTile>(layout, device, accounting);
+		stana::platform::detail::rasterScene(tile->bitmapContext, *prepared, layout.pixels);
 		MTLTextureDescriptor *const descriptor =
 			[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
 															   width:layout.pixels.width
@@ -36,15 +42,15 @@ void transfer(id<MTLDevice> device, stana::native::LogicalSize size, double scal
 														   mipmapped:NO];
 		descriptor.storageMode = MTLStorageModeShared;
 		id<MTLTexture> const texture = [device newTextureWithDescriptor:descriptor];
-		require(texture != nil, "readback texture");
-		encodeTile(encoder, *tile, texture);
+		stana::testing::fixtures::platform::macos::require(texture != nil, "readback texture");
+		stana::platform::detail::encodeTile(encoder, *tile, texture);
 		textures.push_back(texture);
 		tiles.push_back(std::move(tile));
 	}
 	[encoder endEncoding];
 	[buffer commit];
 	[buffer waitUntilCompleted];
-	require(
+	stana::testing::fixtures::platform::macos::require(
 		buffer.status == MTLCommandBufferStatusCompleted &&
 			accounting->bytes.load() == grid.rasterBytes,
 		"actual full-grid GPU success and allocation accounting"
@@ -56,11 +62,16 @@ void transfer(id<MTLDevice> device, stana::native::LogicalSize size, double scal
 			bytesPerRow:layout.bytesPerRow
 			 fromRegion:MTLRegionMake2D(0, 0, layout.pixels.width, layout.pixels.height)
 			mipmapLevel:0];
-		Bitmap reference{layout.pixels};
-		rasterScene(reference.context.get(), *prepared, layout.pixels, false);
+		stana::testing::fixtures::platform::macos::Bitmap reference{layout.pixels};
+		stana::platform::detail::rasterScene(
+			reference.context.get(),
+			*prepared,
+			layout.pixels,
+			false
+		);
 		for (std::size_t row = 0; row < layout.pixels.height; ++row) {
-			const auto count = layout.pixels.width * bytesPerPixel;
-			require(
+			const auto count = layout.pixels.width * stana::platform::detail::bytesPerPixel;
+			stana::testing::fixtures::platform::macos::require(
 				std::ranges::equal(
 					std::span{readback}.subspan(row * layout.bytesPerRow, count),
 					std::span{reference.bytes}.subspan(row * reference.bytesPerRow, count)
@@ -75,14 +86,14 @@ void transfer(id<MTLDevice> device, stana::native::LogicalSize size, double scal
 	double gpuSeconds = 0;
 	for (unsigned iteration = 0; iteration < warmIterations; ++iteration) {
 		const auto &tile = *tiles.front();
-		rasterScene(tile.bitmapContext, *prepared, tile.layout.pixels);
+		stana::platform::detail::rasterScene(tile.bitmapContext, *prepared, tile.layout.pixels);
 		id<MTLCommandBuffer> const repeated = [queue commandBuffer];
 		id<MTLBlitCommandEncoder> const repeatedEncoder = [repeated blitCommandEncoder];
-		encodeTile(repeatedEncoder, tile, textures.front());
+		stana::platform::detail::encodeTile(repeatedEncoder, tile, textures.front());
 		[repeatedEncoder endEncoding];
 		[repeated commit];
 		[repeated waitUntilCompleted];
-		require(
+		stana::testing::fixtures::platform::macos::require(
 			repeated.status == MTLCommandBufferStatusCompleted &&
 				accounting->allocations.load() == allocations,
 			"warm raster/blit allocates no shared storage"
@@ -99,13 +110,13 @@ void transfer(id<MTLDevice> device, stana::native::LogicalSize size, double scal
 	// Hold a real GPU read behind an event, then drop the host's source owners.
 	// Only production BatchResources retained by completion may keep pixels alive.
 	id<MTLSharedEvent> const event = [device newSharedEvent];
-	require(event != nil, "shared GPU event");
+	stana::testing::fixtures::platform::macos::require(event != nil, "shared GPU event");
 	id<MTLCommandBuffer> const pending = [queue commandBuffer];
 	[pending encodeWaitForEvent:event value:1];
 	id<MTLBlitCommandEncoder> const pendingEncoder = [pending blitCommandEncoder];
-	encodeTile(pendingEncoder, *tiles.front(), textures.front());
+	stana::platform::detail::encodeTile(pendingEncoder, *tiles.front(), textures.front());
 	[pendingEncoder endEncoding];
-	auto resources = std::make_shared<BatchResources>();
+	auto resources = std::make_shared<stana::platform::detail::BatchResources>();
 	resources->sources = tiles;
 	resources->target = prepared;
 	const auto finished = std::make_shared<std::atomic_bool>(false);
@@ -118,13 +129,13 @@ void transfer(id<MTLDevice> device, stana::native::LogicalSize size, double scal
 	[pending commit];
 	tiles.clear();
 	resources.reset();
-	require(
+	stana::testing::fixtures::platform::macos::require(
 		accounting->bytes.load() == grid.rasterBytes,
 		"closed host cannot free in-flight GPU sources"
 	);
 	event.signaledValue = 1;
 	[pending waitUntilCompleted];
-	require(
+	stana::testing::fixtures::platform::macos::require(
 		pending.status == MTLCommandBufferStatusCompleted && finished->load() &&
 			accounting->bytes.load() == 0,
 		"independent owner releases safely after GPU read ends"
@@ -136,22 +147,37 @@ void transfer(id<MTLDevice> device, stana::native::LogicalSize size, double scal
 auto main() -> int {
 	@autoreleasepool {
 		try {
-			using namespace stana::native;
-			using namespace stana::native::fixtures;
-			require(NSApp == nil, "offscreen GPU fixture must not create an application");
+
+			stana::testing::fixtures::platform::macos::require(
+				NSApp == nil,
+				"offscreen GPU fixture must not create an application"
+			);
 			id<MTLDevice> const device = MTLCreateSystemDefaultDevice();
-			require(
+			stana::testing::fixtures::platform::macos::require(
 				device != nil && device.hasUnifiedMemory &&
 					[device supportsFamily:MTLGPUFamilyApple1],
 				"Apple Silicon Metal required"
 			);
-			transfer(device, {.width = fixtureWidth, .height = fixtureHeight}, 1);
-			transfer(device, {.width = fixtureWidth / 2, .height = fixtureHeight / 2}, 2);
-			constexpr LogicalSize fourK{.width = 3840, .height = 2160};
-			constexpr LogicalSize eightK{.width = 7680, .height = 4320};
+			transfer(
+				device,
+				{.width = stana::testing::fixtures::platform::macos::fixtureWidth,
+					.height = stana::testing::fixtures::platform::macos::fixtureHeight},
+				1
+			);
+			transfer(
+				device,
+				{.width = stana::testing::fixtures::platform::macos::fixtureWidth / 2,
+					.height = stana::testing::fixtures::platform::macos::fixtureHeight / 2},
+				2
+			);
+			constexpr stana::platform::detail::LogicalSize fourK{.width = 3840, .height = 2160};
+			constexpr stana::platform::detail::LogicalSize eightK{.width = 7680, .height = 4320};
 			transfer(device, fourK, 1);
 			transfer(device, eightK, 1);
-			require(NSApp == nil, "offscreen GPU fixture created an application");
+			stana::testing::fixtures::platform::macos::require(
+				NSApp == nil,
+				"offscreen GPU fixture created an application"
+			);
 			return 0;
 		} catch (const std::exception &error) {
 			std::cerr << error.what() << '\n';

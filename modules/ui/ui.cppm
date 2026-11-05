@@ -14,32 +14,15 @@ module;
 #include <utility>
 #include <vector>
 
-export module stana.ui;
-export import stana.primitives;
-export import stana.reactive;
-export import stana.tasks;
-export import stana.graphics;
-import stana.core;
+export module stana:ui;
+export import :primitives;
+export import :reactive;
+export import :tasks;
+export import :rendering;
+import :document;
+export import :layout;
 
-export namespace stana {
-using stana::Metrics;
-using stana::NodeHandle;
-using stana::NodeSnapshot;
-using stana::PointerEvent;
-
-/// @brief Shared box-model overrides accepted by visual components.
-///
-/// Pass this aggregate as .layout = {.padding = ..., .frame = ...}. Values may be
-/// constant, Signal or Computed inputs. Omitted fields preserve component defaults;
-/// Insets{} explicitly requests zero padding. Mounting subscribes in the node's
-/// scope, so later updates remeasure/reposition retained nodes without remounting.
-struct LayoutProperties {
-	/// @brief Optional reactive content inset. Omission keeps control defaults; Insets{} clears
-	/// them.
-	std::optional<Property<Insets>> padding{};
-	/// @brief Optional reactive axis sizes and constraints consumed by the layout projection.
-	std::optional<Property<Frame>> frame{};
-};
+export namespace stana::ui {
 
 /// @brief Shared typography and foreground overrides for text-bearing controls.
 ///
@@ -48,9 +31,9 @@ struct LayoutProperties {
 /// receiving control's default, rather than resetting it to a universal style.
 struct TextProperties {
 	/// @brief Optional reactive system font; changes invalidate intrinsic text measurement.
-	std::optional<Property<Font>> font{};
+	std::optional<::stana::reactive::Property<Font>> font{};
 	/// @brief Optional reactive text color; omission keeps the receiving control default.
-	std::optional<Property<Color>> foreground{};
+	std::optional<::stana::reactive::Property<Color>> foreground{};
 };
 
 /// @brief Shared retained paint and visibility configuration for visual components.
@@ -61,17 +44,17 @@ struct TextProperties {
 /// its mounted scope. Use If when the branch and its resources should be removed.
 struct AppearanceProperties {
 	/// @brief Optional reactive fill behind this node and its children.
-	std::optional<Property<Color>> background{};
+	std::optional<::stana::reactive::Property<Color>> background{};
 	/// @brief Optional reactive subtree opacity in [0, 1]; zero opacity does not dispose state.
-	std::optional<Property<double>> opacity{};
+	std::optional<::stana::reactive::Property<double>> opacity{};
 	/// @brief Optional reactive outline color used when borderWidth is positive.
-	std::optional<Property<Color>> borderColor{};
+	std::optional<::stana::reactive::Property<Color>> borderColor{};
 	/// @brief Optional reactive outline thickness in finite, nonnegative logical points.
-	std::optional<Property<double>> borderWidth{};
+	std::optional<::stana::reactive::Property<double>> borderWidth{};
 	/// @brief Optional reactive rounding radius used by background and clip geometry.
-	std::optional<Property<double>> cornerRadius{};
+	std::optional<::stana::reactive::Property<double>> cornerRadius{};
 	/// @brief Optional reactive layout/paint participation; does not remove mounted resources.
-	std::optional<Property<Visibility>> visibility{};
+	std::optional<::stana::reactive::Property<Visibility>> visibility{};
 	/// @brief Whether this node clips descendant paint to its rounded outer bounds.
 	std::optional<bool> clip{};
 };
@@ -84,13 +67,13 @@ struct AppearanceProperties {
 /// prevent default press/focus behavior. These callbacks run on the UI executor.
 struct InteractionProperties {
 	/// @brief Reactive local enabled policy; disabled ancestors still block interaction.
-	Property<bool> isEnabled = true;
+	::stana::reactive::Property<bool> isEnabled = true;
 	/// @brief Blocks this subtree from input and focus without changing its appearance or lifetime.
 	bool inert = false;
 	/// @brief Bubble-phase handler, invoked after targetward capture handlers on the UI executor.
-	std::function<void(PointerEvent &)> onPointerDown{};
+	std::function<void(::stana::document::PointerEvent &)> onPointerDown{};
 	/// @brief Capture-phase handler, invoked root-to-target before pointer-down bubbling.
-	std::function<void(PointerEvent &)> onPointerDownCapture{};
+	std::function<void(::stana::document::PointerEvent &)> onPointerDownCapture{};
 };
 
 /// @brief Application-authored semantic naming for a visual occurrence.
@@ -113,7 +96,7 @@ struct LifecycleProperties {
 	/// @brief Application-authored debug name for this occurrence; not an accessibility label.
 	std::string diagnosticName{};
 	/// @brief Post-publication callback with a non-owning handle; skipped if mounting was disposed.
-	std::function<void(NodeHandle)> onMount{};
+	std::function<void(::stana::document::NodeHandle)> onMount{};
 	/// @brief Cleanup invoked when the mounted scope is removed or its document closes.
 	std::function<void()> onDispose{};
 };
@@ -121,7 +104,7 @@ struct LifecycleProperties {
 /// @brief Narrow mounting capability. Native objects and mutable retained records are not
 /// part of the application-facing custom-component contract.
 struct MountContext {
-	std::shared_ptr<detail::Document> document;
+	std::shared_ptr<::stana::document::detail::Document> document;
 	NodeId parent;
 };
 
@@ -129,15 +112,16 @@ struct MountContext {
 /// as long as its temporary component description.
 class ComponentContext {
   public:
-	ComponentContext(Scope scope, Environment environment)
+	ComponentContext(::stana::reactive::Scope scope, Environment environment)
 		: scope_(std::move(scope)),
 		  environment_(environment) {}
 
-	template <typename T> [[nodiscard]] auto state(T initial) const -> Signal<T> {
-		return Signal<T>{std::move(initial)};
+	template <typename T>
+	[[nodiscard]] auto state(T initial) const -> ::stana::reactive::Signal<T> {
+		return ::stana::reactive::Signal<T>{std::move(initial)};
 	}
 
-	void own(Subscription subscription) const {
+	void own(::stana::reactive::Subscription subscription) const {
 		static_cast<void>(scope_.own(std::move(subscription)));
 	}
 
@@ -147,20 +131,23 @@ class ComponentContext {
 
 	/// @brief Starts a scope-owned coroutine after publication, with explicit error handling.
 	/// Pass a named Task-producing function and capture state in its value parameters.
-	void task(Task operation, std::function<void(std::exception_ptr)> onError) const {
+	void
+	task(::stana::tasks::Task operation, std::function<void(std::exception_ptr)> onError) const {
 		std::move(operation).start(scope_, std::move(onError));
 	}
 
-	[[nodiscard]] auto beginRequest() const -> Scope::RequestToken { return scope_.beginRequest(); }
+	[[nodiscard]] auto beginRequest() const -> ::stana::reactive::Scope::RequestToken {
+		return scope_.beginRequest();
+	}
 
-	[[nodiscard]] auto isCurrent(Scope::RequestToken token) const -> bool {
+	[[nodiscard]] auto isCurrent(::stana::reactive::Scope::RequestToken token) const -> bool {
 		return scope_.isCurrent(token);
 	}
 
 	[[nodiscard]] auto environment() const noexcept -> Environment { return environment_; }
 
   private:
-	Scope scope_;
+	::stana::reactive::Scope scope_;
 	Environment environment_;
 };
 
@@ -176,10 +163,10 @@ struct Empty {};
 /// Text is not an editor and does not expose selection or native text-input state.
 struct Text {
 	/// @brief Display label supplied as a constant, Signal<string> or Computed<string>.
-	Property<std::string> text{};
+	::stana::reactive::Property<std::string> text{};
 	/// @brief Shared box-model overrides applied to this component at mount and on reactive
 	/// updates.
-	LayoutProperties layout{};
+	::stana::layout::LayoutProperties layout{};
 	/// @brief Shared typography/color overrides for this control; not inherited by arbitrary
 	/// descendants.
 	TextProperties textStyle{};
@@ -201,12 +188,12 @@ struct Text {
 /// Shared groups customize layout, typography, appearance, semantics and lifetime.
 struct Button {
 	/// @brief Display label supplied as a constant, Signal<string> or Computed<string>.
-	Property<std::string> text{};
+	::stana::reactive::Property<std::string> text{};
 	/// @brief Activation action shared by pointer, keyboard and programmatic activation paths.
 	std::function<void()> onClick{};
 	/// @brief Shared box-model overrides applied to this component at mount and on reactive
 	/// updates.
-	LayoutProperties layout{};
+	::stana::layout::LayoutProperties layout{};
 	/// @brief Shared typography/color overrides for this control; not inherited by arbitrary
 	/// descendants.
 	TextProperties textStyle{};
@@ -227,13 +214,13 @@ struct Button {
 /// keep the mounted occurrence and focus identity intact; .text supplies its label.
 struct Toggle {
 	/// @brief Display label supplied as a constant, Signal<string> or Computed<string>.
-	Property<std::string> text{};
+	::stana::reactive::Property<std::string> text{};
 	/// @brief Writable model binding. Construct with Signal<bool>::binding(); read-only inputs are
 	/// rejected.
-	Binding<bool> value;
+	::stana::reactive::Binding<bool> value;
 	/// @brief Shared box-model overrides applied to this component at mount and on reactive
 	/// updates.
-	LayoutProperties layout{};
+	::stana::layout::LayoutProperties layout{};
 	/// @brief Shared typography/color overrides for this control; not inherited by arbitrary
 	/// descendants.
 	TextProperties textStyle{};
@@ -254,7 +241,7 @@ struct Toggle {
 struct Spacer {
 	/// @brief Shared box-model overrides applied to this component at mount and on reactive
 	/// updates.
-	LayoutProperties layout{};
+	::stana::layout::LayoutProperties layout{};
 };
 
 /// @brief Decorative drawing recorded as portable commands in local logical points.
@@ -265,10 +252,10 @@ struct Spacer {
 /// Provide an accessible equivalent when the drawing conveys meaningful content.
 struct CPUCanvas {
 	/// @brief Portable local-coordinate paint commands copied into the retained CPUCanvas at mount.
-	Property<Drawing> drawing{};
+	::stana::reactive::Property<::stana::rendering::Drawing> drawing{};
 	/// @brief Shared box-model overrides applied to this component at mount and on reactive
 	/// updates.
-	LayoutProperties layout{};
+	::stana::layout::LayoutProperties layout{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
 	/// @brief Explicit semantic naming for this occurrence, independent of diagnostic metadata.
@@ -281,13 +268,13 @@ struct CPUCanvas {
 /// @brief Reactive ordered GPU drawing, cropped to its padded content output.
 /// Default outer clipping is rounded; errors are delivered to this mounted occurrence.
 struct GPUCanvas {
-	Property<GPUDrawing> drawing{};
-	LayoutProperties layout{};
+	::stana::reactive::Property<::stana::rendering::GPUDrawing> drawing{};
+	::stana::layout::LayoutProperties layout{};
 	AppearanceProperties appearance{};
 	InteractionProperties interaction{};
 	AccessibilityProperties accessibility{};
 	LifecycleProperties lifecycle{};
-	std::function<void(const GPUDiagnostic &)> onError{};
+	std::function<void(const ::stana::rendering::GPUDiagnostic &)> onError{};
 };
 
 /// @brief A statically composed column arranged in child order.
@@ -297,12 +284,12 @@ struct GPUCanvas {
 /// property changes do not reconstruct this tuple or remount its descendants.
 template <typename Children> struct VStack {
 	/// @brief Reactive finite, nonnegative gap between participating children in logical points.
-	Property<double> spacing = 0;
+	::stana::reactive::Property<double> spacing = 0;
 	/// @brief Logical horizontal alignment resolved against document direction during placement.
 	Alignment alignment = Alignment::leading;
 	/// @brief Shared box-model overrides applied to this component at mount and on reactive
 	/// updates.
-	LayoutProperties layout{};
+	::stana::layout::LayoutProperties layout{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
 	/// @brief Shared enabled/inert policy and pointer handlers for this subtree.
@@ -322,12 +309,12 @@ template <typename Children> struct VStack {
 /// frames and shared layout properties determine the measured row dimensions.
 template <typename Children> struct HStack {
 	/// @brief Reactive finite, nonnegative gap between participating children in logical points.
-	Property<double> spacing = 0;
+	::stana::reactive::Property<double> spacing = 0;
 	/// @brief Logical horizontal alignment resolved against document direction during placement.
 	Alignment alignment = Alignment::leading;
 	/// @brief Shared box-model overrides applied to this component at mount and on reactive
 	/// updates.
-	LayoutProperties layout{};
+	::stana::layout::LayoutProperties layout{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
 	/// @brief Shared enabled/inert policy and pointer handlers for this subtree.
@@ -350,7 +337,7 @@ template <typename Children> struct ZStack {
 	Alignment alignment = Alignment::center;
 	/// @brief Shared box-model overrides applied to this component at mount and on reactive
 	/// updates.
-	LayoutProperties layout{};
+	::stana::layout::LayoutProperties layout{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
 	/// @brief Shared enabled/inert policy and pointer handlers for this subtree.
@@ -371,7 +358,7 @@ template <typename Children> struct ZStack {
 template <typename Children> struct Box {
 	/// @brief Shared box-model overrides applied to this component at mount and on reactive
 	/// updates.
-	LayoutProperties layout{};
+	::stana::layout::LayoutProperties layout{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
 	/// @brief Shared enabled/inert policy and pointer handlers for this subtree.
@@ -392,7 +379,7 @@ template <typename Children> struct Box {
 template <typename Content> struct ScrollView {
 	/// @brief Shared box-model overrides applied to this component at mount and on reactive
 	/// updates.
-	LayoutProperties layout{};
+	::stana::layout::LayoutProperties layout{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
 	/// @brief Shared enabled/inert policy and pointer handlers for this subtree.
@@ -413,7 +400,7 @@ template <typename Content> struct ScrollView {
 /// survive removal. Omitting elseContent uses Empty.
 template <typename Then, typename Else = Empty> struct If {
 	/// @brief Reactive branch selector; changing it disposes the previous branch scope.
-	Property<bool> condition = false;
+	::stana::reactive::Property<bool> condition = false;
 	/// @brief Description mounted when condition is true; its local state ends on branch removal.
 	Then thenContent;
 	/// @brief Description mounted when condition is false; defaults to an empty branch.
@@ -439,15 +426,21 @@ template <typename Items, typename Key, typename Content> struct ForEach {
 namespace detail {
 /// @brief Resolved-value no-op suppression, including ordered floating comparisons.
 template <typename T>
-[[nodiscard]] auto assignRetained(T &target, const T &value, Dirty domains) -> Dirty {
+[[nodiscard]] auto
+assignRetained(T &target, const T &value, ::stana::document::detail::Dirty domains)
+	-> ::stana::document::detail::Dirty {
 	if (std::is_eq(target <=> value)) {
-		return Dirty::none;
+		return ::stana::document::detail::Dirty::none;
 	}
 	target = value;
 	return domains;
 }
 
-void applyLayout(const LayoutProperties &properties, NodeId identity, MountContext &context);
+void applyLayout(
+	const ::stana::layout::LayoutProperties &properties,
+	NodeId identity,
+	MountContext &context
+);
 void applyTextStyle(const TextProperties &properties, NodeId identity, MountContext &context);
 void applyAppearance(
 	const AppearanceProperties &properties,
@@ -489,28 +482,39 @@ void configure(const Description &description, NodeId identity, MountContext &co
 }
 
 template <typename Description>
-[[nodiscard]] auto
-createConfigured(const Description &description, NodeKind kind, MountContext &context) -> NodeId {
+[[nodiscard]] auto createConfigured(
+	const Description &description,
+	::stana::document::detail::NodeKind kind,
+	MountContext &context
+) -> NodeId {
 	const auto identity = context.document->createNode(kind, context.parent);
 	configure(description, identity, context);
 	return identity;
 }
 } // namespace detail
 
-[[nodiscard]] auto mount(const Empty &, MountContext &context) -> NodeHandle;
-[[nodiscard]] auto mount(const Text &description, MountContext &context) -> NodeHandle;
-[[nodiscard]] auto mount(const Button &description, MountContext &context) -> NodeHandle;
-[[nodiscard]] auto mount(const Toggle &description, MountContext &context) -> NodeHandle;
-[[nodiscard]] auto mount(const Spacer &description, MountContext &context) -> NodeHandle;
-[[nodiscard]] auto mount(const CPUCanvas &description, MountContext &context) -> NodeHandle;
-[[nodiscard]] auto mount(const GPUCanvas &description, MountContext &context) -> NodeHandle;
+[[nodiscard]] auto mount(const Empty &, MountContext &context) -> ::stana::document::NodeHandle;
+[[nodiscard]] auto mount(const Text &description, MountContext &context)
+	-> ::stana::document::NodeHandle;
+[[nodiscard]] auto mount(const Button &description, MountContext &context)
+	-> ::stana::document::NodeHandle;
+[[nodiscard]] auto mount(const Toggle &description, MountContext &context)
+	-> ::stana::document::NodeHandle;
+[[nodiscard]] auto mount(const Spacer &description, MountContext &context)
+	-> ::stana::document::NodeHandle;
+[[nodiscard]] auto mount(const CPUCanvas &description, MountContext &context)
+	-> ::stana::document::NodeHandle;
+[[nodiscard]] auto mount(const GPUCanvas &description, MountContext &context)
+	-> ::stana::document::NodeHandle;
 
 template <typename T>
 	requires requires(const T &description, ComponentContext &context) {
 		description.render(context);
 	}
-[[nodiscard]] auto mount(const T &description, MountContext &context) -> NodeHandle {
-	const auto identity = context.document->createNode(detail::NodeKind::group, context.parent);
+[[nodiscard]] auto mount(const T &description, MountContext &context)
+	-> ::stana::document::NodeHandle {
+	const auto identity =
+		context.document->createNode(::stana::document::detail::NodeKind::group, context.parent);
 	auto *node = context.document->find(identity);
 	ComponentContext componentContext{node->scope, context.document->environment()};
 	auto content = description.render(componentContext);
@@ -521,19 +525,25 @@ template <typename T>
 
 namespace detail {
 template <typename Description>
-[[nodiscard]] auto
-mountContainer(const Description &description, NodeKind kind, MountContext &context) -> NodeHandle {
+[[nodiscard]] auto mountContainer(
+	const Description &description,
+	::stana::document::detail::NodeKind kind,
+	MountContext &context
+) -> ::stana::document::NodeHandle {
 	const auto identity = createConfigured(description, kind, context);
 	if constexpr (requires { description.spacing; }) {
 		context.document->bind(
 			identity,
 			description.spacing,
-			[](Node &node, double value) -> Dirty {
-				requireNonnegative(value);
+			[](::stana::document::detail::Node &node,
+				double value) -> ::stana::document::detail::Dirty {
+				::stana::detail::requireNonnegative(value);
 				return assignRetained(
 					node.spacing,
 					value,
-					Dirty::measure | Dirty::arrange | Dirty::snapshot
+					::stana::document::detail::Dirty::measure |
+						::stana::document::detail::Dirty::arrange |
+						::stana::document::detail::Dirty::snapshot
 				);
 			}
 		);
@@ -553,41 +563,67 @@ mountContainer(const Description &description, NodeKind kind, MountContext &cont
 } // namespace detail
 
 template <typename Children>
-[[nodiscard]] auto mount(const VStack<Children> &description, MountContext &context) -> NodeHandle {
-	return detail::mountContainer(description, detail::NodeKind::vstack, context);
+[[nodiscard]] auto mount(const VStack<Children> &description, MountContext &context)
+	-> ::stana::document::NodeHandle {
+	return ::stana::ui::detail::mountContainer(
+		description,
+		::stana::document::detail::NodeKind::vstack,
+		context
+	);
 }
 
 template <typename Children>
-[[nodiscard]] auto mount(const HStack<Children> &description, MountContext &context) -> NodeHandle {
-	return detail::mountContainer(description, detail::NodeKind::hstack, context);
+[[nodiscard]] auto mount(const HStack<Children> &description, MountContext &context)
+	-> ::stana::document::NodeHandle {
+	return ::stana::ui::detail::mountContainer(
+		description,
+		::stana::document::detail::NodeKind::hstack,
+		context
+	);
 }
 
 template <typename Children>
-[[nodiscard]] auto mount(const ZStack<Children> &description, MountContext &context) -> NodeHandle {
-	return detail::mountContainer(description, detail::NodeKind::zstack, context);
+[[nodiscard]] auto mount(const ZStack<Children> &description, MountContext &context)
+	-> ::stana::document::NodeHandle {
+	return ::stana::ui::detail::mountContainer(
+		description,
+		::stana::document::detail::NodeKind::zstack,
+		context
+	);
 }
 
 template <typename Children>
-[[nodiscard]] auto mount(const Box<Children> &description, MountContext &context) -> NodeHandle {
-	return detail::mountContainer(description, detail::NodeKind::box, context);
+[[nodiscard]] auto mount(const Box<Children> &description, MountContext &context)
+	-> ::stana::document::NodeHandle {
+	return ::stana::ui::detail::mountContainer(
+		description,
+		::stana::document::detail::NodeKind::box,
+		context
+	);
 }
 
 template <typename Content>
 [[nodiscard]] auto mount(const ScrollView<Content> &description, MountContext &context)
-	-> NodeHandle {
-	const auto identity = detail::createConfigured(description, detail::NodeKind::scroll, context);
+	-> ::stana::document::NodeHandle {
+	const auto identity = ::stana::ui::detail::createConfigured(
+		description,
+		::stana::document::detail::NodeKind::scroll,
+		context
+	);
 	MountContext childContext{.document = context.document, .parent = identity};
 	static_cast<void>(mount(description.content, childContext));
 	return context.document->handle(identity);
 }
 
 template <typename Then, typename Else>
-[[nodiscard]] auto mount(const If<Then, Else> &description, MountContext &context) -> NodeHandle {
-	const auto identity = context.document->createNode(detail::NodeKind::group, context.parent);
+[[nodiscard]] auto mount(const If<Then, Else> &description, MountContext &context)
+	-> ::stana::document::NodeHandle {
+	const auto identity =
+		context.document->createNode(::stana::document::detail::NodeKind::group, context.parent);
 	const auto weakDocument = context.document->weak_from_this();
 	// Branch descriptions belong to this explicit dynamic boundary only. Ordinary
 	// ancestor and leaf descriptions are never retained or rebuilt by this binding.
-	auto subscription = observe(
+	auto subscription = ::stana::reactive::observe(
 		description.condition,
 		[weakDocument,
 			identity,
@@ -626,8 +662,8 @@ template <typename Source> [[nodiscard]] auto readItems(const Source &source) {
 
 template <typename Items, typename Key, typename Content>
 [[nodiscard]] auto mount(const ForEach<Items, Key, Content> &description, MountContext &context)
-	-> NodeHandle {
-	using Values = decltype(detail::readItems(description.items));
+	-> ::stana::document::NodeHandle {
+	using Values = decltype(::stana::ui::detail::readItems(description.items));
 	using Item = typename Values::value_type;
 	using RowKey = std::remove_cvref_t<std::invoke_result_t<Key, const Item &>>;
 
@@ -642,14 +678,15 @@ template <typename Items, typename Key, typename Content>
 		std::unordered_map<RowKey, Row> rows;
 	};
 
-	const auto identity = context.document->createNode(detail::NodeKind::group, context.parent);
+	const auto identity =
+		context.document->createNode(::stana::document::detail::NodeKind::group, context.parent);
 	const auto state = std::make_shared<Rows>();
-	const auto source = computed([items = description.items] -> Values {
-		return detail::readItems(items);
+	const auto source = ::stana::reactive::computed([items = description.items] -> Values {
+		return ::stana::ui::detail::readItems(items);
 	});
 	const auto weakDocument = context.document->weak_from_this();
-	auto subscription = observe(
-		Property<Values>{source},
+	auto subscription = ::stana::reactive::observe(
+		::stana::reactive::Property<Values>{source},
 		[weakDocument, identity, state, key = description.key, content = description.content](
 			const Values &items
 		) -> void {
@@ -693,7 +730,7 @@ template <typename Items, typename Key, typename Content>
 					continue;
 				}
 				const auto rowId = existing == state->rows.end()
-					? document->createNode(detail::NodeKind::group, identity)
+					? document->createNode(::stana::document::detail::NodeKind::group, identity)
 					: existing->second.identity;
 				document->removeChildren(rowId);
 				MountContext rowContext{.document = document, .parent = rowId};
@@ -714,11 +751,11 @@ template <typename Items, typename Key, typename Content>
 /// @brief Checks the mounting customization, rather than requiring a marker or base class.
 template <typename T>
 concept Component = requires(const std::remove_cvref_t<T> &description, MountContext &context) {
-	{ mount(description, context) } -> std::same_as<NodeHandle>;
+	{ mount(description, context) } -> std::same_as<::stana::document::NodeHandle>;
 };
 
 /// @brief Static child storage: no per-child component allocation or virtual dispatch.
 template <Component... Children> [[nodiscard]] constexpr auto children(Children &&...descriptions) {
 	return std::tuple<std::decay_t<Children>...>{std::forward<Children>(descriptions)...};
 }
-} // namespace stana
+} // namespace stana::ui

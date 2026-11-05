@@ -4,12 +4,16 @@ module;
 
 export module stana;
 
-export import stana.primitives;
-export import stana.reactive;
-export import stana.graphics;
-export import stana.text;
-export import stana.ui;
-export import stana.application;
+export import :primitives;
+export import :reactive;
+export import :tasks;
+export import :rendering;
+export import :layout;
+export import :document;
+export import :text;
+export import :ui;
+export import :application;
+export import :testing;
 
 export namespace stana {
 

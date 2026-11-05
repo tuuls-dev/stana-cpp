@@ -7,17 +7,18 @@ module;
 #include <string>
 #include <utility>
 
-module stana.ui;
-import stana.core;
-import stana.primitives;
-import stana.reactive;
+module stana;
+import :ui;
+import :document;
+import :primitives;
+import :reactive;
 
-namespace stana {
+namespace stana::ui {
 namespace detail {
 namespace {
 void validateColor(Color color) {
 	for (const double component : {color.red, color.green, color.blue, color.alpha}) {
-		requireNonnegative(component);
+		stana::detail::requireNonnegative(component);
 		if (component > 1) {
 			throw std::invalid_argument("Color exceeds one");
 		}
@@ -25,21 +26,28 @@ void validateColor(Color color) {
 }
 } // namespace
 
-void applyLayout(const LayoutProperties &properties, NodeId identity, MountContext &context) {
+void applyLayout(
+	const stana::layout::LayoutProperties &properties,
+	NodeId identity,
+	MountContext &context
+) {
 	if (properties.padding) {
 		context.document->bind(
 			identity,
 			*properties.padding,
-			[](Node &node, Insets value) -> detail::Dirty {
-				requireNonnegative(value.top);
-				requireNonnegative(value.leading);
-				requireNonnegative(value.bottom);
-				requireNonnegative(value.trailing);
-				return detail::assignRetained(
+			[](stana::document::detail::Node &node,
+				Insets value) -> stana::document::detail::Dirty {
+				stana::detail::requireNonnegative(value.top);
+				stana::detail::requireNonnegative(value.leading);
+				stana::detail::requireNonnegative(value.bottom);
+				stana::detail::requireNonnegative(value.trailing);
+				return stana::ui::detail::assignRetained(
 					node.padding,
 					value,
-					detail::Dirty::measure | detail::Dirty::arrange | detail::Dirty::paint |
-						detail::Dirty::snapshot
+					stana::document::detail::Dirty::measure |
+						stana::document::detail::Dirty::arrange |
+						stana::document::detail::Dirty::paint |
+						stana::document::detail::Dirty::snapshot
 				);
 			}
 		);
@@ -48,20 +56,23 @@ void applyLayout(const LayoutProperties &properties, NodeId identity, MountConte
 		context.document->bind(
 			identity,
 			*properties.frame,
-			[](Node &node, const Frame &value) -> detail::Dirty {
-				requireNonnegative(value.width.value);
-				requireNonnegative(value.height.value);
+			[](stana::document::detail::Node &node,
+				const Frame &value) -> stana::document::detail::Dirty {
+				stana::detail::requireNonnegative(value.width.value);
+				stana::detail::requireNonnegative(value.height.value);
 				for (const auto limit :
 					{value.minWidth, value.minHeight, value.maxWidth, value.maxHeight}) {
 					if (limit) {
-						requireNonnegative(*limit);
+						stana::detail::requireNonnegative(*limit);
 					}
 				}
-				return detail::assignRetained(
+				return stana::ui::detail::assignRetained(
 					node.frame,
 					value,
-					detail::Dirty::measure | detail::Dirty::arrange | detail::Dirty::paint |
-						detail::Dirty::snapshot
+					stana::document::detail::Dirty::measure |
+						stana::document::detail::Dirty::arrange |
+						stana::document::detail::Dirty::paint |
+						stana::document::detail::Dirty::snapshot
 				);
 			}
 		);
@@ -73,13 +84,13 @@ void applyTextStyle(const TextProperties &properties, NodeId identity, MountCont
 		context.document->bind(
 			identity,
 			*properties.font,
-			[](Node &node, Font value) -> detail::Dirty {
-				requireNonnegative(value.size);
-				requireFinite(value.weight);
-				return detail::assignRetained(
+			[](stana::document::detail::Node &node, Font value) -> stana::document::detail::Dirty {
+				stana::detail::requireNonnegative(value.size);
+				stana::detail::requireFinite(value.weight);
+				return stana::ui::detail::assignRetained(
 					node.font,
 					value,
-					detail::Dirty::measure | detail::Dirty::paint
+					stana::document::detail::Dirty::measure | stana::document::detail::Dirty::paint
 				);
 			}
 		);
@@ -88,13 +99,16 @@ void applyTextStyle(const TextProperties &properties, NodeId identity, MountCont
 		context.document->bind(
 			identity,
 			*properties.foreground,
-			[](Node &node, Color value) -> detail::Dirty {
+			[](stana::document::detail::Node &node, Color value) -> stana::document::detail::Dirty {
 				validateColor(value);
 				const bool wasExplicit = node.isForegroundExplicit;
-				const auto changed =
-					detail::assignRetained(node.foreground, value, detail::Dirty::paint);
+				const auto changed = stana::ui::detail::assignRetained(
+					node.foreground,
+					value,
+					stana::document::detail::Dirty::paint
+				);
 				node.isForegroundExplicit = true;
-				return wasExplicit ? changed : detail::Dirty::paint;
+				return wasExplicit ? changed : stana::document::detail::Dirty::paint;
 			}
 		);
 	}
@@ -109,9 +123,13 @@ void applyAppearance(
 		context.document->bind(
 			identity,
 			*properties.background,
-			[](Node &node, Color value) -> detail::Dirty {
+			[](stana::document::detail::Node &node, Color value) -> stana::document::detail::Dirty {
 				validateColor(value);
-				return detail::assignRetained(node.background, value, detail::Dirty::paint);
+				return stana::ui::detail::assignRetained(
+					node.background,
+					value,
+					stana::document::detail::Dirty::paint
+				);
 			}
 		);
 	}
@@ -119,12 +137,17 @@ void applyAppearance(
 		context.document->bind(
 			identity,
 			*properties.opacity,
-			[](Node &node, double value) -> detail::Dirty {
-				requireNonnegative(value);
+			[](stana::document::detail::Node &node,
+				double value) -> stana::document::detail::Dirty {
+				stana::detail::requireNonnegative(value);
 				if (value > 1) {
 					throw std::invalid_argument("Opacity exceeds one");
 				}
-				return detail::assignRetained(node.opacity, value, detail::Dirty::paint);
+				return stana::ui::detail::assignRetained(
+					node.opacity,
+					value,
+					stana::document::detail::Dirty::paint
+				);
 			}
 		);
 	}
@@ -132,9 +155,13 @@ void applyAppearance(
 		context.document->bind(
 			identity,
 			*properties.borderColor,
-			[](Node &node, Color value) -> detail::Dirty {
+			[](stana::document::detail::Node &node, Color value) -> stana::document::detail::Dirty {
 				validateColor(value);
-				return detail::assignRetained(node.borderColor, value, detail::Dirty::paint);
+				return stana::ui::detail::assignRetained(
+					node.borderColor,
+					value,
+					stana::document::detail::Dirty::paint
+				);
 			}
 		);
 	}
@@ -142,9 +169,14 @@ void applyAppearance(
 		context.document->bind(
 			identity,
 			*properties.borderWidth,
-			[](Node &node, double value) -> detail::Dirty {
-				requireNonnegative(value);
-				return detail::assignRetained(node.borderWidth, value, detail::Dirty::paint);
+			[](stana::document::detail::Node &node,
+				double value) -> stana::document::detail::Dirty {
+				stana::detail::requireNonnegative(value);
+				return stana::ui::detail::assignRetained(
+					node.borderWidth,
+					value,
+					stana::document::detail::Dirty::paint
+				);
 			}
 		);
 	}
@@ -152,9 +184,14 @@ void applyAppearance(
 		context.document->bind(
 			identity,
 			*properties.cornerRadius,
-			[](Node &node, double value) -> detail::Dirty {
-				requireNonnegative(value);
-				return detail::assignRetained(node.cornerRadius, value, detail::Dirty::paint);
+			[](stana::document::detail::Node &node,
+				double value) -> stana::document::detail::Dirty {
+				stana::detail::requireNonnegative(value);
+				return stana::ui::detail::assignRetained(
+					node.cornerRadius,
+					value,
+					stana::document::detail::Dirty::paint
+				);
 			}
 		);
 	}
@@ -162,16 +199,20 @@ void applyAppearance(
 		context.document->bind(
 			identity,
 			*properties.visibility,
-			[](Node &node, Visibility value) -> detail::Dirty {
+			[](stana::document::detail::Node &node,
+				Visibility value) -> stana::document::detail::Dirty {
 				if (node.visibility == value) {
-					return detail::Dirty::none;
+					return stana::document::detail::Dirty::none;
 				}
 				const bool collapsed =
 					node.visibility == Visibility::collapsed || value == Visibility::collapsed;
 				node.visibility = value;
-				return collapsed ? detail::Dirty::measure | detail::Dirty::arrange |
-						detail::Dirty::paint | detail::Dirty::snapshot
-								 : detail::Dirty::paint | detail::Dirty::snapshot;
+				return collapsed ? stana::document::detail::Dirty::measure |
+						stana::document::detail::Dirty::arrange |
+						stana::document::detail::Dirty::paint |
+						stana::document::detail::Dirty::snapshot
+								 : stana::document::detail::Dirty::paint |
+						stana::document::detail::Dirty::snapshot;
 			}
 		);
 	}
@@ -188,11 +229,11 @@ void applyInteraction(
 	context.document->bind(
 		identity,
 		properties.isEnabled,
-		[](Node &node, bool value) -> detail::Dirty {
-			return detail::assignRetained(
+		[](stana::document::detail::Node &node, bool value) -> stana::document::detail::Dirty {
+			return stana::ui::detail::assignRetained(
 				node.isEnabled,
 				value,
-				detail::Dirty::paint | detail::Dirty::snapshot
+				stana::document::detail::Dirty::paint | stana::document::detail::Dirty::snapshot
 			);
 		}
 	);
@@ -218,7 +259,7 @@ void applyLifecycle(const LifecycleProperties &properties, NodeId identity, Moun
 	}
 	if (properties.onMount) {
 		const auto handle = context.document->handle(identity);
-		detail::ReactiveRuntime::current().effects.emplace_back(
+		stana::reactive::detail::ReactiveRuntime::current().effects.emplace_back(
 			[handle, action = properties.onMount] -> void {
 				if (handle.isAlive()) {
 					action(handle);
@@ -229,38 +270,50 @@ void applyLifecycle(const LifecycleProperties &properties, NodeId identity, Moun
 }
 } // namespace detail
 
-auto mount(const Empty &, MountContext &context) -> NodeHandle {
+auto mount(const Empty &, MountContext &context) -> stana::document::NodeHandle {
 	return context.document->handle(
-		context.document->createNode(detail::NodeKind::group, context.parent)
+		context.document->createNode(stana::document::detail::NodeKind::group, context.parent)
 	);
 }
 
-auto mount(const Text &description, MountContext &context) -> NodeHandle {
-	const auto identity = detail::createConfigured(description, detail::NodeKind::text, context);
+auto mount(const Text &description, MountContext &context) -> stana::document::NodeHandle {
+	const auto identity = stana::ui::detail::createConfigured(
+		description,
+		stana::document::detail::NodeKind::text,
+		context
+	);
 	context.document->bind(
 		identity,
 		description.text,
-		[](detail::Node &node, const std::string &value) -> detail::Dirty {
-			return detail::assignRetained(
+		[](stana::document::detail::Node &node,
+			const std::string &value) -> stana::document::detail::Dirty {
+			return stana::ui::detail::assignRetained(
 				node.text,
 				value,
-				detail::Dirty::measure | detail::Dirty::paint | detail::Dirty::snapshot
+				stana::document::detail::Dirty::measure | stana::document::detail::Dirty::paint |
+					stana::document::detail::Dirty::snapshot
 			);
 		}
 	);
 	return context.document->handle(identity);
 }
 
-auto mount(const Button &description, MountContext &context) -> NodeHandle {
-	const auto identity = detail::createConfigured(description, detail::NodeKind::button, context);
+auto mount(const Button &description, MountContext &context) -> stana::document::NodeHandle {
+	const auto identity = stana::ui::detail::createConfigured(
+		description,
+		stana::document::detail::NodeKind::button,
+		context
+	);
 	context.document->bind(
 		identity,
 		description.text,
-		[](detail::Node &node, const std::string &value) -> detail::Dirty {
-			return detail::assignRetained(
+		[](stana::document::detail::Node &node,
+			const std::string &value) -> stana::document::detail::Dirty {
+			return stana::ui::detail::assignRetained(
 				node.text,
 				value,
-				detail::Dirty::measure | detail::Dirty::paint | detail::Dirty::snapshot
+				stana::document::detail::Dirty::measure | stana::document::detail::Dirty::paint |
+					stana::document::detail::Dirty::snapshot
 			);
 		}
 	);
@@ -268,27 +321,37 @@ auto mount(const Button &description, MountContext &context) -> NodeHandle {
 	return context.document->handle(identity);
 }
 
-auto mount(const Toggle &description, MountContext &context) -> NodeHandle {
-	const auto identity = detail::createConfigured(description, detail::NodeKind::toggle, context);
+auto mount(const Toggle &description, MountContext &context) -> stana::document::NodeHandle {
+	const auto identity = stana::ui::detail::createConfigured(
+		description,
+		stana::document::detail::NodeKind::toggle,
+		context
+	);
 	context.document->bind(
 		identity,
 		description.text,
-		[](detail::Node &node, const std::string &value) -> detail::Dirty {
-			return detail::assignRetained(
+		[](stana::document::detail::Node &node,
+			const std::string &value) -> stana::document::detail::Dirty {
+			return stana::ui::detail::assignRetained(
 				node.text,
 				value,
-				detail::Dirty::measure | detail::Dirty::paint | detail::Dirty::snapshot
+				stana::document::detail::Dirty::measure | stana::document::detail::Dirty::paint |
+					stana::document::detail::Dirty::snapshot
 			);
 		}
 	);
 	const auto value = description.value;
 	context.document->bind(
 		identity,
-		Property<bool>{computed([value] -> bool {
+		stana::reactive::Property<bool>{stana::reactive::computed([value] -> bool {
 			return value.get();
 		})},
-		[](detail::Node &node, bool checked) -> detail::Dirty {
-			return detail::assignRetained(node.checked, checked, detail::Dirty::snapshot);
+		[](stana::document::detail::Node &node, bool checked) -> stana::document::detail::Dirty {
+			return stana::ui::detail::assignRetained(
+				node.checked,
+				checked,
+				stana::document::detail::Dirty::snapshot
+			);
 		}
 	);
 	context.document->find(identity)->onClick = [value] -> void {
@@ -297,47 +360,59 @@ auto mount(const Toggle &description, MountContext &context) -> NodeHandle {
 	return context.document->handle(identity);
 }
 
-auto mount(const Spacer &description, MountContext &context) -> NodeHandle {
-	const auto identity = detail::createConfigured(description, detail::NodeKind::spacer, context);
+auto mount(const Spacer &description, MountContext &context) -> stana::document::NodeHandle {
+	const auto identity = stana::ui::detail::createConfigured(
+		description,
+		stana::document::detail::NodeKind::spacer,
+		context
+	);
 	return context.document->handle(identity);
 }
 
-auto mount(const CPUCanvas &description, MountContext &context) -> NodeHandle {
-	const auto identity =
-		detail::createConfigured(description, detail::NodeKind::cpuCanvas, context);
+auto mount(const CPUCanvas &description, MountContext &context) -> stana::document::NodeHandle {
+	const auto identity = stana::ui::detail::createConfigured(
+		description,
+		stana::document::detail::NodeKind::cpuCanvas,
+		context
+	);
 	context.document->find(identity)->clip = description.appearance.clip.value_or(true);
 	context.document->bind(
 		identity,
 		description.drawing,
-		[](detail::Node &node, const Drawing &value) -> detail::Dirty {
+		[](stana::document::detail::Node &node,
+			const stana::rendering::Drawing &value) -> stana::document::detail::Dirty {
 			value.validate();
 			if (node.drawing == value) {
-				return detail::Dirty::none;
+				return stana::document::detail::Dirty::none;
 			}
-			Drawing prepared = value;
+			stana::rendering::Drawing prepared = value;
 			node.drawing.commands.swap(prepared.commands);
-			return detail::Dirty::paint;
+			return stana::document::detail::Dirty::paint;
 		}
 	);
 	return context.document->handle(identity);
 }
 
-auto mount(const GPUCanvas &description, MountContext &context) -> NodeHandle {
-	const auto identity =
-		detail::createConfigured(description, detail::NodeKind::gpuCanvas, context);
+auto mount(const GPUCanvas &description, MountContext &context) -> stana::document::NodeHandle {
+	const auto identity = stana::ui::detail::createConfigured(
+		description,
+		stana::document::detail::NodeKind::gpuCanvas,
+		context
+	);
 	context.document->find(identity)->clip = description.appearance.clip.value_or(true);
 	context.document->find(identity)->onGPUError = description.onError;
 	context.document->bind(
 		identity,
 		description.drawing,
-		[](detail::Node &node, const GPUDrawing &value) -> detail::Dirty {
+		[](stana::document::detail::Node &node,
+			const stana::rendering::GPUDrawing &value) -> stana::document::detail::Dirty {
 			if (node.gpuDrawing && *node.gpuDrawing == value) {
-				return detail::Dirty::none;
+				return stana::document::detail::Dirty::none;
 			}
 			node.gpuDrawing = value;
-			return detail::Dirty::paint;
+			return stana::document::detail::Dirty::paint;
 		}
 	);
 	return context.document->handle(identity);
 }
-} // namespace stana
+} // namespace stana::ui

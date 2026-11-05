@@ -4,7 +4,7 @@
 #include <limits>
 #include <stdexcept>
 
-namespace stana::native {
+namespace stana::platform::detail {
 namespace {
 [[nodiscard]] auto multiply(std::size_t left, std::size_t right) -> std::size_t {
 	if (right != 0 && left > std::numeric_limits<std::size_t>::max() / right) {
@@ -135,4 +135,4 @@ auto tileIds(const TileGrid &grid, const TileMask &mask) -> std::vector<TileId> 
 	}
 	return result;
 }
-} // namespace stana::native
+} // namespace stana::platform::detail

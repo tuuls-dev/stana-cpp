@@ -2,63 +2,67 @@
 #define STANA_GPU_CONVERSION_HPP
 
 // Included after the application module declaration/imports. No native types escape modules.
-namespace stana::application_detail {
-[[nodiscard]] inline auto convertFormat(GPUTextureFormat value) -> native::gpu::Format {
+namespace stana::application::detail {
+[[nodiscard]] inline auto convertFormat(stana::rendering::GPUTextureFormat value)
+	-> stana::platform::detail::gpu::Format {
 	switch (value) {
-	case GPUTextureFormat::bgra8Unorm:
-		return native::gpu::Format::bgra8;
-	case GPUTextureFormat::rgba16Float:
-		return native::gpu::Format::rgba16;
-	case GPUTextureFormat::r8Unorm:
-		return native::gpu::Format::r8;
+	case stana::rendering::GPUTextureFormat::bgra8Unorm:
+		return stana::platform::detail::gpu::Format::bgra8;
+	case stana::rendering::GPUTextureFormat::rgba16Float:
+		return stana::platform::detail::gpu::Format::rgba16;
+	case stana::rendering::GPUTextureFormat::r8Unorm:
+		return stana::platform::detail::gpu::Format::r8;
 	}
 	throw std::logic_error("Unknown texture format");
 }
 
-[[nodiscard]] inline auto convertEncoding(GPUColorEncoding value) -> native::gpu::Encoding {
+[[nodiscard]] inline auto convertEncoding(stana::rendering::GPUColorEncoding value)
+	-> stana::platform::detail::gpu::Encoding {
 	switch (value) {
-	case GPUColorEncoding::encodedSRGB:
-		return native::gpu::Encoding::encoded;
-	case GPUColorEncoding::extendedLinear:
-		return native::gpu::Encoding::linear;
+	case stana::rendering::GPUColorEncoding::encodedSRGB:
+		return stana::platform::detail::gpu::Encoding::encoded;
+	case stana::rendering::GPUColorEncoding::extendedLinear:
+		return stana::platform::detail::gpu::Encoding::linear;
 	}
 	throw std::logic_error("Unknown color encoding");
 }
 
-[[nodiscard]] inline auto convertMode(RenderingColorMode value) -> native::gpu::ColorMode {
+[[nodiscard]] inline auto convertMode(stana::rendering::RenderingColorMode value)
+	-> stana::platform::detail::gpu::ColorMode {
 	switch (value) {
-	case RenderingColorMode::automatic:
-		return native::gpu::ColorMode::automatic;
-	case RenderingColorMode::sdr:
-		return native::gpu::ColorMode::sdr;
-	case RenderingColorMode::extendedLinear:
-		return native::gpu::ColorMode::extendedLinear;
+	case stana::rendering::RenderingColorMode::automatic:
+		return stana::platform::detail::gpu::ColorMode::automatic;
+	case stana::rendering::RenderingColorMode::sdr:
+		return stana::platform::detail::gpu::ColorMode::sdr;
+	case stana::rendering::RenderingColorMode::extendedLinear:
+		return stana::platform::detail::gpu::ColorMode::extendedLinear;
 	}
 	throw std::logic_error("Unknown color mode");
 }
 
-[[nodiscard]] inline auto convertStage(GPUBinding::Stage value) -> native::gpu::Stage {
+[[nodiscard]] inline auto convertStage(stana::rendering::GPUBinding::Stage value)
+	-> stana::platform::detail::gpu::Stage {
 	switch (value) {
-	case GPUBinding::Stage::vertex:
-		return native::gpu::Stage::vertex;
-	case GPUBinding::Stage::fragment:
-		return native::gpu::Stage::fragment;
-	case GPUBinding::Stage::compute:
-		return native::gpu::Stage::compute;
+	case stana::rendering::GPUBinding::Stage::vertex:
+		return stana::platform::detail::gpu::Stage::vertex;
+	case stana::rendering::GPUBinding::Stage::fragment:
+		return stana::platform::detail::gpu::Stage::fragment;
+	case stana::rendering::GPUBinding::Stage::compute:
+		return stana::platform::detail::gpu::Stage::compute;
 	}
 	throw std::logic_error("Unknown shader stage");
 }
 
-[[nodiscard]] inline auto convertBindings(const std::vector<GPUBinding> &bindings)
-	-> std::vector<native::gpu::Binding> {
-	std::vector<native::gpu::Binding> result;
+[[nodiscard]] inline auto convertBindings(const std::vector<stana::rendering::GPUBinding> &bindings)
+	-> std::vector<stana::platform::detail::gpu::Binding> {
+	std::vector<stana::platform::detail::gpu::Binding> result;
 	result.reserve(bindings.size());
 	for (const auto &binding : bindings) {
 		result.push_back(
 			{.resource = binding.resource,
 				.group = binding.group,
 				.binding = binding.binding,
-				.write = binding.access == GPUBinding::Access::write,
+				.write = binding.access == stana::rendering::GPUBinding::Access::write,
 				.stage = convertStage(binding.stage),
 				.previous = binding.previous}
 		);
@@ -68,24 +72,24 @@ namespace stana::application_detail {
 
 /// @brief Weak bounded conversion caches; blobs are shared, packed mesh conversion happens once.
 struct GPUConversion {
-	std::map<std::uint64_t, std::weak_ptr<const native::gpu::Program>> programs;
-	std::map<std::uint64_t, std::weak_ptr<const native::gpu::Mesh>> meshes;
+	std::map<std::uint64_t, std::weak_ptr<const stana::platform::detail::gpu::Program>> programs;
+	std::map<std::uint64_t, std::weak_ptr<const stana::platform::detail::gpu::Mesh>> meshes;
 	using DrawingKey = std::tuple<std::uint64_t, Theme, bool>;
-	std::map<DrawingKey, std::weak_ptr<const native::gpu::Drawing>> drawings;
+	std::map<DrawingKey, std::weak_ptr<const stana::platform::detail::gpu::Drawing>> drawings;
 
-	[[nodiscard]] auto program(const GPUProgram &value)
-		-> std::shared_ptr<const native::gpu::Program> {
+	[[nodiscard]] auto program(const stana::rendering::GPUProgram &value)
+		-> std::shared_ptr<const stana::platform::detail::gpu::Program> {
 		if (const auto found = programs.find(value.version()); found != programs.end()) {
 			if (auto retained = found->second.lock()) {
 				return retained;
 			}
 		}
 		const auto &descriptor = value.descriptor();
-		auto result = std::make_shared<native::gpu::Program>();
+		auto result = std::make_shared<stana::platform::detail::gpu::Program>();
 		result->version = value.version();
 		result->pipelineVersion = value.pipelineVersion();
 		result->stateVersion = value.stateVersion();
-		result->source = detail::GPUAccess::sourceOwner(descriptor.shader);
+		result->source = stana::rendering::detail::GPUAccess::sourceOwner(descriptor.shader);
 		result->output = descriptor.output;
 		result->outputColor = convertEncoding(descriptor.outputColor);
 		result->sourcePeak = descriptor.sourcePeak;
@@ -95,49 +99,49 @@ struct GPUConversion {
 			result->resources.emplace(
 				name,
 				std::visit(
-					[](const auto &input) -> native::gpu::Resource {
+					[](const auto &input) -> stana::platform::detail::gpu::Resource {
 						using T = std::decay_t<decltype(input)>;
-						if constexpr (std::is_same_v<T, GPUBuffer>) {
-							return native::gpu::Buffer{
+						if constexpr (std::is_same_v<T, stana::rendering::GPUBuffer>) {
+							return stana::platform::detail::gpu::Buffer{
 								.version = input.version(),
-								.bytes = detail::GPUAccess::bytesOwner(input)
+								.bytes = stana::rendering::detail::GPUAccess::bytesOwner(input)
 							};
-						} else if constexpr (std::is_same_v<T, GPUStorage>) {
-							return native::gpu::Storage{.length = input.length};
-						} else if constexpr (std::is_same_v<T, GPUTexture>) {
+						} else if constexpr (std::is_same_v<T, stana::rendering::GPUStorage>) {
+							return stana::platform::detail::gpu::Storage{.length = input.length};
+						} else if constexpr (std::is_same_v<T, stana::rendering::GPUTexture>) {
 							const auto &desc = input.descriptor();
-							return native::gpu::Texture{
+							return stana::platform::detail::gpu::Texture{
 								.version = input.version(),
 								.width = desc.width,
 								.height = desc.height,
 								.format = convertFormat(desc.format),
-								.bytes = detail::GPUAccess::bytesOwner(input),
+								.bytes = stana::rendering::detail::GPUAccess::bytesOwner(input),
 								.encoding = convertEncoding(desc.encoding),
 								.premultiplied = desc.premultiplied,
 								.sourcePeak = desc.sourcePeak
 							};
-						} else if constexpr (std::is_same_v<T, GPUTarget>) {
-							return native::gpu::Target{
+						} else if constexpr (std::is_same_v<T, stana::rendering::GPUTarget>) {
+							return stana::platform::detail::gpu::Target{
 								.width = input.width,
 								.height = input.height,
 								.format = convertFormat(input.format)
 							};
-						} else if constexpr (std::is_same_v<T, GPUStateSlot>) {
+						} else if constexpr (std::is_same_v<T, stana::rendering::GPUStateSlot>) {
 							const auto &desc = input.descriptor();
-							return native::gpu::State{
+							return stana::platform::detail::gpu::State{
 								.version = input.version(),
 								.width = desc.width,
 								.height = desc.height,
 								.format = convertFormat(desc.format),
-								.initial = detail::GPUAccess::initialOwner(input),
+								.initial = stana::rendering::detail::GPUAccess::initialOwner(input),
 								.resetKey = desc.resetKey
 							};
-						} else if constexpr (std::is_same_v<T, GPUSampler>) {
+						} else if constexpr (std::is_same_v<T, stana::rendering::GPUSampler>) {
 							switch (input.filter) {
-							case GPUSampler::Filter::nearest:
-								return native::gpu::Sampler{.linear = false};
-							case GPUSampler::Filter::linear:
-								return native::gpu::Sampler{.linear = true};
+							case stana::rendering::GPUSampler::Filter::nearest:
+								return stana::platform::detail::gpu::Sampler{.linear = false};
+							case stana::rendering::GPUSampler::Filter::linear:
+								return stana::platform::detail::gpu::Sampler{.linear = true};
 							}
 							throw std::logic_error("Unknown sampler filter");
 						} else {
@@ -151,10 +155,10 @@ struct GPUConversion {
 		for (const auto &pass : descriptor.passes) {
 			result->passes.push_back(
 				std::visit(
-					[](const auto &input) -> native::gpu::Pass {
+					[](const auto &input) -> stana::platform::detail::gpu::Pass {
 						using T = std::decay_t<decltype(input)>;
-						if constexpr (std::is_same_v<T, GPURenderPass>) {
-							return native::gpu::RenderPass{
+						if constexpr (std::is_same_v<T, stana::rendering::GPURenderPass>) {
+							return stana::platform::detail::gpu::RenderPass{
 								.vertex = input.vertex,
 								.fragment = input.fragment,
 								.target = input.target,
@@ -164,8 +168,8 @@ struct GPUConversion {
 								.bindings = convertBindings(input.bindings),
 								.blends = input.blends
 							};
-						} else if constexpr (std::is_same_v<T, GPUComputePass>) {
-							return native::gpu::ComputePass{
+						} else if constexpr (std::is_same_v<T, stana::rendering::GPUComputePass>) {
+							return stana::platform::detail::gpu::ComputePass{
 								.function = input.function,
 								.workgroupCount = input.workgroupCount,
 								.bindings = convertBindings(input.bindings)
@@ -178,22 +182,23 @@ struct GPUConversion {
 				)
 			);
 		}
-		if (programs.size() >= graphics_detail::descriptorLimit) {
+		if (programs.size() >= stana::rendering::detail::descriptorLimit) {
 			programs.erase(programs.begin());
 		}
 		programs.insert_or_assign(value.version(), result);
 		return result;
 	}
 
-	[[nodiscard]] auto mesh(const GPUMesh &value) -> std::shared_ptr<const native::gpu::Mesh> {
+	[[nodiscard]] auto mesh(const stana::rendering::GPUMesh &value)
+		-> std::shared_ptr<const stana::platform::detail::gpu::Mesh> {
 		if (const auto found = meshes.find(value.version()); found != meshes.end()) {
 			if (auto retained = found->second.lock()) {
 				return retained;
 			}
 		}
-		auto result = std::make_shared<native::gpu::Mesh>();
+		auto result = std::make_shared<stana::platform::detail::gpu::Mesh>();
 		result->version = value.version();
-		result->indices = detail::GPUAccess::indicesOwner(value);
+		result->indices = stana::rendering::detail::GPUAccess::indicesOwner(value);
 		result->vertices.reserve(value.vertices().size());
 		for (const auto &vertex : value.vertices()) {
 			const auto &color = vertex.color;
@@ -209,17 +214,18 @@ struct GPUConversion {
 					}}
 			);
 		}
-		if (meshes.size() >= graphics_detail::descriptorLimit) {
+		if (meshes.size() >= stana::rendering::detail::descriptorLimit) {
 			meshes.erase(meshes.begin());
 		}
 		meshes.insert_or_assign(value.version(), result);
 		return result;
 	}
 
-	[[nodiscard]] static auto color(const detail::GPUColor &value, Environment environment)
-		-> native::gpu::Color {
+	[[nodiscard]] static auto
+	color(const stana::rendering::detail::GPUColor &value, Environment environment)
+		-> stana::platform::detail::gpu::Color {
 		return std::visit(
-			[&](const auto &input) -> native::gpu::Color {
+			[&](const auto &input) -> stana::platform::detail::gpu::Color {
 				using T = std::decay_t<decltype(input)>;
 				if constexpr (std::is_same_v<T, Color>) {
 					const auto resolved =
@@ -239,7 +245,7 @@ struct GPUConversion {
 		);
 	}
 
-	[[nodiscard]] static auto rect(Rect bounds) -> native::gpu::Rect {
+	[[nodiscard]] static auto rect(Rect bounds) -> stana::platform::detail::gpu::Rect {
 		return {
 			.origin = {.x = bounds.origin.x, .y = bounds.origin.y},
 			.width = bounds.size.width,
@@ -247,40 +253,44 @@ struct GPUConversion {
 		};
 	}
 
-	[[nodiscard]] auto drawing(const GPUDrawing &value, Environment environment)
-		-> std::shared_ptr<const native::gpu::Drawing> {
+	[[nodiscard]] auto drawing(const stana::rendering::GPUDrawing &value, Environment environment)
+		-> std::shared_ptr<const stana::platform::detail::gpu::Drawing> {
 		const DrawingKey key{value.version(), environment.theme, environment.highContrast};
 		if (const auto found = drawings.find(key); found != drawings.end()) {
 			if (auto retained = found->second.lock()) {
 				return retained;
 			}
 		}
-		auto result = std::make_shared<native::gpu::Drawing>();
+		auto result = std::make_shared<stana::platform::detail::gpu::Drawing>();
 		result->version = value.version();
 		result->extended = value.requiresExtended();
-		for (const auto &command : detail::GPUAccess::commands(value)) {
+		for (const auto &command : stana::rendering::detail::GPUAccess::commands(value)) {
 			result->commands.push_back(
 				std::visit(
-					[&](const auto &input) -> native::gpu::Command {
+					[&](const auto &input) -> stana::platform::detail::gpu::Command {
 						using T = std::decay_t<decltype(input)>;
-						if constexpr (std::is_same_v<T, detail::GPURect>) {
-							return native::gpu::Shape{
+						if constexpr (std::is_same_v<T, stana::rendering::detail::GPURect>) {
+							return stana::platform::detail::gpu::Shape{
 								.bounds = rect(input.bounds),
 								.radius = input.radius,
 								.color = color(input.color, environment)
 							};
-						} else if constexpr (std::is_same_v<T, detail::GPUEllipse>) {
-							return native::gpu::Shape{
+						} else if constexpr (std::is_same_v<
+												 T,
+												 stana::rendering::detail::GPUEllipse>) {
+							return stana::platform::detail::gpu::Shape{
 								.bounds = rect(input.bounds),
 								.color = color(input.color, environment),
 								.ellipse = true
 							};
-						} else if constexpr (std::is_same_v<T, GPUMesh>) {
+						} else if constexpr (std::is_same_v<T, stana::rendering::GPUMesh>) {
 							return mesh(input);
-						} else if constexpr (std::is_same_v<T, GPUProgram>) {
+						} else if constexpr (std::is_same_v<T, stana::rendering::GPUProgram>) {
 							return program(input);
-						} else if constexpr (std::is_same_v<T, detail::GPUPolyline>) {
-							native::gpu::Polyline line{
+						} else if constexpr (std::is_same_v<
+												 T,
+												 stana::rendering::detail::GPUPolyline>) {
+							stana::platform::detail::gpu::Polyline line{
 								.width = input.width,
 								.color = color(input.color, environment),
 								.closed = input.closed
@@ -306,5 +316,5 @@ struct GPUConversion {
 		return result;
 	}
 };
-} // namespace stana::application_detail
+} // namespace stana::application::detail
 #endif

@@ -1,5 +1,5 @@
 #include "gpu_resources.hpp"
-#include "../../graphics/limits.hpp"
+#include "../../rendering/limits.hpp"
 #include "stana_shader.hpp"
 #import <Foundation/Foundation.h>
 #include <algorithm>
@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace stana::native::gpu {
+namespace stana::platform::detail::gpu {
 namespace {
 [[nodiscard]] auto capability(std::string message) -> std::unexpected<Failure> {
 	return std::unexpected(
@@ -118,7 +118,7 @@ auto Resources::buffer(
 	std::span<const std::byte> input,
 	std::shared_ptr<AllocationLease> lease
 ) -> Result<std::shared_ptr<BufferOwner>> {
-	if (length == 0 || length > graphics_detail::payloadLimit ||
+	if (length == 0 || length > stana::rendering::detail::payloadLimit ||
 		length > device->device.maxBufferLength || input.size() > length) {
 		return capability("GPU buffer length exceeds device/profile limits");
 	}
@@ -156,12 +156,12 @@ auto Resources::texture(
 	std::shared_ptr<AllocationLease> lease,
 	std::uint32_t samples
 ) -> Result<std::shared_ptr<TextureOwner>> {
-	const auto pixels = graphics_detail::textureBytes(width, height, pixelBytes(format));
+	const auto pixels = stana::rendering::detail::textureBytes(width, height, pixelBytes(format));
 	if (!pixels) {
 		return capability(pixels.error());
 	}
 	if ((samples != 1 && samples != 4) || ![device->device supportsTextureSampleCount:samples] ||
-		*pixels > graphics_detail::payloadLimit / samples) {
+		*pixels > stana::rendering::detail::payloadLimit / samples) {
 		return capability("Unsupported multisample allocation profile");
 	}
 	const auto length = *pixels * samples;
@@ -207,7 +207,7 @@ auto Resources::mesh(const std::shared_ptr<const Mesh> &mesh)
 	}
 	const auto vertexSpan = std::as_bytes(std::span{mesh->vertices});
 	const auto indexSpan = std::as_bytes(std::span{*mesh->indices});
-	if (vertexSpan.size() > graphics_detail::payloadLimit - indexSpan.size()) {
+	if (vertexSpan.size() > stana::rendering::detail::payloadLimit - indexSpan.size()) {
 		return capability("Mesh upload exceeds payload limit");
 	}
 	auto reservation = reserve(vertexSpan.size() + indexSpan.size());
@@ -237,4 +237,4 @@ auto Resources::mesh(const std::shared_ptr<const Mesh> &mesh)
 	}
 	return result;
 }
-} // namespace stana::native::gpu
+} // namespace stana::platform::detail::gpu

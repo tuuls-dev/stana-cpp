@@ -9,7 +9,7 @@
 #include <optional>
 #include <string>
 
-namespace stana::native {
+namespace stana::platform::detail {
 /// @brief Independent GPU-read owner. Deliberately does not own its command buffer.
 struct BatchResources {
 	std::vector<std::shared_ptr<RasterTile>> sources;
@@ -83,5 +83,5 @@ void requestFrame(const std::shared_ptr<WindowState> &);
 /// @brief Invalidates input/evidence before draining and replacing an entire attachment.
 void installSurface(const std::shared_ptr<WindowState> &);
 void closeRenderer(const std::shared_ptr<WindowState> &);
-} // namespace stana::native
+} // namespace stana::platform::detail
 #endif

@@ -9,10 +9,9 @@
 #include <string>
 #include <vector>
 import stana;
-import stana.core;
 
 namespace {
-using namespace stana;
+
 constexpr double initialWidth = 800;
 constexpr double initialHeight = 600;
 constexpr double padding = 24;
@@ -24,7 +23,10 @@ constexpr auto scenarioDeadline = std::chrono::seconds{8};
 constexpr auto primaryTitle = "Stana tile qualification";
 constexpr auto secondaryTitle = "Stana independent window";
 
-constexpr fixtures::PhysicalViewport edgeViewport{.width = 1025, .height = 769};
+constexpr stana::testing::fixtures::platform::macos::PhysicalViewport edgeViewport{
+	.width = 1025,
+	.height = 769
+};
 enum class Stage : std::uint8_t {
 	initial,
 	sparse,
@@ -44,14 +46,14 @@ void require(bool condition, const std::string &message) {
 
 /// @brief Drives actual production sessions; synthetic evidence cannot satisfy this fixture.
 struct Scenario : std::enable_shared_from_this<Scenario> {
-	Signal<Color> foreground{Color::black()};
-	Signal<bool> anchor{false};
-	Signal<std::string> secondaryText{std::string{"independent"}};
-	std::shared_ptr<detail::Document> document;
-	std::shared_ptr<detail::Document> otherDocument;
-	native::WindowStatistics before;
-	native::WindowStatistics otherBefore;
-	Metrics coreBefore;
+	stana::reactive::Signal<stana::Color> foreground{stana::Color::black()};
+	stana::reactive::Signal<bool> anchor{false};
+	stana::reactive::Signal<std::string> secondaryText{std::string{"independent"}};
+	std::shared_ptr<stana::document::detail::Document> document;
+	std::shared_ptr<stana::document::detail::Document> otherDocument;
+	stana::platform::detail::WindowStatistics before;
+	stana::platform::detail::WindowStatistics otherBefore;
+	stana::document::Metrics coreBefore;
 	Stage stage = Stage::initial;
 	bool verified = false;
 	bool signaledReady = false;
@@ -65,18 +67,19 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 
 	void queue() {
 		const auto owner = shared_from_this();
-		Application::postAfter(pollDelay, [owner] -> void {
+		stana::application::Application::postAfter(pollDelay, [owner] -> void {
 			owner->tick();
 		});
 	}
 
-	[[nodiscard]] static auto ready(const native::WindowStatistics &statistics) -> bool {
+	[[nodiscard]] static auto ready(const stana::platform::detail::WindowStatistics &statistics)
+		-> bool {
 		return statistics.confirmedRevision != 0 &&
 			statistics.confirmedRevision == statistics.submittedRevision &&
 			!statistics.renderingWork.hasActiveBatch && !statistics.renderingWork.hasPendingScene;
 	}
 
-	void record(const native::WindowStatistics &statistics) const {
+	void record(const stana::platform::detail::WindowStatistics &statistics) const {
 		const auto &work = statistics.renderingWork;
 		std::cout << "stage=" << static_cast<unsigned>(stage)
 				  << " epoch=" << statistics.surfaceEpoch
@@ -95,10 +98,10 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 				std::chrono::steady_clock::now() - stageStarted < scenarioDeadline,
 				"native stage timed out: " + std::to_string(static_cast<unsigned>(stage))
 			);
-			const auto windows = native::diagnostics();
+			const auto windows = stana::platform::detail::diagnostics();
 			require(windows.size() == 2, "two independent native windows remain attached");
 			if (!signaledReady) {
-				const auto path = fixtures::resultPath();
+				const auto path = stana::testing::fixtures::platform::macos::resultPath();
 				if (!path.empty()) {
 					std::ofstream readyFile{path + ".ready"};
 					readyFile << "ready";
@@ -113,7 +116,7 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 				before = current;
 				otherBefore = other;
 				coreBefore = document->metrics();
-				foreground.set(Color::accent());
+				foreground.set(stana::Color::accent());
 				next(Stage::sparse);
 			} else if (stage == Stage::sparse && ready(current) &&
 				current.confirmedRevision > before.confirmedRevision) {
@@ -167,7 +170,7 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 				);
 				record(current);
 				before = current;
-				fixtures::resizeWindow(primaryTitle, edgeViewport);
+				stana::testing::fixtures::platform::macos::resizeWindow(primaryTitle, edgeViewport);
 				next(Stage::smallResize);
 			} else if (stage == Stage::smallResize && ready(current) &&
 				current.surfaceEpoch > before.surfaceEpoch) {
@@ -178,7 +181,7 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 				);
 				record(current);
 				before = current;
-				fixtures::replaceAttachment(primaryTitle);
+				stana::testing::fixtures::platform::macos::replaceAttachment(primaryTitle);
 				next(Stage::reattach);
 			} else if (stage == Stage::reattach && ready(current) &&
 				current.surfaceEpoch > before.surfaceEpoch) {
@@ -188,10 +191,10 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 				);
 				record(current);
 				before = current;
-				fixtures::showWindow(primaryTitle, false);
+				stana::testing::fixtures::platform::macos::showWindow(primaryTitle, false);
 				constexpr unsigned publications = 129;
 				for (unsigned index = 0; index < publications; ++index) {
-					foreground.set(index % 2 == 0 ? Color::black() : Color::accent());
+					foreground.set(index % 2 == 0 ? stana::Color::black() : stana::Color::accent());
 				}
 				next(Stage::occluded);
 			} else if (stage == Stage::occluded) {
@@ -202,14 +205,18 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 						current.renderingWork.hasPendingScene,
 					"occluded publications coalesce without acquisition/raster"
 				);
-				fixtures::showWindow(primaryTitle, true);
+				stana::testing::fixtures::platform::macos::showWindow(primaryTitle, true);
 				next(Stage::revealed);
 			} else if (stage == Stage::revealed && ready(current) &&
 				current.confirmedRevision > before.confirmedRevision) {
 				record(current);
 				before = current;
-				constexpr fixtures::PhysicalViewport restoredViewport{.width = 1200, .height = 900};
-				fixtures::resizeWindow(primaryTitle, restoredViewport);
+				constexpr stana::testing::fixtures::platform::macos::PhysicalViewport
+					restoredViewport{.width = 1200, .height = 900};
+				stana::testing::fixtures::platform::macos::resizeWindow(
+					primaryTitle,
+					restoredViewport
+				);
 				next(Stage::edge);
 			} else if (stage == Stage::edge && ready(current) &&
 				current.surfaceEpoch > before.surfaceEpoch) {
@@ -222,22 +229,22 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 				record(current);
 				verified = true;
 				secondaryText.set("close with pending publication");
-				fixtures::closeWindow(secondaryTitle);
-				fixtures::closeWindow(primaryTitle);
+				stana::testing::fixtures::platform::macos::closeWindow(secondaryTitle);
+				stana::testing::fixtures::platform::macos::closeWindow(primaryTitle);
 				return;
 			}
 			queue();
 		} catch (const std::exception &error) {
 			failure = error.what();
 			std::cerr << failure << '\n';
-			Application::stop();
+			stana::application::Application::stop();
 		}
 	}
 };
 
 /// @brief Asymmetric markers cross physical tile edges at both tested scales.
-[[nodiscard]] auto markers() -> Drawing {
-	Drawing drawing;
+[[nodiscard]] auto markers() -> stana::rendering::Drawing {
+	stana::rendering::Drawing drawing;
 	constexpr double step = 128;
 	constexpr double markerWidth = 8;
 	constexpr double markerHeight = 12;
@@ -252,12 +259,12 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 			drawing.fill(
 				{.origin = {.x = x, .y = y},
 					.size = {.width = markerWidth, .height = markerHeight}},
-				Color::rgb(1, 0, 0)
+				stana::Color::rgb(1, 0, 0)
 			);
 			drawing.fill(
 				{.origin = {.x = x + blueOffset, .y = y},
 					.size = {.width = blueExtent, .height = blueExtent}},
-				Color::rgb(0, 0, 1)
+				stana::Color::rgb(0, 0, 1)
 			);
 		}
 	}
@@ -266,47 +273,64 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 
 [[nodiscard]] auto runScenario() -> int {
 	const auto scenario = std::make_shared<Scenario>();
-	scenario->document = detail::Document::create({.width = initialWidth, .height = initialHeight});
+	scenario->document =
+		stana::document::detail::Document::create({.width = initialWidth, .height = initialHeight});
 	scenario->otherDocument =
-		detail::Document::create({.width = smallWidth, .height = smallHeight});
-	detail::installNativeTaskDispatcher();
-	Transaction::perform([&] -> void {
-		MountContext mainContext{
+		stana::document::detail::Document::create({.width = smallWidth, .height = smallHeight});
+	stana::application::detail::installNativeTaskDispatcher();
+	stana::reactive::Transaction::perform([&] -> void {
+		stana::ui::MountContext mainContext{
 			.document = scenario->document,
 			.parent = scenario->document->root()
 		};
-		static_cast<void>(mount(
-			ZStack{
-				.children = children(
-					CPUCanvas{
-						.drawing = markers(),
-						.layout =
-							{.frame = Frame{.width = Length::fill(), .height = Length::fill()}}
-					},
-					VStack{
-						.layout =
-							{.padding = Insets::all(padding),
-								.frame = Frame{.width = Length::fill(), .height = Length::fill()}},
-						.children = children(
-							Text{
-								.text = "sparse label",
-								.textStyle = {.foreground = scenario->foreground}
+		static_cast<void>(
+			stana::ui::mount(
+				stana::ui::ZStack{
+					.children =
+						stana::ui::children(
+							stana::ui::CPUCanvas{
+								.drawing = markers(),
+								.layout =
+									{.frame =
+											stana::Frame{
+												.width = stana::Length::fill(),
+												.height = stana::Length::fill()
+											}}
 							},
-							Toggle{.text = "anchor", .value = scenario->anchor.binding()}
+							stana::ui::VStack{
+								.layout =
+									{.padding = stana::Insets::all(padding),
+										.frame =
+											stana::Frame{
+												.width = stana::Length::fill(),
+												.height = stana::Length::fill()
+											}},
+								.children = stana::ui::children(
+									stana::ui::Text{
+										.text = "sparse label",
+										.textStyle = {.foreground = scenario->foreground}
+									},
+									stana::ui::Toggle{
+										.text = "anchor",
+										.value = scenario->anchor.binding()
+									}
+								)
+							}
 						)
-					}
-				)
-			},
-			mainContext
-		));
-		MountContext otherContext{
+				},
+				mainContext
+			)
+		);
+		stana::ui::MountContext otherContext{
 			.document = scenario->otherDocument,
 			.parent = scenario->otherDocument->root()
 		};
-		static_cast<void>(mount(Text{.text = scenario->secondaryText}, otherContext));
+		static_cast<void>(
+			stana::ui::mount(stana::ui::Text{.text = scenario->secondaryText}, otherContext)
+		);
 	});
 	scenario->queue();
-	const int status = detail::runWindows(
+	const int status = stana::application::detail::runWindows(
 		{{.title = primaryTitle,
 			 .size = {.width = initialWidth, .height = initialHeight},
 			 .document = scenario->document},
@@ -326,10 +350,10 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 /// status alone.
 auto main() -> int {
 	try {
-		const auto output = stana::fixtures::resultPath();
+		const auto output = stana::testing::fixtures::platform::macos::resultPath();
 		if (!output.empty()) {
 			std::ofstream pid{output + ".pid"};
-			pid << stana::fixtures::processIdentity();
+			pid << stana::testing::fixtures::platform::macos::processIdentity();
 		}
 		int result = 1;
 		try {
