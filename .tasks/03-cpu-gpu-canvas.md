@@ -1,5 +1,5 @@
 ---
-status: todo
+status: in-progress
 plan: final
 researched: 2026-11-04
 ---
@@ -11,8 +11,9 @@ modern C++23. It specifies target contracts, not capabilities already implemente
 Implement the public values, reactive mounting, ordered composition, resource
 validation, execution, failure handling, and verification together.
 
-**Execution status:** planning only. Every implementation checkpoint is pending.
-Writing and committing this document does not implement or rename framework code.
+**Execution status:** implementation in progress on `feat/03-cpu-gpu-canvas`.
+See [implementation evidence](../docs/canvas/implementation-evidence.md) for verified
+checkpoints and outstanding qualification. Unchecked gates are not complete.
 There are no product decisions awaiting user clarification.
 
 Reading order: scope and evidence (§1–2), public API and validated values (§3–6),

@@ -407,6 +407,7 @@ class Document : public std::enable_shared_from_this<Document> {
 	void abandonPresentation(PresentationAttempt attempt);
 	/// @brief Invalidates submission identities after surface/attachment replacement.
 	void resetPresentation(std::uint64_t epoch);
+	void holdPreparedGeometry(std::uint64_t revision);
 	void queueGPUDiagnostic(GPUDiagnostic, std::uint64_t drawingVersion, std::uint64_t epoch);
 	[[nodiscard]] auto hitTest(Point point) const -> std::optional<NodeId>;
 
@@ -475,6 +476,7 @@ class Document : public std::enable_shared_from_this<Document> {
 	std::uint64_t confirmedRevision_ = 0; ///< Last scene whose native display evidence was joined.
 	GeometryRoot confirmedGeometry_;
 	std::map<std::uint64_t, GeometryRoot> geometryHistory_;
+	std::optional<std::pair<std::uint64_t, GeometryRoot>> preparedGeometry_;
 
 	struct PinnedGeometry {
 		PresentationAttempt attempt;

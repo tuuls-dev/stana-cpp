@@ -12,9 +12,55 @@
 #include <variant>
 #include <vector>
 import stana;
+import stana.core;
 #include "../../../src/application/gpu_conversion.hpp"
+#include "../../../src/application/scene_conversion.hpp"
 
 namespace stana::native::fixtures {
+auto mixedScene(bool extended) -> std::shared_ptr<const Scene> {
+	constexpr double extent = 32;
+	constexpr double topOrigin = 8;
+	constexpr double topExtent = 8;
+	constexpr double translucent = 0.5;
+	Drawing back;
+	Drawing front;
+	GPUDrawing picture;
+	if (extended) {
+		picture.fillRect({.size = {.width = extent, .height = extent}}, ExtendedColor{2, 0, 0});
+	} else {
+		back.fillRect({.size = {.width = extent, .height = extent}}, Color::rgb(1, 0, 0));
+		picture.fillRect(
+			{.size = {.width = extent, .height = extent}},
+			Color::rgb(0, 1, 0, translucent)
+		);
+		front.fillRect(
+			{.origin = {.x = topOrigin, .y = topOrigin},
+				.size = {.width = topExtent, .height = topExtent}},
+			Color::rgb(0, 0, 1)
+		);
+	}
+	const Frame fill{.width = Length::fill(), .height = Length::fill()};
+	auto document = detail::Document::create({.width = extent, .height = extent});
+	Transaction::perform([&] -> void {
+		MountContext context{.document = document, .parent = document->root()};
+		static_cast<void>(stana::mount(
+			ZStack{
+				.children = children(
+					CPUCanvas{.drawing = back, .layout = {.frame = fill}},
+					GPUCanvas{.drawing = picture, .layout = {.frame = fill}},
+					CPUCanvas{.drawing = front, .layout = {.frame = fill}}
+				)
+			},
+			context
+		));
+	});
+	document->commit();
+	application_detail::SceneConversion conversion;
+	const auto result = conversion.convert(document->renderSnapshot());
+	document->close();
+	return result;
+}
+
 auto counterPrograms() -> std::vector<std::shared_ptr<const gpu::Program>> {
 	const auto shader = GPUShader::source(R"(
 @group(0) @binding(0) var previous: texture_2d<f32>;

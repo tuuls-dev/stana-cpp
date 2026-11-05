@@ -70,6 +70,8 @@ void Document::close() {
 	scene_.reset();
 	render_.reset();
 	geometryHistory_.clear();
+	preparedGeometry_.reset();
+	gpuFailures_.clear();
 	pinnedGeometry_.clear();
 	confirmedGeometry_.reset();
 }

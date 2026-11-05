@@ -204,6 +204,7 @@ struct Window {
 		abandonPresentation{}; ///< Retires expired work without inventing presentation evidence.
 	std::function<void(std::uint64_t)>
 		resetPresentation{}; ///< Invalidates callbacks from previous native attachments/surfaces.
+	std::function<void(std::uint64_t)> holdPreparedGeometry{};
 	std::function<void(FrameIdentity)>
 		gatePendingPresentation{};		 ///< Gates changed geometry before commit.
 	std::function<void()> gateSurface{}; ///< Immediately gates replaced native attachments.
@@ -214,6 +215,19 @@ struct Window {
 
 /// @brief Last-known native progress for one active host; no mutable native objects escape.
 struct WindowStatistics {
+	std::string deviceName{};
+	bool unifiedMemory = false;
+	bool linearWorking = false;
+	bool linearOutput = false;
+	std::uint64_t offscreenRevision = 0;
+	std::uint64_t stateSteps = 0;
+	std::uint64_t pipelineBuilds = 0;
+	std::uint64_t pipelineCacheHits = 0;
+	std::uint64_t resourceUploadBytes = 0;
+	std::uint64_t compositedTiles = 0;
+	std::uint64_t trackedBytes = 0;
+	std::uint64_t peakTrackedBytes = 0;
+	std::uint64_t managedWriteBytes = 0;
 	LogicalSize logicalViewport{};	///< Actual attached view size, not a requested window size.
 	double backingScale = 0;		///< Actual surface scale used by grid construction.
 	std::uint64_t surfaceEpoch = 0; ///< Generation of the current surface geometry.

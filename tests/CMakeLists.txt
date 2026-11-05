@@ -115,3 +115,21 @@ if(APPLE)
         set_tests_properties(stana.native.canvas.offscreen PROPERTIES TIMEOUT 120 LABELS "native;offscreen" RUN_SERIAL TRUE)
     endif()
 endif()
+
+if(APPLE AND STANA_NATIVE_TESTS)
+    add_executable(stana-canvas-presentation MACOSX_BUNDLE platform/macos/canvas_presentation.cpp platform/macos/window_fixture.mm)
+    set_target_properties(stana-canvas-presentation PROPERTIES
+        MACOSX_BUNDLE_INFO_PLIST "${PROJECT_SOURCE_DIR}/cmake/AppInfo.plist.in"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "dev.stana.canvas-qualification"
+        MACOSX_BUNDLE_BUNDLE_NAME "Stana Canvas Qualification"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
+    target_compile_options(stana-canvas-presentation PRIVATE "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>")
+    target_link_libraries(stana-canvas-presentation PRIVATE stana::stana)
+    stana_apply_safety(stana-canvas-presentation)
+    add_test(NAME stana.native.canvas.presentation COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/platform/macos/launch_native.py" "$<TARGET_BUNDLE_DIR:stana-canvas-presentation>")
+    set_tests_properties(stana.native.canvas.presentation PROPERTIES TIMEOUT 45 LABELS "native;presentation" RUN_SERIAL TRUE
+        ENVIRONMENT "MTL_DEBUG_LAYER=1;MTL_SHADER_VALIDATION=1")
+    set_tests_properties(stana.native.window PROPERTIES RUN_SERIAL TRUE)
+endif()

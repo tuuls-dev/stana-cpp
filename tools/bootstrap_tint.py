@@ -105,17 +105,22 @@ def main() -> None:
         return
     source = work / "source"
     sources(work / "cache", source, args.offline)
-    binary = work / (args.config + (f"-{args.sanitizer}" if args.sanitizer else ""))
+    fingerprint = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:16]
+    binary = work / fingerprint
     configure = ["cmake", "-S", str(source), "-B", str(binary), "-G", "Ninja",
                  f"-DCMAKE_CXX_COMPILER={compiler}", f"-DCMAKE_BUILD_TYPE={args.config}",
                  "-DCMAKE_CXX_STANDARD=23", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
                  "-DTINT_BUILD_WGSL_READER=ON", "-DTINT_BUILD_MSL_WRITER=ON",
                  "-DDAWN_ENABLE_RTTI=ON", *[f"-D{option}=OFF" for option in OFF]]
-    flags = []
+    flags = [os.environ.get("CXXFLAGS", "")]
     if platform.system() == "Darwin":
         sdk = subprocess.check_output(["xcrun", "--show-sdk-path"], text=True).strip()
         configure += [f"-DCMAKE_OSX_SYSROOT={sdk}", "-DCMAKE_OSX_DEPLOYMENT_TARGET=26.0"]
         flags += [f"-nostdinc++ -isystem {sdk}/usr/include/c++/v1", "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE"]
+    if platform.system() == "Linux":
+        flags += ["-D_GLIBCXX_ASSERTIONS=1"]
+    elif platform.system() == "Windows":
+        flags += ["/D_MSVC_STL_HARDENING=1"]
     if args.sanitizer:
         if platform.system() == "Windows":
             flags += ["/fsanitize=address"]

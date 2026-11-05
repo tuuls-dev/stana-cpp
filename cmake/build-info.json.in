@@ -10,5 +10,7 @@
 	"compiler_frontend": "@CMAKE_CXX_COMPILER_FRONTEND_VARIANT@",
 	"macos_deployment_target": "@CMAKE_OSX_DEPLOYMENT_TARGET@",
 	"cxx_standard": 23,
+	"private_shader_compiler_revision": "@STANA_TINT_REVISION@",
+	"application_shader_contract": "WGSL source and logical group/binding coordinates",
 	"bmi_policy": "Rebuilt from installed module interface by consumer; no portable PCM files"
 }

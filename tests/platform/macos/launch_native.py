@@ -5,6 +5,7 @@ all rendering occluded. No synthetic timestamp or visibility override is used.
 """
 from pathlib import Path
 import os
+import plistlib
 import signal
 import subprocess
 import sys
@@ -14,16 +15,19 @@ import time
 
 def main() -> int:
     bundle = Path(sys.argv[1]).resolve()
-    executable = bundle / "Contents" / "MacOS" / "stana-native-smoke"
+    with (bundle / "Contents/Info.plist").open("rb") as stream:
+        executable = bundle / "Contents/MacOS" / plistlib.load(stream)["CFBundleExecutable"]
     with tempfile.TemporaryDirectory(prefix="stana-native-") as folder:
         directory = Path(folder)
         result = directory / "result"
         output = directory / "stdout"
         error = directory / "stderr"
+        validation = [item for key in ("MTL_DEBUG_LAYER", "MTL_SHADER_VALIDATION")
+                      if key in os.environ for item in ("--env", f"{key}={os.environ[key]}")]
         try:
             launch = subprocess.Popen(
                 ["/usr/bin/open", "-n", "-W", "-o", str(output), "--stderr", str(error),
-                 "--env", f"STANA_NATIVE_RESULT_FILE={result}", "--env", "STANA_TRACE_NATIVE=1",
+                 "--env", f"STANA_NATIVE_RESULT_FILE={result}", "--env", "STANA_TRACE_NATIVE=1", *validation,
                  str(bundle)],
             )
             try:

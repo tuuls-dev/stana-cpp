@@ -83,6 +83,19 @@ struct RenderingWork {
 /// Other tile timestamps remain diagnostic, not independent display proof. This is acknowledged
 /// last-known geometry, not a promise of scanout-atomic input or a performance qualification.
 struct WindowDiagnostics {
+	std::string deviceName{};
+	bool unifiedMemory = false;
+	bool linearWorking = false;
+	bool linearOutput = false;
+	std::uint64_t offscreenRevision = 0;
+	std::uint64_t stateSteps = 0;
+	std::uint64_t pipelineBuilds = 0;
+	std::uint64_t pipelineCacheHits = 0;
+	std::uint64_t resourceUploadBytes = 0;
+	std::uint64_t compositedTiles = 0;
+	std::uint64_t trackedBytes = 0;
+	std::uint64_t peakTrackedBytes = 0;
+	std::uint64_t managedWriteBytes = 0;
 	std::uint64_t surfaceEpoch = 0; ///< Current native geometry/surface generation.
 	std::optional<std::uint64_t> submittedSceneRevision{}; ///< Last GPU submission, if any.
 	std::optional<std::uint64_t>

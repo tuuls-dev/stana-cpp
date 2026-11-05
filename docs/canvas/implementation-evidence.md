@@ -78,3 +78,29 @@ own evidence; this Apple Silicon machine cannot establish those passes.
   reserved-word local in the built-in mesh function.
 - Ordered composition and presentation integration are the next checkpoint, not
   established by the temporal-only offscreen test.
+
+### Mixed compositor / native presentation checkpoint
+
+- Strict debug build passes with production ordered composition, transparent CPU
+  operation contributions, rounded clip stacks, primitives/meshes/polylines,
+  complete offscreen final tiles, and one final linear display mapping integrated.
+- Production mixed CPU/GPU/CPU interior pixels, premultiplied overlap, HDR values
+  above one, and presentation-only reuse pass at 1x, 2x and 1.25x in the native
+  offscreen suite with both Metal validation modes enabled.
+- `ctest --preset debug -R '^stana.native.canvas.presentation$'`: pass (0.98 s)
+  after adding a real public WGSL compute/state program to the window fixture.
+  Actual positive proof-tile timestamps joined the exact GPU-success attempts;
+  the trace includes zero-time retry, subsequent positive confirmation, a GPU-only
+  drawing update, and a paint-equivalent anchor. No extra temporal step or
+  unrelated CPU raster/layout work was observed for those updates.
+- Final mapping was exercised through a real SDR output attachment with extended
+  linear intermediate content. EDR hardware/headroom transition qualification is
+  separate and is not established by the SDR presentation gate.
+- `ctest --preset debug -R '^stana.consumer$'`: pass (163.46 s), covering source,
+  installed and relocated module consumers plus removed/native-ingress negatives.
+- Native ready packets pin one geometry root beyond the short history and remain
+  stable through drawable starvation/retry; old-epoch offscreen completions retire
+  ownership without committing state. These paths have explicit regression seams;
+  broader injected-failure and long-running memory/performance gates remain pending.
+- The CPU-only direct raster-buffer path remains; discrete-device managed writes
+  are explicitly notified/accounted, without asserting untested Intel/AMD output.

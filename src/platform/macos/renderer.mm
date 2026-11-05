@@ -646,10 +646,12 @@ RasterTile::~RasterTile() {
 }
 
 void encodeTile(id<MTLBlitCommandEncoder> encoder, const RasterTile &tile, id<MTLTexture> texture) {
-	if (tile.buffer.storageMode == MTLStorageModeManaged) {
+	if (tile.cpuDirty && tile.buffer.storageMode == MTLStorageModeManaged) {
 		[tile.buffer didModifyRange:NSMakeRange(0, tile.layout.allocationBytes)];
+		tile.accounting->managedWriteBytes.fetch_add(tile.layout.allocationBytes);
 	}
 
+	tile.cpuDirty = false;
 	if (encoder == nil || texture == nil || texture.width != tile.layout.pixels.width ||
 		texture.height != tile.layout.pixels.height ||
 		texture.pixelFormat != MTLPixelFormatBGRA8Unorm || texture.device != tile.buffer.device) {

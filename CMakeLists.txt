@@ -22,7 +22,12 @@ target_sources(stana
 	PRIVATE src/graphics/shader_compiler.cpp src/graphics/drawing.cpp src/graphics/gpu.cpp src/graphics/gpu_program.cpp src/version.cpp src/core/document.cpp src/core/input.cpp src/layout/layout.cpp src/scene/scene.cpp src/scene/geometry.cpp src/platform/tiles.cpp src/platform/scheduler.cpp src/ui/mount.cpp src/application/application.cpp src/text/text.cpp)
 target_compile_features(stana PUBLIC cxx_std_23)
 target_link_libraries(stana PRIVATE ICU::uc ICU::i18n ICU::data stana::tint)
-target_include_directories(stana SYSTEM PRIVATE "${STANA_TINT_ROOT}/include")
+if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    set(_stana_tint_include "/imsvc${STANA_TINT_ROOT}/include")
+else()
+    set(_stana_tint_include "-isystem${STANA_TINT_ROOT}/include")
+endif()
+set_property(SOURCE src/graphics/shader_compiler.cpp APPEND PROPERTY COMPILE_OPTIONS "${_stana_tint_include}")
 set_source_files_properties(src/graphics/shader_compiler.cpp PROPERTIES
     COMPILE_DEFINITIONS "DAWN_HAVE_UTILS_BUILD_CONFIG;DAWN_ENABLE_ASSERTS")
 set_target_properties(stana PROPERTIES
@@ -43,9 +48,9 @@ if(APPLE)
             "${CMAKE_CURRENT_SOURCE_DIR}/src/platform/macos/shaders/stana.metal"
             "${CMAKE_CURRENT_BINARY_DIR}/generated/stana_shader.hpp"
         DEPENDS tools/embed_shader.py src/platform/macos/shaders/stana.metal VERBATIM)
-    target_include_directories(stana PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+    set_property(SOURCE src/platform/macos/gpu_resources.mm APPEND PROPERTY INCLUDE_DIRECTORIES "${CMAKE_CURRENT_BINARY_DIR}/generated")
     target_sources(stana PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated/stana_shader.hpp"
-        src/platform/macos/gpu_resources.mm src/platform/macos/gpu_programs.mm src/platform/macos/native_host.mm src/platform/macos/renderer.mm src/platform/macos/presentation.mm)
+        src/platform/macos/compositor.mm src/platform/macos/gpu_resources.mm src/platform/macos/gpu_programs.mm src/platform/macos/native_host.mm src/platform/macos/renderer.mm src/platform/macos/presentation.mm)
 	target_compile_options(stana PRIVATE "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>")
 	target_link_libraries(stana PRIVATE "-framework AppKit" "-framework CoreGraphics"
 		"-framework CoreText" "-framework Metal" "-framework QuartzCore")

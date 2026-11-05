@@ -113,6 +113,7 @@ struct RasterAccounting {
 	std::atomic<std::size_t> bytes{0};
 	std::atomic<std::size_t> peak{0};
 	std::atomic<std::uint64_t> allocations{0};
+	std::atomic<std::uint64_t> managedWriteBytes{0};
 };
 
 /// @brief One reusable context backed directly by shared Metal memory; noncopyable.
@@ -120,6 +121,7 @@ struct RasterTile {
 	TileLayout layout;
 	id<MTLBuffer> buffer = nil;
 	CGContextRef bitmapContext = nullptr;
+	mutable bool cpuDirty = true;
 	std::shared_ptr<RasterAccounting> accounting;
 	std::shared_ptr<AllocationLease> combinedLease;
 	RasterTile(TileLayout, id<MTLDevice>, std::shared_ptr<RasterAccounting>);
