@@ -257,6 +257,16 @@ void stop();
 /// @brief Schedules an owning callback on the UI queue after a nonnegative delay.
 void postAfter(std::chrono::milliseconds delay, std::function<void()> callback);
 
+/// @brief Thread-safe native mailbox wakeup; notify stays valid until close/destruction.
+struct MailboxWakeup {
+	std::function<void()> notify; ///< Producer-safe coalesced wake; never applies commands.
+	std::function<void()> close;  ///< Owner-thread cancellation; late handlers must no-op.
+};
+
+/// @brief Creates an owning main-queue data-add source for portable mailbox turns.
+[[nodiscard]] auto createMailboxWakeup(std::function<void()> onWake)
+	-> std::expected<MailboxWakeup, std::string>;
+
 /// @brief Native system-font parameters, grouped to prevent swapping size and weight.
 struct FontRequest {
 	double size = 0;   ///< Logical point size after environment scaling.

@@ -23,6 +23,11 @@ target_link_libraries(stana-reactive PRIVATE stana::stana)
 stana_apply_safety(stana-reactive)
 add_test(NAME stana.reactive COMMAND stana-reactive)
 
+add_executable(stana-thread-safe-writes reactive/thread_safe_writes.cpp)
+target_link_libraries(stana-thread-safe-writes PRIVATE stana::stana)
+stana_apply_safety(stana-thread-safe-writes)
+add_test(NAME stana.reactive.threadSafeWrites COMMAND stana-thread-safe-writes)
+
 add_executable(stana-ui-contracts ui/contracts.cpp)
 target_link_libraries(stana-ui-contracts PRIVATE stana::stana)
 stana_apply_safety(stana-ui-contracts)
@@ -44,6 +49,21 @@ if(APPLE)
 		add_test(NAME stana.native.window COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/platform/macos/launch_native.py" "$<TARGET_BUNDLE_DIR:stana-native-smoke>")
 		set_tests_properties(stana.native.window PROPERTIES TIMEOUT 45 LABELS native)
+		add_executable(stana-native-thread-safe-writes MACOSX_BUNDLE
+			platform/macos/thread_safe_writes.cpp platform/macos/window_fixture.mm)
+		set_target_properties(stana-native-thread-safe-writes PROPERTIES
+			MACOSX_BUNDLE_INFO_PLIST "${PROJECT_SOURCE_DIR}/cmake/AppInfo.plist.in"
+			MACOSX_BUNDLE_GUI_IDENTIFIER "dev.stana.native-thread-safe-writes"
+			MACOSX_BUNDLE_BUNDLE_NAME "Stana Thread-Safe Writes"
+			MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+			MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
+		target_compile_options(stana-native-thread-safe-writes PRIVATE "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>")
+		target_link_libraries(stana-native-thread-safe-writes PRIVATE stana::stana)
+		stana_apply_safety(stana-native-thread-safe-writes)
+		add_test(NAME stana.native.threadSafeWrites COMMAND "${Python3_EXECUTABLE}"
+			"${CMAKE_CURRENT_SOURCE_DIR}/platform/macos/launch_native.py"
+			"$<TARGET_BUNDLE_DIR:stana-native-thread-safe-writes>")
+		set_tests_properties(stana.native.threadSafeWrites PROPERTIES TIMEOUT 45 LABELS native RUN_SERIAL TRUE)
 	endif()
 endif()
 

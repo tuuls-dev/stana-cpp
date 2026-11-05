@@ -66,6 +66,8 @@ template <typename R, typename... Args> class MoveOnlyFunction<R(Args...)> {
 };
 
 struct Source;
+class ExecutorEndpoint;
+void rearmDeferredExecutorWakeup();
 
 /// @brief Retained graph consumer used by computed values and property subscriptions.
 /// Sources keep weak references to observers; callback closures also capture weak
@@ -194,8 +196,10 @@ struct ReactiveRuntime {
 			flushing = false;
 		} catch (...) {
 			flushing = false;
+			rearmDeferredExecutorWakeup();
 			throw;
 		}
+		rearmDeferredExecutorWakeup();
 	}
 };
 
@@ -252,6 +256,76 @@ inline void track(const std::shared_ptr<Source> &source) {
 	}
 }
 
+/// @brief Count of admitted queued writes that have not yet applied or been discarded.
+inline constexpr std::size_t maximumPendingSignalWrites = 4096;
+
+/// @brief Owning mailbox command applied on the signal's creating executor.
+class ExecutorCommand {
+  public:
+	ExecutorCommand() = default;
+	ExecutorCommand(const ExecutorCommand &) = delete;
+	ExecutorCommand(ExecutorCommand &&) = delete;
+	auto operator=(const ExecutorCommand &) -> ExecutorCommand & = delete;
+	auto operator=(ExecutorCommand &&) -> ExecutorCommand & = delete;
+	virtual ~ExecutorCommand() = default;
+	virtual void apply() = 0;
+};
+
+enum class ExecutorSessionKind : std::uint8_t { dormant, native, headless, closed };
+
+/// @brief One owner-executor epoch: dormant, native, headless, then permanently closed.
+class ExecutorEndpoint {
+  public:
+	ExecutorEndpoint();
+	ExecutorEndpoint(const ExecutorEndpoint &) = delete;
+	ExecutorEndpoint(ExecutorEndpoint &&) = delete;
+	auto operator=(const ExecutorEndpoint &) -> ExecutorEndpoint & = delete;
+	auto operator=(ExecutorEndpoint &&) -> ExecutorEndpoint & = delete;
+	~ExecutorEndpoint();
+
+	[[nodiscard]] static auto current() -> std::shared_ptr<ExecutorEndpoint>;
+	[[nodiscard]] static auto currentIfAny() -> std::shared_ptr<ExecutorEndpoint>;
+
+	void admit(std::unique_ptr<ExecutorCommand> command);
+	void close();
+	void drain();
+	void activateNative(std::function<void()> notify, std::function<void()> teardown);
+	void acquireHeadless();
+	void releaseHeadless();
+	void rearmDeferredWakeup();
+
+	[[nodiscard]] auto pendingWrites() const -> std::size_t;
+	[[nodiscard]] auto kind() const -> ExecutorSessionKind;
+	[[nodiscard]] auto ownerThread() const -> std::thread::id;
+	void setAdmissionProbe(std::function<void()> beforeLock, std::function<void()> underLock);
+	void setCloseProbe(std::function<void()> beforeLock, std::function<void()> underLock);
+
+  private:
+	void requestWakeup();
+
+	struct Impl;
+	std::unique_ptr<Impl> impl_;
+};
+
+/// @brief One TestHost's claim on the owner-thread headless executor session.
+class HeadlessExecutorLease {
+  public:
+	HeadlessExecutorLease() noexcept = default;
+	explicit HeadlessExecutorLease(std::shared_ptr<ExecutorEndpoint> endpoint);
+	HeadlessExecutorLease(const HeadlessExecutorLease &) = delete;
+	HeadlessExecutorLease(HeadlessExecutorLease &&other) noexcept;
+	auto operator=(const HeadlessExecutorLease &) -> HeadlessExecutorLease & = delete;
+	auto operator=(HeadlessExecutorLease &&other) noexcept -> HeadlessExecutorLease &;
+	~HeadlessExecutorLease();
+
+	void release() noexcept;
+
+  private:
+	std::shared_ptr<ExecutorEndpoint> endpoint_;
+};
+
+[[nodiscard]] auto acquireHeadlessExecutorLease() -> HeadlessExecutorLease;
+
 /// @brief Stack-scoped replacement for the current reactive dependency collector.
 /// Computed evaluation and observation preparation use it so nested reads attach
 /// to the correct consumer and exception unwinding restores the previous collector.
@@ -278,10 +352,16 @@ template <typename T> /// Shared storage behind Signal<T> handles, owned indepen
 struct SignalState final : Source {
 	T value;
 	std::function<bool(const T &, const T &)> equals;
+	std::shared_ptr<ExecutorEndpoint> endpoint;
 
-	SignalState(T initial, std::function<bool(const T &, const T &)> comparator)
+	SignalState(
+		T initial,
+		std::function<bool(const T &, const T &)> comparator,
+		std::shared_ptr<ExecutorEndpoint> ownerEndpoint
+	)
 		: value(std::move(initial)),
-		  equals(std::move(comparator)) {}
+		  equals(std::move(comparator)),
+		  endpoint(std::move(ownerEndpoint)) {}
 };
 
 template <typename T>
@@ -401,6 +481,19 @@ class Transaction {
 	}
 };
 
+namespace detail {
+template <typename T>
+void assignSignalValue(const std::shared_ptr<SignalState<T>> &state, T value) {
+	state->checkThread();
+	Transaction::perform([&] -> void {
+		if (!state->equals(state->value, value)) {
+			state->value = std::move(value);
+			state->changed();
+		}
+	});
+}
+} // namespace detail
+
 template <typename T> class Computed;
 template <typename T> class Binding;
 
@@ -411,7 +504,9 @@ template <typename T> class Binding;
 /// inside a computed or observation. set() commits synchronously outside a batch,
 /// while Transaction::perform coalesces delivery. Equal writes do not invalidate
 /// dependents. Use Signal<std::string> for owned text rather than a character pointer.
-/// @note Reads and writes on a different executor are diagnosed logic errors.
+/// @note Reads and synchronous writes on a different executor are diagnosed logic
+/// errors. setThreadSafe() may be called from any thread while the owner session is
+/// active; it always defers application onto that executor.
 template <typename T> class Signal {
   public:
 	explicit Signal(T initial)
@@ -421,7 +516,11 @@ template <typename T> class Signal {
 	template <typename Equal>
 	Signal(T initial, Equal comparator)
 		: state_(
-			  std::make_shared<detail::SignalState<T>>(std::move(initial), std::move(comparator))
+			  std::make_shared<detail::SignalState<T>>(
+				  std::move(initial),
+				  std::move(comparator),
+				  detail::ExecutorEndpoint::current()
+			  )
 		  ) {}
 
 	[[nodiscard]] auto get() const -> T {
@@ -430,14 +529,37 @@ template <typename T> class Signal {
 		return state_->value;
 	}
 
-	void set(T value) const {
-		state_->checkThread();
-		Transaction::perform([&] -> auto {
-			if (!state_->equals(state_->value, value)) {
-				state_->value = std::move(value);
-				state_->changed();
+	void set(T value) const { detail::assignSignalValue(state_, std::move(value)); }
+
+	/// @brief Queues an owning value for application on this signal's executor.
+	/// @param value Value transferred into the executor's bounded mailbox.
+	/// @note Always deferred, even when called on the owning thread. Returning means
+	/// admission, not application, observer delivery, or native display completion.
+	/// @throws std::logic_error No active owning executor session, or session closed.
+	/// @throws std::overflow_error The owning executor's pending-write limit is full.
+	/// @throws Other exceptions from value construction or mailbox allocation.
+	void setThreadSafe(T value) const {
+		if (state_->owner == std::this_thread::get_id() &&
+			detail::ReactiveRuntime::current().collector != nullptr) {
+			throw std::logic_error("Stana cannot mutate inside a computed evaluation");
+		}
+
+		struct Write final : detail::ExecutorCommand {
+			std::weak_ptr<detail::SignalState<T>> state;
+			T payload;
+
+			Write(std::weak_ptr<detail::SignalState<T>> source, T incoming)
+				: state(std::move(source)),
+				  payload(std::move(incoming)) {}
+
+			void apply() override {
+				if (const auto locked = state.lock()) {
+					detail::assignSignalValue(locked, std::move(payload));
+				}
 			}
-		});
+		};
+
+		state_->endpoint->admit(std::make_unique<Write>(std::weak_ptr{state_}, std::move(value)));
 	}
 
 	template <typename F> void update(F &&operation) const {

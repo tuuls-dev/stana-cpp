@@ -1,4 +1,5 @@
 #include <future>
+#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -6,9 +7,9 @@
 import stana.reactive;
 
 namespace {
-void require(bool condition) {
+void require(bool condition, const std::string &message = "Reactive contract failed") {
 	if (!condition) {
-		throw std::runtime_error("Reactive contract failed");
+		throw std::runtime_error(message);
 	}
 }
 
@@ -131,8 +132,18 @@ void contractsAndFailures() {
 		return false;
 	}).get();
 	require(wrongThread);
+	const bool setWrongThread = std::async(std::launch::async, [&] -> bool {
+		try {
+			value.set(1);
+		} catch (const std::logic_error &) {
+			return true;
+		}
+		return false;
+	}).get();
+	require(setWrongThread, "worker set() must throw logic_error");
+	require(value.get() == 2, "worker set() must not assign");
 	const Property<std::string> text{"owned literal"};
-	require(text.get() == "owned literal");
+	require(text.get() == "owned literal", "owned literal");
 }
 } // namespace
 
@@ -142,7 +153,8 @@ auto main() -> int {
 		deliveryPreparationAndLifetime();
 		contractsAndFailures();
 		return 0;
-	} catch (const std::exception &) {
+	} catch (const std::exception &error) {
+		std::cerr << error.what() << '\n';
 		return 1;
 	}
 }

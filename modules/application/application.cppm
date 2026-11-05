@@ -46,6 +46,21 @@ struct WindowSession {
 void installNativeTaskDispatcher();
 [[nodiscard]] auto runWindows(const std::vector<WindowSession> &sessions) -> int;
 
+class NativeExecutorSession {
+  public:
+	NativeExecutorSession();
+	NativeExecutorSession(const NativeExecutorSession &) = delete;
+	NativeExecutorSession(NativeExecutorSession &&) = delete;
+	auto operator=(const NativeExecutorSession &) -> NativeExecutorSession & = delete;
+	auto operator=(NativeExecutorSession &&) -> NativeExecutorSession & = delete;
+	~NativeExecutorSession();
+	[[nodiscard]] auto complete(int code) const -> int;
+
+  private:
+	struct State;
+	std::unique_ptr<State> state_;
+};
+
 } // namespace detail
 
 /// @brief Cumulative renderer work and current gauges; drawable payload is an estimate.
@@ -123,9 +138,10 @@ class Application {
 	/// @return Zero for normal shutdown, nonzero if startup or native execution fails.
 	template <Component Content>
 	[[nodiscard]] static auto run(const Window<Content> &window) -> int {
+		const detail::NativeExecutorSession session;
 		std::vector<detail::WindowSession> sessions;
 		sessions.push_back(prepare(window));
-		return detail::runWindows(sessions);
+		return session.complete(detail::runWindows(sessions));
 	}
 
 	/// @brief Mounts heterogeneous window descriptions into independent documents.
@@ -134,6 +150,7 @@ class Application {
 	/// @return Zero for normal shutdown, nonzero if startup or native execution fails.
 	template <typename... Windows>
 	[[nodiscard]] static auto run(const std::tuple<Windows...> &windows) -> int {
+		const detail::NativeExecutorSession session;
 		std::vector<detail::WindowSession> sessions;
 		std::apply(
 			[&](const auto &...window) -> void {
@@ -141,7 +158,7 @@ class Application {
 			},
 			windows
 		);
-		return detail::runWindows(sessions);
+		return session.complete(detail::runWindows(sessions));
 	}
 
 	/// @brief Requests native loop shutdown and disposal of all remaining window sessions.

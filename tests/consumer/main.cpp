@@ -1,5 +1,6 @@
 #include <array>
 #include <cstdint>
+#include <future>
 #include <span>
 #include <string>
 #include <string_view>
@@ -47,6 +48,14 @@ auto main() -> int {
 	stana::TestHost host;
 	host.mount(stana::GPUCanvas{.drawing = gpu});
 	if (host.nodes().back().kind != "gpuCanvas" || host.mixedPaint().size() != 3) {
+		return 1;
+	}
+	const stana::Signal queued{0};
+	std::async(std::launch::async, [queued] -> void {
+		queued.setThreadSafe(1);
+	}).get();
+	host.flush();
+	if (queued.get() != 1) {
 		return 1;
 	}
 	const stana::Window positional{
