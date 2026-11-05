@@ -8,7 +8,6 @@
 #include <utility>
 
 import stana;
-import stana.testing;
 
 namespace {
 constexpr auto delay = std::chrono::milliseconds{10};
@@ -20,45 +19,47 @@ void require(bool condition, const std::string &message) {
 }
 
 /// @brief Keeps signal handles in the coroutine frame rather than a temporary closure.
-[[nodiscard]] auto delayedWrite(stana::Signal<int> value, std::shared_ptr<int> lifetime)
-	-> stana::Task {
+[[nodiscard]] auto delayedWrite(stana::reactive::Signal<int> value, std::shared_ptr<int> lifetime)
+	-> stana::tasks::Task {
 	auto ownedValue = std::move(value);
 	auto ownedLifetime = std::move(lifetime);
 	ownedValue.set(1);
-	co_await stana::sleepFor(delay);
+	co_await stana::tasks::sleepFor(delay);
 	ownedValue.set(2);
 	static_cast<void>(ownedLifetime);
 }
 
-[[nodiscard]] auto failLater() -> stana::Task {
-	co_await stana::sleepFor(delay);
+[[nodiscard]] auto failLater() -> stana::tasks::Task {
+	co_await stana::tasks::sleepFor(delay);
 	throw std::runtime_error("Expected task failure");
 }
 
 struct AsyncComponent {
-	stana::Signal<int> value;
+	stana::reactive::Signal<int> value;
 	std::shared_ptr<int> lifetime;
 
-	[[nodiscard]] auto render(stana::ComponentContext &context) const {
+	[[nodiscard]] auto render(stana::ui::ComponentContext &context) const {
 		context.task(delayedWrite(value, lifetime), [](const std::exception_ptr &error) -> void {
 			std::rethrow_exception(error);
 		});
-		return stana::Text{.text = value.map([](int current) -> std::string {
+		return stana::ui::Text{.text = value.map([](int current) -> std::string {
 			return std::to_string(current);
 		})};
 	}
 };
 
 void lifetimeAndCancellation() {
-	using namespace stana;
-	TestHost host;
-	const Signal value{0};
-	const Signal visible{true};
+
+	stana::testing::TestHost host;
+	const stana::reactive::Signal value{0};
+	const stana::reactive::Signal visible{true};
 	auto lifetime = std::make_shared<int>(0);
 	const auto weak = std::weak_ptr{lifetime};
 	host.mount(
-		If{.condition = visible,
-			.thenContent = AsyncComponent{.value = value, .lifetime = lifetime}}
+		stana::ui::If{
+			.condition = visible,
+			.thenContent = AsyncComponent{.value = value, .lifetime = lifetime}
+		}
 	);
 	lifetime.reset();
 	require(value.get() == 1 && !weak.expired(), "task starts after mount");
@@ -73,9 +74,9 @@ void lifetimeAndCancellation() {
 }
 
 void errorAndFrameRelease() {
-	using namespace stana;
-	TestHost clock;
-	const Scope scope;
+
+	stana::testing::TestHost clock;
+	const stana::reactive::Scope scope;
 	bool observedError = false;
 	auto operation = failLater();
 	std::move(operation).start(scope, [&](const std::exception_ptr &error) -> void {
@@ -83,7 +84,7 @@ void errorAndFrameRelease() {
 	});
 	clock.advanceTime(delay);
 	require(observedError, "live task failures reach explicit handler");
-	const Signal value{0};
+	const stana::reactive::Signal value{0};
 	auto resource = std::make_shared<int>(0);
 	const auto weak = std::weak_ptr{resource};
 	auto task = delayedWrite(value, resource);

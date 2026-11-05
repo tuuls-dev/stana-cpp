@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-import stana.reactive;
+import stana;
 
 namespace {
 void require(bool condition, const std::string &message = "Reactive contract failed") {
@@ -14,21 +14,21 @@ void require(bool condition, const std::string &message = "Reactive contract fai
 }
 
 void graphAndTransactions() {
-	using namespace stana;
-	const Signal left{1};
-	const Signal right{2};
-	const Signal chooseLeft{true};
+
+	const stana::reactive::Signal left{1};
+	const stana::reactive::Signal right{2};
+	const stana::reactive::Signal chooseLeft{true};
 	int evaluations = 0;
-	const auto selected = computed([&] -> int {
+	const auto selected = stana::reactive::computed([&] -> int {
 		++evaluations;
 		return chooseLeft.get() ? left.get() : right.get();
 	});
 	std::vector<int> deliveries;
-	const auto subscription = observe(selected, [&](int value) -> void {
+	const auto subscription = stana::reactive::observe(selected, [&](int value) -> void {
 		deliveries.push_back(value);
 	});
 	require(deliveries == std::vector{1});
-	Transaction::perform([&] -> void {
+	stana::reactive::Transaction::perform([&] -> void {
 		left.set(2);
 		left.set(1);
 		require(selected.get() == 1);
@@ -42,11 +42,11 @@ void graphAndTransactions() {
 	require(evaluations == previousEvaluations);
 	right.set(1);
 	require(deliveries == std::vector({1, 2, 1}));
-	const auto parity = computed([&] -> int {
+	const auto parity = stana::reactive::computed([&] -> int {
 		return right.get() % 2;
 	});
 	int changes = 0;
-	const auto equality = observe(parity, [&](int) -> void {
+	const auto equality = stana::reactive::observe(parity, [&](int) -> void {
 		++changes;
 	});
 	constexpr int odd = 3;
@@ -55,30 +55,30 @@ void graphAndTransactions() {
 }
 
 void deliveryPreparationAndLifetime() {
-	using namespace stana;
-	const Signal first{0};
-	const Signal second{0};
+
+	const stana::reactive::Signal first{0};
+	const stana::reactive::Signal second{0};
 	std::vector<int> observed;
-	const auto one = observe(first, [&](int value) -> void {
+	const auto one = stana::reactive::observe(first, [&](int value) -> void {
 		if (value == 1) {
 			second.set(2);
 		}
 	});
-	const auto two = observe(second, [&](int value) -> void {
+	const auto two = stana::reactive::observe(second, [&](int value) -> void {
 		observed.push_back(value);
 	});
-	Transaction::perform([&] -> void {
+	stana::reactive::Transaction::perform([&] -> void {
 		first.set(1);
 		second.set(1);
 	});
 	require(observed == std::vector({0, 1, 2}));
-	const Scope scope;
+	const stana::reactive::Scope scope;
 	const auto token = scope.beginRequest();
 	require(scope.isCurrent(token));
 	const auto newer = scope.beginRequest();
 	require(!scope.isCurrent(token) && scope.isCurrent(newer));
 	int deliveries = 0;
-	const auto owned = scope.own(observe(first, [&](int) -> void {
+	const auto owned = scope.own(stana::reactive::observe(first, [&](int) -> void {
 		++deliveries;
 	}));
 	static_cast<void>(owned);
@@ -86,7 +86,7 @@ void deliveryPreparationAndLifetime() {
 	first.set(2);
 	require(deliveries == 1 && !scope.isCurrent(newer));
 	std::vector<int> disposal;
-	const Scope ordered;
+	const stana::reactive::Scope ordered;
 	const auto a = ordered.own([&] -> void {
 		disposal.push_back(1);
 	});
@@ -100,9 +100,9 @@ void deliveryPreparationAndLifetime() {
 }
 
 void contractsAndFailures() {
-	using namespace stana;
-	const Signal value{0};
-	const auto invalid = computed([&] -> int {
+
+	const stana::reactive::Signal value{0};
+	const auto invalid = stana::reactive::computed([&] -> int {
 		value.set(1);
 		return 0;
 	});
@@ -114,7 +114,7 @@ void contractsAndFailures() {
 	}
 	require(rejected && value.get() == 0);
 	try {
-		Transaction::perform([&] -> void {
+		stana::reactive::Transaction::perform([&] -> void {
 			value.set(2);
 			throw std::runtime_error("Expected transaction failure");
 		});
@@ -142,7 +142,7 @@ void contractsAndFailures() {
 	}).get();
 	require(setWrongThread, "worker set() must throw logic_error");
 	require(value.get() == 2, "worker set() must not assign");
-	const Property<std::string> text{"owned literal"};
+	const stana::reactive::Property<std::string> text{"owned literal"};
 	require(text.get() == "owned literal", "owned literal");
 }
 } // namespace

@@ -16,21 +16,19 @@ Symbols and Movexa are explicitly out of scope for this pass.
 #include <string>
 import stana;
 
-using namespace stana;
-
 auto main() -> int {
-    const Signal count{0};
-    return Application::run(Window{
+    const stana::reactive::Signal count{0};
+    return stana::application::Application::run(stana::application::Window{
         .title = "Counter",
         .size = {.width = 480, .height = 320},
-        .content = VStack{
+        .content = stana::ui::VStack{
             .spacing = 16,
-            .layout = {.padding = Insets::all(28)},
-            .children = children(
-                Text{.text = count.map([](int value) -> std::string {
+            .layout = {.padding = stana::Insets::all(28)},
+            .children = stana::ui::children(
+                stana::ui::Text{.text = count.map([](int value) -> std::string {
                     return "Count: " + std::to_string(value);
                 })},
-                Button{.text = "Increment", .onClick = [count] -> void { ++count; }}
+                stana::ui::Button{.text = "Increment", .onClick = [count] -> void { ++count; }}
             )
         }
     });
@@ -48,27 +46,27 @@ just example counter
 window, with native rendering traces on by default (`just example counter --no-trace`
 disables them). `just build`, `just test`, and `just format-check` are also available.
 Run `just` to list recipes. Direct CMake commands remain supported; after building,
-`open build/debug/stana-counter.app` launches the same macOS example. Public modules
-include `stana.primitives`, `stana.reactive`, `stana.graphics`, `stana.text`,
-`stana.ui`, `stana.application` and the separately imported `stana.testing`.
+`open build/debug/stana-counter.app` launches the same macOS example. `stana` is the
+only public named module; `import stana;` includes the testing API as well. Functional
+namespaces organize the API; module partitions are internal build organization.
 There is no public header API, header-unit or `import std` requirement.
 
-Background work submits results with `Signal<T>::setThreadSafe(T)`. The call is
+Background work submits results with `stana::reactive::Signal<T>::setThreadSafe(T)`. The call is
 always deferred onto the signal's creating executor, including when invoked on
 that owner thread. Returning means the owning value was admitted to a bounded
 mailbox (4096 pending writes per executor); it is not application, observer
 delivery, or display completion. `set()` stays synchronous and owner-thread-only.
 `get()`, computed evaluation, and graph traversal stay owner-thread-only.
 
-Queued admission requires an active native `Application::run()` session or a live
-`TestHost` on the owner. Signals created before that session are adopted when it
+Queued admission requires an active native `stana::application::Application::run()` session or a live
+`stana::testing::TestHost` on the owner. Signals created before that session are adopted when it
 starts; dormant or closed sessions throw `std::logic_error` rather than stacking
 work. A full mailbox throws `std::overflow_error` without blocking, dropping, or
 replacing earlier commands. Commands hold the payload and a weak signal reference:
 destroying the last handle discards pending writes without resurrecting UI. After a
 session closes, existing signals still support same-thread `get()`/`set()`, but
 queued admission stays closed for that epoch. Freshness is not FIFO completion;
-generation checks remain `Scope::isCurrent(token)` on the owner after a callback,
+generation checks remain `stana::reactive::Scope::isCurrent(token)` on the owner after a callback,
 not a property of `setThreadSafe`.
 
 ```cpp
@@ -78,18 +76,16 @@ not a property of `setThreadSafe`.
 #include <vector>
 import stana;
 
-using namespace stana;
-
 auto main() -> int {
-	const Signal result{std::string{"Ready"}};
+	const stana::reactive::Signal result{std::string{"Ready"}};
 	std::vector<std::jthread> workers;
-	return Application::run(Window{
+	return stana::application::Application::run(stana::application::Window{
 		.title = "Worker result",
 		.size = {.width = 480, .height = 320},
-		.content = VStack{
-			.children = children(
-				Text{.text = result},
-				Button{
+		.content = stana::ui::VStack{
+			.children = stana::ui::children(
+				stana::ui::Text{.text = result},
+				stana::ui::Button{
 					.text = "Run",
 					.onClick = [result, &workers] -> void {
 						result.set("Working...");
@@ -116,6 +112,56 @@ instead.
 See [architecture](docs/architecture/README.md) and
 [naming/documentation conventions](docs/coding-conventions.md). Exported types,
 properties and runtime contracts use Doxygen comments for IDE hover documentation.
+
+## Module and namespace organization
+
+Use **one public module**, `import stana;`. Namespace names describe function, not
+separate modules or consumer dependencies:
+
+| Namespace | Responsibility |
+| --- | --- |
+| `stana::rendering` | CPU/GPU drawing, paint scenes, presentation, rendering diagnostics |
+| `stana::layout` | Layout configuration and layout calculation helpers |
+| `stana::document` | Node handles, snapshots, metrics and the retained document model |
+| `stana::reactive` | Signals, computed values, bindings, subscriptions and scopes |
+| `stana::tasks` | Coroutine tasks and delays |
+| `stana::text` | Unicode operations and editable text buffers |
+| `stana::ui` | Visual components, composition and mounting |
+| `stana::application` | Native windows and application lifecycle |
+| `stana::testing` | Headless test hosts and program validation |
+
+Shared primitive values such as `stana::Point`, `stana::Color`, `stana::Frame`,
+`stana::Environment`, and `stana::Error` remain at the root, together with
+`stana::version()`, `stana::defaults`, and inline `stana::literals`. Internal helpers
+belong to their subsystem's `detail` namespace. The platform adapter is private
+under `stana::platform::detail`; it is not a consumer OS abstraction API.
+
+The file tree follows these functions: interfaces live in `modules/<function>/`,
+implementations in `src/<function>/`, rendering scene and shader internals in
+`src/rendering/scene/` and `src/rendering/shader/`, and native adapters in
+`src/platform/macos/`. Exported interface partitions are implementation organization;
+consumers do not import them individually.
+
+### Breaking migration
+
+This namespace/module reorganization is **source- and ABI-breaking**. Rebuild the
+library and all consumers; prebuilt objects and old module interfaces are not
+compatible. Replace every component-module import with `import stana;` and qualify
+APIs by function. For example:
+
+| Previous API spelling | Current API spelling |
+| --- | --- |
+| Root `Drawing` | `stana::rendering::Drawing` |
+| Root `Signal<T>` | `stana::reactive::Signal<T>` |
+| Root `Button` | `stana::ui::Button` |
+| Root `LayoutProperties` | `stana::layout::LayoutProperties` |
+| Root `NodeHandle` | `stana::document::NodeHandle` |
+| Root `Application` | `stana::application::Application` |
+| Root `TestHost` | `stana::testing::TestHost` |
+
+Leaf names and runtime behavior are unchanged; the old flat API has no compatibility
+aliases. In particular, the visual component is `stana::ui::Text`, while Unicode
+editing uses `stana::text::TextBuffer`.
 
 ## Prerequisites
 
@@ -162,9 +208,9 @@ RGB error and affected pixel count. Incremental stale-pixel checks remain exact.
 
 Retained mutations classify measurement, placement, paint, and inspection work.
 Complete immutable scene branches and an immutable geometry index share unchanged
-payloads across revisions. Public `TestHost::scene()`/`nodes()` still work; flat
+payloads across revisions. Public `stana::testing::TestHost::scene()`/`nodes()` still work; flat
 inspection views are built lazily and are not part of native frame conversion.
-`Metrics::layoutPasses` counts commits that actually compute measurement or placement;
+`stana::document::Metrics::layoutPasses` counts commits that actually compute measurement or placement;
 paint-only commits do not increase it. The additive per-operation counters distinguish
 local work, ancestor path copies, and explicit flat materialization.
 
@@ -185,7 +231,7 @@ retry, and GPU drain have bounded deadlines. Preparation and drawable acquisitio
 remain on the UI executor; `nextDrawable` is non-blocking and a nil drawable retries on the next frame.
 A transaction groups tiles but does not prove per-tile display or scanout-atomic presentation.
 
-`Application::renderingDiagnostics().renderingWork` reports actual raster/copy work,
+`stana::application::Application::renderingDiagnostics().renderingWork` reports actual raster/copy work,
 shared-buffer allocations, and separate estimated drawable payload. The 256 MiB
 per-window shared-raster budget includes retired GPU owners, **not** Core Text,
 driver allocations, compositor surfaces, or total process memory. Many tile layers
@@ -195,7 +241,7 @@ notified and accounted, rather than described as zero-upload.
 
 ## CPU and GPU canvases
 
-`Canvas` is now **`CPUCanvas`** (no alias). Both canvases accept reactive drawings,
+`Canvas` is now **`stana::ui::CPUCanvas`** (no alias). Both canvases accept reactive drawings,
 use padded local coordinates, and clip by default; `.appearance = {.clip = false}`
 opts out of the outer clip. GPU output still has a finite content extent.
 

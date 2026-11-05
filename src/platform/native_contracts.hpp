@@ -15,7 +15,7 @@
 
 /// @brief Private module-free transport shared by C++ engine adapters and native code.
 /// These types are not installed as public headers and carry no borrowed Node data.
-namespace stana::native {
+namespace stana::platform::detail {
 
 /// @brief Native adapter's paint opcode; converted explicitly from portable PaintKind.
 enum class PaintOperation : std::uint8_t {
@@ -277,6 +277,6 @@ struct FontRequest {
 /// @return Logical width and line height, constrained by the requested maximum width.
 [[nodiscard]] auto measureText(const std::string &text, FontRequest font, double maximumWidth)
 	-> std::pair<double, double>;
-} // namespace stana::native
+} // namespace stana::platform::detail
 
 #endif // STANA_NATIVE_CONTRACTS_HPP

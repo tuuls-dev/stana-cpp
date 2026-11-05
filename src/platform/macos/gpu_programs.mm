@@ -1,6 +1,6 @@
 #include "gpu_programs.hpp"
-#include "../../graphics/color.hpp"
-#include "../../graphics/limits.hpp"
+#include "../../rendering/color.hpp"
+#include "../../rendering/limits.hpp"
 #import <Foundation/Foundation.h>
 #include <algorithm>
 #include <array>
@@ -12,23 +12,24 @@
 #include <type_traits>
 #include <utility>
 
-namespace stana::native::gpu {
+namespace stana::platform::detail::gpu {
 namespace {
 [[nodiscard]] auto failure(Diagnostic::Category category, std::string message)
 	-> std::unexpected<Failure> {
 	return std::unexpected(Failure{.category = category, .message = std::move(message)});
 }
 
-[[nodiscard]] auto compilerFailure(const shader_detail::Error &error) -> std::unexpected<Failure> {
+[[nodiscard]] auto compilerFailure(const stana::rendering::detail::shader::Error &error)
+	-> std::unexpected<Failure> {
 	Diagnostic::Category category{};
 	switch (error.category) {
-	case shader_detail::Error::Category::compiler:
+	case stana::rendering::detail::shader::Error::Category::compiler:
 		category = Diagnostic::Category::compiler;
 		break;
-	case shader_detail::Error::Category::binding:
+	case stana::rendering::detail::shader::Error::Category::binding:
 		category = Diagnostic::Category::binding;
 		break;
-	case shader_detail::Error::Category::capability:
+	case stana::rendering::detail::shader::Error::Category::capability:
 		category = Diagnostic::Category::capability;
 		break;
 	}
@@ -36,32 +37,32 @@ namespace {
 }
 
 [[nodiscard]] auto resourceBinding(const Binding &binding, const Resource &resource)
-	-> shader_detail::Binding {
+	-> stana::rendering::detail::shader::Binding {
 	return std::visit(
-		[&](const auto &value) -> shader_detail::Binding {
+		[&](const auto &value) -> stana::rendering::detail::shader::Binding {
 			using T = std::decay_t<decltype(value)>;
-			shader_detail::Binding result{
+			stana::rendering::detail::shader::Binding result{
 				.group = binding.group,
 				.binding = binding.binding,
 				.writable = binding.write
 			};
 			if constexpr (std::is_same_v<T, Buffer>) {
-				result.kind = shader_detail::Kind::buffer;
+				result.kind = stana::rendering::detail::shader::Kind::buffer;
 				result.byteLength = value.bytes->size();
 			} else if constexpr (std::is_same_v<T, Storage>) {
-				result.kind = shader_detail::Kind::storage;
+				result.kind = stana::rendering::detail::shader::Kind::storage;
 				result.byteLength = value.length;
 			} else if constexpr (std::is_same_v<T, Texture>) {
-				result.kind = shader_detail::Kind::texture;
+				result.kind = stana::rendering::detail::shader::Kind::texture;
 				result.format = value.format;
 			} else if constexpr (std::is_same_v<T, Target>) {
-				result.kind = shader_detail::Kind::target;
+				result.kind = stana::rendering::detail::shader::Kind::target;
 				result.format = value.format;
 			} else if constexpr (std::is_same_v<T, State>) {
-				result.kind = shader_detail::Kind::state;
+				result.kind = stana::rendering::detail::shader::Kind::state;
 				result.format = value.format;
 			} else if constexpr (std::is_same_v<T, Sampler>) {
-				result.kind = shader_detail::Kind::sampler;
+				result.kind = stana::rendering::detail::shader::Kind::sampler;
 			} else {
 				static_assert(!sizeof(T), "Unhandled GPU resource");
 			}
@@ -73,8 +74,8 @@ namespace {
 
 [[nodiscard]] auto
 bindingsFor(const Program &program, Stage stage, const std::vector<Binding> &bindings)
-	-> std::vector<shader_detail::Binding> {
-	std::vector<shader_detail::Binding> result;
+	-> std::vector<stana::rendering::detail::shader::Binding> {
+	std::vector<stana::rendering::detail::shader::Binding> result;
 	result.reserve(bindings.size());
 	for (const auto &binding : bindings) {
 		if (binding.stage == stage) {
@@ -89,8 +90,8 @@ bindingsFor(const Program &program, Stage stage, const std::vector<Binding> &bin
 	const std::string &name,
 	Stage stage,
 	const std::vector<Binding> &bindings
-) -> shader_detail::Request {
-	shader_detail::Request result{
+) -> stana::rendering::detail::shader::Request {
+	stana::rendering::detail::shader::Request result{
 		.source = *program.source,
 		.entry = name,
 		.stage = stage,
@@ -100,7 +101,8 @@ bindingsFor(const Program &program, Stage stage, const std::vector<Binding> &bin
 	return result;
 }
 
-[[nodiscard]] auto function(id<MTLDevice> device, const shader_detail::Entry &entry)
+[[nodiscard]] auto
+function(id<MTLDevice> device, const stana::rendering::detail::shader::Entry &entry)
 	-> Result<id<MTLFunction>> {
 	const auto library = compileLibrary(device, entry.source);
 	if (!library) {
@@ -116,12 +118,13 @@ bindingsFor(const Program &program, Stage stage, const std::vector<Binding> &bin
 	return result;
 }
 
-[[nodiscard]] auto reflected(shader_detail::Entry &entry, NSArray<id<MTLBinding>> *bindings)
+[[nodiscard]] auto
+reflected(stana::rendering::detail::shader::Entry &entry, NSArray<id<MTLBinding>> *bindings)
 	-> Result<void> {
 	for (NSUInteger index = 0; index < bindings.count; ++index) {
 		id<MTLBinding> const binding = [bindings objectAtIndex:index];
 		if (binding.type == MTLBindingTypeBuffer &&
-			binding.index == shader_detail::immediateBufferSlot) {
+			binding.index == stana::rendering::detail::shader::immediateBufferSlot) {
 			const auto buffer = static_cast<id<MTLBufferBinding>>(binding);
 			if (buffer.bufferDataSize > entry.immediateWords.size() * sizeof(std::uint32_t)) {
 				return failure(
@@ -132,10 +135,11 @@ bindingsFor(const Program &program, Stage stage, const std::vector<Binding> &bin
 			continue;
 		}
 		const auto found = std::ranges::find_if(entry.bindings, [&](const auto &value) -> bool {
-			const auto type = value.kind == shader_detail::SlotKind::buffer
+			const auto type = value.kind == stana::rendering::detail::shader::SlotKind::buffer
 				? MTLBindingTypeBuffer
-				: (value.kind == shader_detail::SlotKind::texture ? MTLBindingTypeTexture
-																  : MTLBindingTypeSampler);
+				: (value.kind == stana::rendering::detail::shader::SlotKind::texture
+						  ? MTLBindingTypeTexture
+						  : MTLBindingTypeSampler);
 			return value.slot == binding.index && binding.type == type;
 		});
 		if (found == entry.bindings.end()) {
@@ -144,7 +148,7 @@ bindingsFor(const Program &program, Stage stage, const std::vector<Binding> &bin
 				"Native reflection disagrees with logical resource mapping"
 			);
 		}
-		if (found->kind == shader_detail::SlotKind::buffer) {
+		if (found->kind == stana::rendering::detail::shader::SlotKind::buffer) {
 			const auto buffer = static_cast<id<MTLBufferBinding>>(binding);
 			found->minimumBytes =
 				std::max(found->minimumBytes, static_cast<std::uint64_t>(buffer.bufferDataSize));
@@ -154,7 +158,7 @@ bindingsFor(const Program &program, Stage stage, const std::vector<Binding> &bin
 					"WGSL buffer is smaller than its reflected native layout"
 				);
 			}
-		} else if (found->kind == shader_detail::SlotKind::texture) {
+		} else if (found->kind == stana::rendering::detail::shader::SlotKind::texture) {
 			const auto texture = static_cast<id<MTLTextureBinding>>(binding);
 			if (texture.textureType != MTLTextureType2D ||
 				texture.textureDataType != MTLDataTypeFloat) {
@@ -213,7 +217,8 @@ void launchNext(const std::shared_ptr<DeviceResources> &device) {
 					const auto &bindings = std::get<RenderPass>(program.passes.at(index)).bindings;
 					for (const auto *entry : {&pass.vertex, &pass.fragment}) {
 						const auto input = bindingsFor(program, entry->stage, bindings);
-						const auto result = shader_detail::validateBindings(*entry, input);
+						const auto result =
+							stana::rendering::detail::shader::validateBindings(*entry, input);
 						if (!result) {
 							return compilerFailure(result.error());
 						}
@@ -224,7 +229,8 @@ void launchNext(const std::shared_ptr<DeviceResources> &device) {
 						Stage::compute,
 						std::get<ComputePass>(program.passes.at(index)).bindings
 					);
-					const auto result = shader_detail::validateBindings(pass.entry, input);
+					const auto result =
+						stana::rendering::detail::shader::validateBindings(pass.entry, input);
 					if (!result) {
 						return compilerFailure(result.error());
 					}
@@ -263,13 +269,13 @@ auto compileProgram(const std::shared_ptr<DeviceResources> &device, const Progra
 			[&](const auto &input) -> Result<std::variant<RenderPipeline, ComputePipeline>> {
 				using T = std::decay_t<decltype(input)>;
 				if constexpr (std::is_same_v<T, RenderPass>) {
-					auto vertex = shader_detail::compile(
+					auto vertex = stana::rendering::detail::shader::compile(
 						request(program, input.vertex, Stage::vertex, input.bindings)
 					);
 					if (!vertex) {
 						return compilerFailure(vertex.error());
 					}
-					auto fragment = shader_detail::compile(
+					auto fragment = stana::rendering::detail::shader::compile(
 						request(program, input.fragment, Stage::fragment, input.bindings)
 					);
 					if (!fragment) {
@@ -334,7 +340,7 @@ auto compileProgram(const std::shared_ptr<DeviceResources> &device, const Progra
 						.state = state
 					};
 				} else {
-					auto entry = shader_detail::compile(
+					auto entry = stana::rendering::detail::shader::compile(
 						request(program, input.function, Stage::compute, input.bindings)
 					);
 					if (!entry) {
@@ -433,9 +439,9 @@ void cancelCompilation(const std::shared_ptr<DeviceResources> &device, std::uint
 	const std::scoped_lock lock{device->mutex};
 	device->waitingCompilers.erase(window);
 }
-} // namespace stana::native::gpu
+} // namespace stana::platform::detail::gpu
 
-namespace stana::native::gpu {
+namespace stana::platform::detail::gpu {
 namespace {
 inline constexpr std::size_t transferAlignment = 256;
 inline constexpr double byteMaximum = 255;
@@ -453,7 +459,7 @@ struct ImageInput {
 	ImageInput result{.format = destination == Encoding::linear ? Format::rgba16 : Format::bgra8};
 	const auto pixelCount = static_cast<std::size_t>(texture.width) * texture.height;
 	const auto stride = pixelBytes(result.format);
-	if (pixelCount > graphics_detail::payloadLimit / stride) {
+	if (pixelCount > stana::rendering::detail::payloadLimit / stride) {
 		return failure(
 			Diagnostic::Category::capability,
 			"Converted texture exceeds the canvas payload profile"
@@ -466,16 +472,20 @@ struct ImageInput {
 		if (texture.format == Format::bgra8) {
 			const auto offset = index * 4;
 			color = {
-				std::to_integer<unsigned>(graphics_detail::byteAt(input, offset + 2)) / byteMaximum,
-				std::to_integer<unsigned>(graphics_detail::byteAt(input, offset + 1)) / byteMaximum,
-				std::to_integer<unsigned>(graphics_detail::byteAt(input, offset)) / byteMaximum,
-				std::to_integer<unsigned>(graphics_detail::byteAt(input, offset + 3)) / byteMaximum
+				std::to_integer<unsigned>(stana::rendering::detail::byteAt(input, offset + 2)) /
+					byteMaximum,
+				std::to_integer<unsigned>(stana::rendering::detail::byteAt(input, offset + 1)) /
+					byteMaximum,
+				std::to_integer<unsigned>(stana::rendering::detail::byteAt(input, offset)) /
+					byteMaximum,
+				std::to_integer<unsigned>(stana::rendering::detail::byteAt(input, offset + 3)) /
+					byteMaximum
 			};
 		} else {
 			constexpr std::size_t halfPixelStride = 8;
 			for (std::size_t channel = 0; channel < color.size(); ++channel) {
 				color.at(channel) =
-					graphics_detail::halfAt(input, index * halfPixelStride + channel * 2);
+					stana::rendering::detail::halfAt(input, index * halfPixelStride + channel * 2);
 			}
 		}
 		const double alpha = color.back();
@@ -484,14 +494,15 @@ struct ImageInput {
 				? (texture.premultiplied ? color.at(channel) / alpha : color.at(channel))
 				: 0;
 			if (texture.encoding != destination) {
-				value = destination == Encoding::linear ? graphics_detail::decodeSRGB(value)
-														: graphics_detail::encodeSRGB(value);
+				value = destination == Encoding::linear
+					? stana::rendering::detail::decodeSRGB(value)
+					: stana::rendering::detail::encodeSRGB(value);
 			}
 			color.at(channel) = value * alpha;
 		}
 		if (result.format == Format::rgba16) {
 			for (const auto value : color) {
-				const auto half = graphics_detail::toHalf(value);
+				const auto half = stana::rendering::detail::toHalf(value);
 				if (!half) {
 					return failure(
 						Diagnostic::Category::capability,
@@ -500,7 +511,9 @@ struct ImageInput {
 				}
 				constexpr unsigned lowByteMask = 255;
 				result.bytes.push_back(static_cast<std::byte>(*half & lowByteMask));
-				result.bytes.push_back(static_cast<std::byte>(*half >> graphics_detail::byteBits));
+				result.bytes.push_back(
+					static_cast<std::byte>(*half >> stana::rendering::detail::byteBits)
+				);
 			}
 		} else {
 			for (const auto channel : {2U, 1U, 0U, 3U}) {
@@ -550,7 +563,7 @@ struct ImageInput {
 		: (texture->texture.pixelFormat == MTLPixelFormatR8Unorm ? 1 : 4);
 	const auto row = width * bpp;
 	const auto pitch = ((row + transferAlignment - 1) / transferAlignment) * transferAlignment;
-	if (pitch > graphics_detail::payloadLimit / height) {
+	if (pitch > stana::rendering::detail::payloadLimit / height) {
 		return failure(Diagnostic::Category::capability, "Texture staging exceeds payload budget");
 	}
 	Bytes padded(pitch * height);
@@ -643,21 +656,21 @@ struct BindingEncoder {
 		if (stage == Stage::vertex) {
 			[render setVertexBytes:words.data()
 							length:length
-						   atIndex:shader_detail::immediateBufferSlot];
+						   atIndex:stana::rendering::detail::shader::immediateBufferSlot];
 		} else if (stage == Stage::fragment) {
 			[render setFragmentBytes:words.data()
 							  length:length
-							 atIndex:shader_detail::immediateBufferSlot];
+							 atIndex:stana::rendering::detail::shader::immediateBufferSlot];
 		} else {
 			[compute setBytes:words.data()
 					   length:length
-					  atIndex:shader_detail::immediateBufferSlot];
+					  atIndex:stana::rendering::detail::shader::immediateBufferSlot];
 		}
 	}
 };
 
 [[nodiscard]] auto bind(
-	const shader_detail::Entry &entry,
+	const stana::rendering::detail::shader::Entry &entry,
 	const std::vector<Binding> &bindings,
 	const ProgramBundle &bundle,
 	const std::map<std::string, std::shared_ptr<TextureOwner>, std::less<>> &previous,
@@ -673,7 +686,7 @@ struct BindingEncoder {
 			return failure(Diagnostic::Category::binding, "Missing validated logical binding");
 		}
 		switch (required.kind) {
-		case shader_detail::SlotKind::buffer: {
+		case stana::rendering::detail::shader::SlotKind::buffer: {
 			const auto resource = bundle.buffers.find(found->resource);
 			if (resource == bundle.buffers.end() ||
 				resource->second->bytes < required.minimumBytes) {
@@ -685,7 +698,7 @@ struct BindingEncoder {
 			}
 			break;
 		}
-		case shader_detail::SlotKind::texture: {
+		case stana::rendering::detail::shader::SlotKind::texture: {
 			const auto &textures = found->previous ? previous : bundle.textures;
 			const auto resource = textures.find(found->resource);
 			if (resource == textures.end()) {
@@ -694,7 +707,7 @@ struct BindingEncoder {
 			encoder.texture(resource->second->texture, required.slot);
 			break;
 		}
-		case shader_detail::SlotKind::sampler:
+		case stana::rendering::detail::shader::SlotKind::sampler:
 			encoder.sampler(bundle.samplers.at(found->resource), required.slot);
 			break;
 		}
@@ -809,7 +822,7 @@ auto encodeProgram(
 						return std::unexpected(input.error());
 					}
 					const auto [format, uploadSize] = *input;
-					const auto bytes = graphics_detail::textureBytes(
+					const auto bytes = stana::rendering::detail::textureBytes(
 						extent.at(0),
 						extent.at(1),
 						pixelBytes(format)
@@ -1096,7 +1109,8 @@ auto encodeProgram(
 						);
 					}
 					for (const auto axis : pass.workgroupCount) {
-						if (axis == 0 || axis > graphics_detail::invocationLimit / invocations) {
+						if (axis == 0 ||
+							axis > stana::rendering::detail::invocationLimit / invocations) {
 							return failure(
 								Diagnostic::Category::capability,
 								"Dispatch invocation product exceeds portable limit"
@@ -1143,4 +1157,4 @@ auto encodeProgram(
 	bundle.output = bundle.textures.at(program->output);
 	return candidate;
 }
-} // namespace stana::native::gpu
+} // namespace stana::platform::detail::gpu

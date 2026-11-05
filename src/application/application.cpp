@@ -2,7 +2,7 @@ module;
 
 #include "../platform/native_contracts.hpp"
 
-#include "../graphics/limits.hpp"
+#include "../rendering/limits.hpp"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -21,35 +21,37 @@ module;
 #include <variant>
 #include <vector>
 
-module stana.application;
-import stana.core;
-import stana.graphics;
-import stana.reactive;
+module stana;
+import :application;
+import :document;
+import :rendering;
+import :reactive;
 #include "gpu_conversion.hpp"
 #include "scene_conversion.hpp"
 
-namespace stana {
+namespace stana::application {
 namespace {
-using application_detail::convertMode;
-using application_detail::SceneConversion;
+using stana::application::detail::convertMode;
+using stana::application::detail::SceneConversion;
 
-[[nodiscard]] auto diagnosticCategory(native::gpu::Diagnostic::Category value)
-	-> GPUDiagnostic::Category {
+[[nodiscard]] auto diagnosticCategory(stana::platform::detail::gpu::Diagnostic::Category value)
+	-> stana::rendering::GPUDiagnostic::Category {
 	switch (value) {
-	case native::gpu::Diagnostic::Category::compiler:
-		return GPUDiagnostic::Category::compiler;
-	case native::gpu::Diagnostic::Category::binding:
-		return GPUDiagnostic::Category::binding;
-	case native::gpu::Diagnostic::Category::capability:
-		return GPUDiagnostic::Category::capability;
-	case native::gpu::Diagnostic::Category::execution:
-		return GPUDiagnostic::Category::execution;
+	case stana::platform::detail::gpu::Diagnostic::Category::compiler:
+		return stana::rendering::GPUDiagnostic::Category::compiler;
+	case stana::platform::detail::gpu::Diagnostic::Category::binding:
+		return stana::rendering::GPUDiagnostic::Category::binding;
+	case stana::platform::detail::gpu::Diagnostic::Category::capability:
+		return stana::rendering::GPUDiagnostic::Category::capability;
+	case stana::platform::detail::gpu::Diagnostic::Category::execution:
+		return stana::rendering::GPUDiagnostic::Category::execution;
 	}
 	throw std::logic_error("Unknown GPU diagnostic category");
 }
 
 /// @brief Converts the private transport identity without losing retry/surface qualification.
-[[nodiscard]] auto portableAttempt(native::FrameIdentity frame) -> PresentationAttempt {
+[[nodiscard]] auto portableAttempt(stana::platform::detail::FrameIdentity frame)
+	-> stana::rendering::PresentationAttempt {
 	return {.epoch = frame.epoch, .sequence = frame.sequence, .sceneRevision = frame.sceneRevision};
 }
 
@@ -57,13 +59,13 @@ using application_detail::SceneConversion;
 
 namespace detail {
 struct NativeExecutorSession::State {
-	std::shared_ptr<ExecutorEndpoint> endpoint;
+	std::shared_ptr<stana::reactive::detail::ExecutorEndpoint> endpoint;
 	std::shared_ptr<std::string> failure = std::make_shared<std::string>();
 };
 
 NativeExecutorSession::NativeExecutorSession() : state_(std::make_unique<State>()) {
-	state_->endpoint = ExecutorEndpoint::current();
-	auto wakeup = native::createMailboxWakeup(
+	state_->endpoint = stana::reactive::detail::ExecutorEndpoint::current();
+	auto wakeup = stana::platform::detail::createMailboxWakeup(
 		[weak = std::weak_ptr{state_->endpoint}, failure = state_->failure] -> void {
 			try {
 				if (const auto endpoint = weak.lock()) {
@@ -76,7 +78,7 @@ NativeExecutorSession::NativeExecutorSession() : state_(std::make_unique<State>(
 				if (const auto endpoint = weak.lock()) {
 					endpoint->close();
 				}
-				native::stop();
+				stana::platform::detail::stop();
 			} catch (...) {
 				if (failure->empty()) {
 					*failure = "Unknown queued signal-write failure";
@@ -84,7 +86,7 @@ NativeExecutorSession::NativeExecutorSession() : state_(std::make_unique<State>(
 				if (const auto endpoint = weak.lock()) {
 					endpoint->close();
 				}
-				native::stop();
+				stana::platform::detail::stop();
 			}
 		}
 	);
@@ -115,25 +117,26 @@ auto NativeExecutorSession::complete(int code) const -> int {
 }
 
 void installNativeTaskDispatcher() {
-	TaskScheduler::current().dispatcher = [](std::chrono::milliseconds delay,
-											  std::function<void()> callback) -> void {
-		native::postAfter(delay, std::move(callback));
+	stana::tasks::detail::TaskScheduler::current().dispatcher =
+		[](std::chrono::milliseconds delay, std::function<void()> callback) -> void {
+		stana::platform::detail::postAfter(delay, std::move(callback));
 	};
 }
 
 auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 	try {
-		std::vector<native::Window> windows;
+		std::vector<stana::platform::detail::Window> windows;
 		for (const auto &session : sessions) {
 			const auto sessionDocument = session.document;
 			sessionDocument->enablePresentationTracking();
 			sessionDocument->setTextMeasure(
 				[](const std::string &text, Font font, double width) -> Size {
-					const auto [measuredWidth, measuredHeight] = native::measureText(
-						text,
-						{.size = font.size, .weight = font.weight},
-						width
-					);
+					const auto [measuredWidth, measuredHeight] =
+						stana::platform::detail::measureText(
+							text,
+							{.size = font.size, .weight = font.weight},
+							width
+						);
 					return {.width = measuredWidth, .height = measuredHeight};
 				}
 			);
@@ -145,7 +148,8 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 					.width = session.size.width,
 					.height = session.size.height,
 					.colorMode = convertMode(session.renderingColorMode),
-					.gpuError = [weakDocument](native::gpu::Diagnostic diagnostic) -> void {
+					.gpuError = [weakDocument](stana::platform::detail::gpu::Diagnostic diagnostic)
+						-> void {
 						if (const auto owner = weakDocument.lock()) {
 							owner->queueGPUDiagnostic(
 								{.category = diagnosticCategory(diagnostic.category),
@@ -157,10 +161,10 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 								diagnostic.drawingVersion,
 								diagnostic.epoch
 							);
-							detail::ReactiveRuntime::current().flush();
+							stana::reactive::detail::ReactiveRuntime::current().flush();
 						}
 					},
-					.scene = [weakDocument, conversion] -> native::SceneResult {
+					.scene = [weakDocument, conversion] -> stana::platform::detail::SceneResult {
 						if (const auto owner = weakDocument.lock()) {
 							const auto snapshot = owner->renderSnapshot();
 							if (snapshot) {
@@ -210,65 +214,69 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 						}
 						document->scroll({.x = x, .y = y}, delta);
 					},
-					.key = [weakDocument](native::KeyAction action) -> void {
+					.key = [weakDocument](stana::platform::detail::KeyAction action) -> void {
 						const auto document = weakDocument.lock();
 						if (!document) {
 							return;
 						}
 						switch (action) {
-						case native::KeyAction::tabForward:
+						case stana::platform::detail::KeyAction::tabForward:
 							document->tab();
 							break;
-						case native::KeyAction::tabBackward:
+						case stana::platform::detail::KeyAction::tabBackward:
 							document->tab(true);
 							break;
-						case native::KeyAction::activate:
+						case stana::platform::detail::KeyAction::activate:
 							document->keyActivate();
 							break;
 						}
 					},
-					.beginPresentation = [weakDocument](const native::PresentationRequest &request)
-						-> std::expected<native::FrameIdentity, std::string> {
+					.beginPresentation =
+						[weakDocument](const stana::platform::detail::PresentationRequest &request)
+						-> std::expected<stana::platform::detail::FrameIdentity, std::string> {
 						const auto owner = weakDocument.lock();
 						if (!owner) {
 							return std::unexpected("Window document closed");
 						}
-						std::vector<TileId> tiles;
+						std::vector<stana::rendering::TileId> tiles;
 						tiles.reserve(request.expectedTiles.size());
 						for (const auto tile : request.expectedTiles) {
-							tiles.push_back(TileId{tile.value});
+							tiles.push_back(stana::rendering::TileId{tile.value});
 						}
 						const auto attempt =
 							owner->beginPresentation(request.epoch, request.sceneRevision, tiles);
 						if (!attempt) {
 							return std::unexpected("Presentation admission failed");
 						}
-						return native::FrameIdentity{
+						return stana::platform::detail::FrameIdentity{
 							.epoch = attempt->epoch,
 							.sequence = attempt->sequence,
 							.sceneRevision = attempt->sceneRevision
 						};
 					},
-					.gpuCompleted =
-						[weakDocument](native::FrameIdentity frame, bool success) -> bool {
+					.gpuCompleted = [weakDocument](
+										stana::platform::detail::FrameIdentity frame,
+										bool success
+									) -> bool {
 						const auto owner = weakDocument.lock();
 						return owner && owner->reportGPUCompletion(portableAttempt(frame), success);
 					},
 					.drawablePresented = [weakDocument](
-											 native::FrameIdentity frame,
-											 native::TilePresentation observation
+											 stana::platform::detail::FrameIdentity frame,
+											 stana::platform::detail::TilePresentation observation
 										 ) -> bool {
 						const auto owner = weakDocument.lock();
 						return owner &&
 							owner->reportPresentation(
 								portableAttempt(frame),
-								TilePresentation{
-									.tile = TileId{observation.tile.value},
+								stana::rendering::TilePresentation{
+									.tile = stana::rendering::TileId{observation.tile.value},
 									.timestamp = observation.timestamp
 								}
 							);
 					},
-					.abandonPresentation = [weakDocument](native::FrameIdentity frame) -> void {
+					.abandonPresentation =
+						[weakDocument](stana::platform::detail::FrameIdentity frame) -> void {
 						const auto document = weakDocument.lock();
 						if (!document) {
 							return;
@@ -287,7 +295,8 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 							owner->holdPreparedGeometry(revision);
 						}
 					},
-					.gatePendingPresentation = [weakDocument](native::FrameIdentity frame) -> void {
+					.gatePendingPresentation =
+						[weakDocument](stana::platform::detail::FrameIdentity frame) -> void {
 						if (const auto owner = weakDocument.lock()) {
 							owner->gatePendingPresentation(portableAttempt(frame));
 						}
@@ -313,8 +322,8 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 					}}
 			);
 		}
-		const auto result = native::run(std::move(windows));
-		TaskScheduler::current().dispatcher = {};
+		const auto result = stana::platform::detail::run(std::move(windows));
+		stana::tasks::detail::TaskScheduler::current().dispatcher = {};
 		for (const auto &session : sessions) {
 			session.document->close();
 		}
@@ -324,16 +333,16 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 		}
 		return *result;
 	} catch (const std::exception &error) {
-		TaskScheduler::current().dispatcher = {};
+		stana::tasks::detail::TaskScheduler::current().dispatcher = {};
 		std::cerr << "Stana application failed: " << error.what() << '\n';
 		return 1;
 	}
 }
 } // namespace detail
 
-auto Application::renderingDiagnostics() -> std::vector<WindowDiagnostics> {
-	std::vector<WindowDiagnostics> result;
-	for (const auto &window : native::diagnostics()) {
+auto Application::renderingDiagnostics() -> std::vector<stana::rendering::WindowDiagnostics> {
+	std::vector<stana::rendering::WindowDiagnostics> result;
+	for (const auto &window : stana::platform::detail::diagnostics()) {
 		result.push_back(
 			{.deviceName = window.deviceName,
 				.unifiedMemory = window.unifiedMemory,
@@ -382,10 +391,10 @@ auto Application::renderingDiagnostics() -> std::vector<WindowDiagnostics> {
 }
 
 void Application::stop() {
-	native::stop();
+	stana::platform::detail::stop();
 }
 
 void Application::postAfter(std::chrono::milliseconds delay, std::function<void()> callback) {
-	native::postAfter(delay, std::move(callback));
+	stana::platform::detail::postAfter(delay, std::move(callback));
 }
-} // namespace stana
+} // namespace stana::application

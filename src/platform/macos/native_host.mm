@@ -26,7 +26,7 @@
 #include <utility>
 #include <vector>
 
-namespace stana::native {
+namespace stana::platform::detail {
 void publishAppearance(const std::shared_ptr<WindowState> &state);
 
 namespace {
@@ -69,13 +69,13 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 	state->callbacks.appearance([matched isEqualToString:NSAppearanceNameDarkAqua]);
 }
 
-} // namespace stana::native
+} // namespace stana::platform::detail
 
 /// @brief AppKit view that translates native events into the retained document callbacks.
 /// The native view hierarchy owns this object; state_ owns no strong view reference.
 @interface STANAView : NSView {
   @public
-	std::shared_ptr<stana::native::WindowState>
+	std::shared_ptr<stana::platform::detail::WindowState>
 		state_; ///< Engine callbacks and renderer resources.
 }
 @end
@@ -101,7 +101,7 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 
 - (void)updateLayer {
 	if (state_) {
-		stana::native::requestFrame(state_);
+		stana::platform::detail::requestFrame(state_);
 	}
 }
 
@@ -109,17 +109,17 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 	const bool sizeChanged = !NSEqualSizes(self.frame.size, size);
 	[super setFrameSize:size];
 	if (state_ && !state_->isClosed && sizeChanged) {
-		stana::native::installSurface(state_);
+		stana::platform::detail::installSurface(state_);
 		state_->callbacks.resize(size.width, size.height);
-		stana::native::requestFrame(state_);
+		stana::platform::detail::requestFrame(state_);
 	}
 }
 
 - (void)viewDidMoveToWindow {
 	[super viewDidMoveToWindow];
 	if (state_ && !state_->isClosed) {
-		stana::native::installSurface(state_);
-		stana::native::requestFrame(state_);
+		stana::platform::detail::installSurface(state_);
+		stana::platform::detail::requestFrame(state_);
 	}
 }
 
@@ -127,15 +127,15 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 	[super viewDidChangeBackingProperties];
 	if (state_ && !state_->isClosed && self.window != nil &&
 		std::is_neq(self.window.backingScaleFactor <=> state_->layer.contentsScale)) {
-		stana::native::installSurface(state_);
-		stana::native::requestFrame(state_);
+		stana::platform::detail::installSurface(state_);
+		stana::platform::detail::requestFrame(state_);
 	}
 }
 
 - (void)viewDidChangeEffectiveAppearance {
 	[super viewDidChangeEffectiveAppearance];
 	if (state_ && !state_->isClosed) {
-		stana::native::publishAppearance(state_);
+		stana::platform::detail::publishAppearance(state_);
 	}
 }
 
@@ -185,7 +185,7 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 	if (!state_ || state_->isClosed) {
 		return;
 	}
-	using stana::native::KeyAction;
+	using stana::platform::detail::KeyAction;
 	if ([event.charactersIgnoringModifiers isEqualToString:@"\t"]) {
 		state_->callbacks.key(
 			(event.modifierFlags & NSEventModifierFlagShift) != 0 ? KeyAction::tabBackward
@@ -204,7 +204,8 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 /// @brief Delegate connecting native closure to document disposal and final loop shutdown.
 @interface STANAWindowDelegate : NSObject <NSWindowDelegate> {
   @public
-	std::shared_ptr<stana::native::WindowState> state_; ///< Closed atomically on the UI executor.
+	std::shared_ptr<stana::platform::detail::WindowState>
+		state_; ///< Closed atomically on the UI executor.
 }
 @end
 @implementation STANAWindowDelegate
@@ -212,7 +213,7 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 - (void)windowDidBecomeKey:(NSNotification *)notification {
 	static_cast<void>(notification);
 	if (state_ && !state_->isClosed) {
-		stana::native::requestFrame(state_);
+		stana::platform::detail::requestFrame(state_);
 	}
 }
 
@@ -221,21 +222,21 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 	if (state_ && !state_->isClosed) {
 		// Backing-scale changes replace the surface separately. A display/headroom
 		// change only remaps the cached linear packet; it must not step state.
-		stana::native::requestFrame(state_);
+		stana::platform::detail::requestFrame(state_);
 	}
 }
 
 - (void)screenParametersChanged:(NSNotification *)notification {
 	static_cast<void>(notification);
 	if (state_ && !state_->isClosed) {
-		stana::native::requestFrame(state_);
+		stana::platform::detail::requestFrame(state_);
 	}
 }
 
 - (void)windowDidChangeOcclusionState:(NSNotification *)notification {
 	static_cast<void>(notification);
 	if (state_ && !state_->isClosed) {
-		stana::native::requestFrame(state_);
+		stana::platform::detail::requestFrame(state_);
 	}
 }
 
@@ -243,7 +244,7 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 	[NSNotificationCenter.defaultCenter removeObserver:self];
 	NSWindow *const closingWindow = notification.object;
 	if (state_ && !std::exchange(state_->isClosed, true)) {
-		stana::native::closeRenderer(state_);
+		stana::platform::detail::closeRenderer(state_);
 		state_->callbacks.close();
 	}
 	bool hasOpenWindow = false;
@@ -254,13 +255,13 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 		}
 	}
 	if (!hasOpenWindow) {
-		stana::native::stop();
+		stana::platform::detail::stop();
 	}
 }
 
 @end
 
-namespace stana::native {
+namespace stana::platform::detail {
 auto diagnostics() -> std::vector<WindowStatistics> {
 	if (![NSThread isMainThread]) {
 		throw std::logic_error("Native diagnostics require the UI executor");
@@ -545,4 +546,4 @@ auto run(std::vector<Window> windows) -> std::expected<int, std::string> {
 		return 0;
 	}
 }
-} // namespace stana::native
+} // namespace stana::platform::detail

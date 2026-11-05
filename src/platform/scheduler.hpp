@@ -7,7 +7,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace stana::native {
+namespace stana::platform::detail {
 /// @brief Production all-or-none acquisition. Failure releases every draft owner before admission.
 /// Tests use counted owners; native code uses the same function with CAMetalDrawable owners.
 template <typename Acquire>
@@ -87,5 +87,5 @@ class FrameScheduler {
 	unsigned unknownPresentationRetries_ = 0;
 	[[nodiscard]] auto recover(Time now) -> FrameAction;
 };
-} // namespace stana::native
+} // namespace stana::platform::detail
 #endif

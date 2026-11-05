@@ -1,6 +1,6 @@
 #include "compositor.hpp"
-#include "../../graphics/color.hpp"
-#include "../../graphics/limits.hpp"
+#include "../../rendering/color.hpp"
+#include "../../rendering/limits.hpp"
 #import <Foundation/Foundation.h>
 #include <algorithm>
 #include <array>
@@ -15,7 +15,7 @@
 #include <utility>
 #include <variant>
 
-namespace stana::native::gpu {
+namespace stana::platform::detail::gpu {
 namespace {
 [[nodiscard]] auto failed(Diagnostic::Category category, std::string message)
 	-> std::unexpected<Failure> {
@@ -112,8 +112,8 @@ struct BuiltinFunctions {
 	for (std::size_t channel = 0; channel < 3; ++channel) {
 		double value = color.rgba.at(channel);
 		if (color.linear != linear) {
-			value =
-				linear ? graphics_detail::decodeSRGB(value) : graphics_detail::encodeSRGB(value);
+			value = linear ? stana::rendering::detail::decodeSRGB(value)
+						   : stana::rendering::detail::encodeSRGB(value);
 		}
 		result.at(channel) = static_cast<float>(value * color.rgba.back());
 	}
@@ -121,8 +121,9 @@ struct BuiltinFunctions {
 	return result;
 }
 
-[[nodiscard]] auto normalized(const native::Command &value) -> native::Command {
-	native::Command result{.operation = value.operation};
+[[nodiscard]] auto normalized(const stana::platform::detail::Command &value)
+	-> stana::platform::detail::Command {
+	stana::platform::detail::Command result{.operation = value.operation};
 	if (value.operation == PaintOperation::popClip) {
 		return result;
 	}
@@ -153,7 +154,7 @@ struct BuiltinFunctions {
 
 [[nodiscard]] auto backing(double logicalSize, double scale) -> Result<std::uint32_t> {
 	const double pixels = std::ceil(logicalSize * scale);
-	if (!std::isfinite(pixels) || pixels < 0 || pixels > graphics_detail::axisLimit) {
+	if (!std::isfinite(pixels) || pixels < 0 || pixels > stana::rendering::detail::axisLimit) {
 		return failed(
 			Diagnostic::Category::capability,
 			"Canvas backing extent exceeds the portable/device profile"
@@ -650,7 +651,7 @@ auto Compositor::prepare(
 			);
 		}
 		packedClips.push_back({.bounds = floats(leaf.bounds)});
-		if (packedClips.size() > graphics_detail::payloadLimit / sizeof(Clip)) {
+		if (packedClips.size() > stana::rendering::detail::payloadLimit / sizeof(Clip)) {
 			return failed(
 				Diagnostic::Category::capability,
 				"Clip stack exceeds bounded upload size"
@@ -968,9 +969,9 @@ auto Compositor::prepare(
 		color.storeAction = samples_ > 1 ? MTLStoreActionMultisampleResolve : MTLStoreActionStore;
 		const auto background = packet->scene->source->background;
 		color.clearColor = MTLClearColorMake(
-			linear ? graphics_detail::decodeSRGB(background.red) : background.red,
-			linear ? graphics_detail::decodeSRGB(background.green) : background.green,
-			linear ? graphics_detail::decodeSRGB(background.blue) : background.blue,
+			linear ? stana::rendering::detail::decodeSRGB(background.red) : background.red,
+			linear ? stana::rendering::detail::decodeSRGB(background.green) : background.green,
+			linear ? stana::rendering::detail::decodeSRGB(background.blue) : background.blue,
 			1
 		);
 		id<MTLRenderCommandEncoder> const encoder =
@@ -1129,9 +1130,9 @@ void Compositor::display(
 	[encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:vertices];
 	[encoder endEncoding];
 }
-} // namespace stana::native::gpu
+} // namespace stana::platform::detail::gpu
 
-namespace stana::native::gpu {
+namespace stana::platform::detail::gpu {
 void capture(
 	const std::shared_ptr<DeviceResources> &device,
 	std::shared_ptr<const CompositePacket> packet,
@@ -1152,7 +1153,7 @@ void capture(
 	const auto bpp = pixelBytes(format);
 	const auto pitch = ((grid.viewport.width * bpp + rasterRowAlignment - 1) / rasterRowAlignment) *
 		rasterRowAlignment;
-	if (pitch > graphics_detail::payloadLimit / grid.viewport.height) {
+	if (pitch > stana::rendering::detail::payloadLimit / grid.viewport.height) {
 		deliver(failed(Diagnostic::Category::capability, "Readback exceeds bounded payload size"));
 		return;
 	}
@@ -1208,4 +1209,4 @@ void capture(
 	}];
 	[commands commit];
 }
-} // namespace stana::native::gpu
+} // namespace stana::platform::detail::gpu

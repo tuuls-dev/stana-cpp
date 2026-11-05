@@ -3,6 +3,6 @@
 import stana;
 
 auto main() -> int {
-	const auto rejected = stana::GPUShader::metalLibrary(std::vector<std::byte>{});
+	const auto rejected = stana::rendering::GPUShader::metalLibrary(std::vector<std::byte>{});
 	static_cast<void>(rejected);
 }

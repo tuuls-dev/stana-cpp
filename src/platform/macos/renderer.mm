@@ -8,7 +8,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace stana::native {
+namespace stana::platform::detail {
 namespace {
 constexpr std::size_t bitsPerComponent = 8;
 constexpr double fallbackLineHeight = 1.4;
@@ -711,4 +711,4 @@ auto measureText(const std::string &text, FontRequest font, double maximumWidth)
 		};
 	}
 }
-} // namespace stana::native
+} // namespace stana::platform::detail

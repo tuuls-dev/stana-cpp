@@ -14,7 +14,7 @@
 #include <utility>
 #include <vector>
 
-namespace stana::native::gpu {
+namespace stana::platform::detail::gpu {
 struct CPUAsset {
 	std::shared_ptr<RasterTile> raster;
 	std::shared_ptr<TextureOwner> texture;
@@ -24,7 +24,7 @@ struct CPUAsset {
 struct CPUKey {
 	double scale = 1;
 	std::array<std::size_t, 2> viewport{};
-	std::vector<native::Command> commands{};
+	std::vector<stana::platform::detail::Command> commands{};
 	auto operator<=>(const CPUKey &) const = default;
 };
 
@@ -172,5 +172,5 @@ void capture(
 	const TileGrid &,
 	std::function<void(Result<Capture>)>
 );
-} // namespace stana::native::gpu
+} // namespace stana::platform::detail::gpu
 #endif

@@ -10,7 +10,7 @@
 #include <optional>
 #include <vector>
 
-namespace stana::native {
+namespace stana::platform::detail {
 /// @brief Balanced Create/Copy-rule ownership; native handles never enter public modules.
 template <typename Reference> class CoreOwner {
   public:
@@ -134,5 +134,5 @@ struct RasterTile {
 
 /// @brief Validates exact texture extent/format/device before copying the complete fresh tile.
 void encodeTile(id<MTLBlitCommandEncoder>, const RasterTile &, id<MTLTexture>);
-} // namespace stana::native
+} // namespace stana::platform::detail
 #endif

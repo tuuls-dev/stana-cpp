@@ -30,7 +30,7 @@ class DisplayList {
 public:
     /// @brief Appends a rendering command to the internal buffer.
     /// @param command The portable paint command to record.
-    void push(PaintCommand command);
+    void push(stana::rendering::PaintCommand command);
 };
 
 ```
@@ -86,3 +86,32 @@ Before submitting a pull request, verify that:
 * [ ] Typographical and grammatical errors are cleaned up.
 
 ---
+
+### 5. Module, Namespace and Ownership Conventions
+
+`stana` is the only public named C++ module. Consumer examples must use
+`import stana;`; interface partitions are internal source organization, not
+additional consumer imports. A namespace is not a module.
+
+Name namespaces after function: `stana::rendering`, `stana::layout`,
+`stana::document`, `stana::reactive`, `stana::tasks`, `stana::text`, `stana::ui`,
+`stana::application`, and `stana::testing`. Keep common primitive value types and
+`version()` at the root. Show qualified subsystem names in examples, rather than
+bringing entire subsystems into scope with namespace directives.
+
+- Interfaces belong in `modules/<function>/`; implementations in `src/<function>/`.
+- Private helpers belong to `<function>::detail`. Shared primitive utilities are
+  the only exception: root `stana::detail` is restricted to `nextIdentity`,
+  `requireFinite`, and `requireNonnegative`.
+- Platform implementation types belong to `stana::platform::detail` and its `gpu`
+  namespace; native test fixtures belong to
+  `stana::testing::fixtures::platform::macos`.
+- C++ class member definitions remain in their class's namespace even when the
+  implementation file belongs to another function. For example, document layout
+  methods stay in `stana::document::detail` inside `src/layout/layout.cpp`.
+- Namespace ownership does not require a one-to-one partition mapping. Keep
+  partition imports acyclic and native types out of exported consumer APIs.
+
+Namespace and module-name changes are source- and ABI-breaking. Migration notes
+must name affected public APIs, require consumer rebuilds, and update examples,
+tests, generated sources, include paths and CMake source properties together.

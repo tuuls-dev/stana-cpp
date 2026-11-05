@@ -11,23 +11,24 @@ module;
 #include <variant>
 #include <vector>
 
-export module stana.testing;
-export import stana.ui;
-import stana.core;
+export module stana:testing;
+export import :ui;
+import :document;
 
-export namespace stana {
+export namespace stana::testing {
 /// @brief Owning GPU inspection record; this is not a headless GPU execution result.
 struct GPUCanvasPaint {
 	NodeId instance;
 	Rect bounds;
-	GPUDrawing drawing;
+	::stana::rendering::GPUDrawing drawing;
 	Environment environment;
 	double opacity = 1;
 };
 
-using MixedPaint = std::variant<PaintCommand, GPUCanvasPaint>;
+using MixedPaint = std::variant<::stana::rendering::PaintCommand, GPUCanvasPaint>;
 /// @brief Production WGSL validation/inspection/lowering without a native device or fake execution.
-[[nodiscard]] auto validateGPUProgram(const GPUProgram &) -> std::expected<void, GPUError>;
+[[nodiscard]] auto validateGPUProgram(const ::stana::rendering::GPUProgram &)
+	-> std::expected<void, ::stana::rendering::GPUError>;
 
 /// @brief Deterministic consumer host. Uses the production mount/document path without
 /// creating NSApplication, a native window, or a wall-clock-driven scheduler.
@@ -37,8 +38,8 @@ class TestHost {
 		Size size = {.width = defaultWidth, .height = defaultHeight},
 		Environment environment = {}
 	)
-		: lease_(detail::acquireHeadlessExecutorLease()),
-		  document_(detail::Document::create(size, environment)) {}
+		: lease_(::stana::reactive::detail::acquireHeadlessExecutorLease()),
+		  document_(::stana::document::detail::Document::create(size, environment)) {}
 
 	TestHost(const TestHost &) = delete;
 	TestHost(TestHost &&) = delete;
@@ -49,11 +50,11 @@ class TestHost {
 
 	/// @brief Replaces root content through the production typed mounting path.
 	/// Existing root descendants are disposed; subscriptions settle before publication.
-	template <Component T> void mount(const T &description) {
-		Transaction::perform([&] -> void {
+	template <::stana::ui::Component T> void mount(const T &description) {
+		::stana::reactive::Transaction::perform([&] -> void {
 			document_->removeChildren(document_->root());
-			MountContext context{.document = document_, .parent = document_->root()};
-			static_cast<void>(stana::mount(description, context));
+			::stana::ui::MountContext context{.document = document_, .parent = document_->root()};
+			static_cast<void>(::stana::ui::mount(description, context));
 		});
 	}
 
@@ -63,12 +64,12 @@ class TestHost {
 	/// @brief Replaces the synthetic drawable surface; old callbacks become ineligible.
 	/// Last-confirmed geometry remains available until new evidence changes it.
 	void replaceSurface() {
-		presentationEpoch_ = detail::nextIdentity();
+		presentationEpoch_ = ::stana::detail::nextIdentity();
 		document_->resetPresentation(presentationEpoch_);
 	}
 
 	/// @brief Registers a synthetic frame; optional acknowledgement is explicit test evidence.
-	[[nodiscard]] auto render(bool acknowledge = true) -> PresentationAttempt {
+	[[nodiscard]] auto render(bool acknowledge = true) -> ::stana::rendering::PresentationAttempt {
 		flush();
 		const auto scene = document_->renderSnapshot();
 		if (!scene) {
@@ -86,17 +87,17 @@ class TestHost {
 	}
 
 	/// @brief Injects one GPU completion observation without pretending it proves display.
-	void reportGPUCompletion(PresentationAttempt attempt, bool success) {
+	void reportGPUCompletion(::stana::rendering::PresentationAttempt attempt, bool success) {
 		static_cast<void>(document_->reportGPUCompletion(attempt, success));
 	}
 
 	/// @brief Injects native presentation time; zero/unknown evidence keeps geometry gated.
-	void reportPresentation(PresentationAttempt attempt, double timestamp) {
+	void reportPresentation(::stana::rendering::PresentationAttempt attempt, double timestamp) {
 		static_cast<void>(document_->reportPresentation(attempt, timestamp));
 	}
 
 	/// @brief Simulates a submission deadline without creating positive display evidence.
-	void abandonPresentation(PresentationAttempt attempt) {
+	void abandonPresentation(::stana::rendering::PresentationAttempt attempt) {
 		document_->abandonPresentation(attempt);
 	}
 
@@ -104,7 +105,8 @@ class TestHost {
 	void forceFullRecompute() { document_->forceFullRecompute(); }
 
 	/// @brief Admits a synthetic composite and gates its changed old/new geometry.
-	[[nodiscard]] auto renderComposite(std::span<const TileId> tiles) -> PresentationAttempt {
+	[[nodiscard]] auto renderComposite(std::span<const ::stana::rendering::TileId> tiles)
+		-> ::stana::rendering::PresentationAttempt {
 		flush();
 		const auto snapshot = document_->renderSnapshot();
 		if (!snapshot) {
@@ -120,7 +122,10 @@ class TestHost {
 	}
 
 	/// @brief Supplies typed synthetic evidence, never actual native display proof.
-	void reportTilePresentation(PresentationAttempt attempt, TilePresentation observation) {
+	void reportTilePresentation(
+		::stana::rendering::PresentationAttempt attempt,
+		::stana::rendering::TilePresentation observation
+	) {
 		static_cast<void>(document_->reportPresentation(attempt, observation));
 	}
 
@@ -128,10 +133,10 @@ class TestHost {
 	/// Hosts that share the owner executor also share that mailbox; flushing this
 	/// host can apply queued writes observed by another live host on the same thread.
 	void flush() {
-		if (const auto endpoint = detail::ExecutorEndpoint::currentIfAny()) {
+		if (const auto endpoint = ::stana::reactive::detail::ExecutorEndpoint::currentIfAny()) {
 			endpoint->drain();
 		}
-		detail::ReactiveRuntime::current().flush();
+		::stana::reactive::detail::ReactiveRuntime::current().flush();
 		document_->commit();
 	}
 
@@ -143,24 +148,31 @@ class TestHost {
 
 	/// @brief Returns value snapshots from the last complete document commit.
 	/// Query again after changes; retaining a snapshot does not keep its node alive.
-	[[nodiscard]] auto nodes() const -> std::vector<NodeSnapshot> { return document_->snapshots(); }
+	[[nodiscard]] auto nodes() const -> std::vector<::stana::document::NodeSnapshot> {
+		return document_->snapshots();
+	}
 
 	/// @brief Returns cumulative work counters for detecting unwanted remounts or extra commits.
-	[[nodiscard]] auto metrics() const -> Metrics { return document_->metrics(); }
+	[[nodiscard]] auto metrics() const -> ::stana::document::Metrics {
+		return document_->metrics();
+	}
 
 	/// @brief Returns reported recoverable errors, including rejected keyed updates.
 	[[nodiscard]] auto errors() const -> std::vector<Error> { return document_->errors(); }
 
 	/// @brief Shares the last complete immutable paint scene, or null before publication.
-	[[nodiscard]] auto scene() const -> std::shared_ptr<const SceneSnapshot> {
+	[[nodiscard]] auto scene() const -> std::shared_ptr<const ::stana::rendering::SceneSnapshot> {
 		return document_->scene();
 	}
 
 	/// @brief Complete typed painter order. scene()->commands deliberately excludes GPU pixels.
 	[[nodiscard]] auto mixedPaint() const -> std::vector<MixedPaint> {
 		std::vector<MixedPaint> result;
-		const auto append = [&](const auto &self,
-								const std::shared_ptr<const detail::SceneBranch> &branch) -> void {
+		const auto append =
+			[&](
+				const auto &self,
+				const std::shared_ptr<const ::stana::rendering::detail::SceneBranch> &branch
+			) -> void {
 			if (!branch || !branch->context.visible) {
 				return;
 			}
@@ -193,7 +205,7 @@ class TestHost {
 
 	/// @brief Injects exact production diagnostic identities, without fabricating GPU work.
 	void injectGPUDiagnostic(
-		GPUDiagnostic diagnostic,
+		::stana::rendering::GPUDiagnostic diagnostic,
 		std::uint64_t drawingVersion,
 		std::uint64_t epoch = 0
 	) {
@@ -202,7 +214,7 @@ class TestHost {
 	}
 
 	/// @brief Creates a non-owning capability for an occurrence in this host document.
-	[[nodiscard]] auto handle(NodeId identity) const -> NodeHandle {
+	[[nodiscard]] auto handle(NodeId identity) const -> ::stana::document::NodeHandle {
 		return document_->handle(identity);
 	}
 
@@ -237,7 +249,7 @@ class TestHost {
 
 	/// @brief Advances deterministic task wakeups without waiting for wall-clock time.
 	void advanceTime(std::chrono::milliseconds elapsed) {
-		detail::TaskScheduler::current().advance(elapsed);
+		::stana::tasks::detail::TaskScheduler::current().advance(elapsed);
 		flush();
 	}
 
@@ -250,9 +262,11 @@ class TestHost {
   private:
 	static constexpr double defaultWidth = 800;
 	static constexpr double defaultHeight = 600;
-	detail::HeadlessExecutorLease lease_; ///< Shared-owner claim; last host closes the endpoint.
-	std::shared_ptr<detail::Document>
+	::stana::reactive::detail::HeadlessExecutorLease
+		lease_; ///< Shared-owner claim; last host closes the endpoint.
+	std::shared_ptr<::stana::document::detail::Document>
 		document_; ///< Owns the same retained engine used by native windows.
-	std::uint64_t presentationEpoch_ = detail::nextIdentity(); ///< Synthetic surface generation.
+	std::uint64_t presentationEpoch_ =
+		::stana::detail::nextIdentity(); ///< Synthetic surface generation.
 };
-} // namespace stana
+} // namespace stana::testing

@@ -10,11 +10,11 @@ module;
 #include <stdexcept>
 #include <utility>
 
-export module stana.tasks;
-export import stana.reactive;
-import stana.primitives;
+export module stana:tasks;
+export import :reactive;
+import :primitives;
 
-export namespace stana {
+export namespace stana::tasks {
 namespace detail {
 /// @brief Routes task wakeups to the native UI queue or a deterministic test clock.
 /// Application installs dispatcher before mounting. Without a native dispatcher,
@@ -43,7 +43,10 @@ struct TaskScheduler {
 		if (delay > std::chrono::milliseconds::max() - logicalTime) {
 			throw std::overflow_error("Task clock exhausted");
 		}
-		timers.emplace(std::pair{logicalTime + delay, nextIdentity()}, std::move(callback));
+		timers.emplace(
+			std::pair{logicalTime + delay, ::stana::detail::nextIdentity()},
+			std::move(callback)
+		);
 	}
 
 	/// @brief Advances only deterministic timers; callbacks run in deadline/insertion order.
@@ -101,7 +104,7 @@ struct TaskState {
 		if (isCancelled || !isScopeAlive() || !coroutine || coroutine.done()) {
 			return;
 		}
-		Transaction::perform([this] -> void {
+		::stana::reactive::Transaction::perform([this] -> void {
 			coroutine.resume();
 		});
 		if (coroutine.done()) {
@@ -132,11 +135,11 @@ class Task {
   public:
 	/// @brief Coroutine protocol used by the compiler; application code returns Task instead.
 	struct promise_type {
-		std::weak_ptr<detail::TaskState>
+		std::weak_ptr<::stana::tasks::detail::TaskState>
 			state{}; ///< Weak backlink to the external owning frame state.
 
 		[[nodiscard]] auto get_return_object() -> Task {
-			auto owner = std::make_shared<detail::TaskState>();
+			auto owner = std::make_shared<::stana::tasks::detail::TaskState>();
 			owner->coroutine = std::coroutine_handle<promise_type>::from_promise(*this);
 			state = owner;
 			return Task{std::move(owner)};
@@ -163,11 +166,14 @@ class Task {
 
 	/// @brief Transfers the coroutine into a scope and queues its initial continuation.
 	/// @param onError Required callback for failures while the owning scope is alive.
-	void start(const Scope &scope, std::function<void(std::exception_ptr)> onError) && {
+	void start(
+		const ::stana::reactive::Scope &scope,
+		std::function<void(std::exception_ptr)> onError
+	) && {
 		if (!onError) {
 			throw std::invalid_argument("Task requires an error handler");
 		}
-		if (detail::ReactiveRuntime::current().collector != nullptr) {
+		if (::stana::reactive::detail::ReactiveRuntime::current().collector != nullptr) {
 			throw std::logic_error("Cannot start a task inside a computed evaluation");
 		}
 		if (!state_ || !scope.alive()) {
@@ -175,27 +181,30 @@ class Task {
 			return;
 		}
 		auto owner = std::exchange(state_, {});
-		owner->isScopeAlive = detail::ScopeAccess::liveness(scope);
+		owner->isScopeAlive = ::stana::reactive::detail::ScopeAccess::liveness(scope);
 		owner->onError = std::move(onError);
 		const auto token = scope.own([owner] -> void {
 			owner->isCancelled = true;
 			owner->onComplete = {};
 			owner->onError = {};
 		});
-		owner->onComplete = detail::ScopeAccess::completion(scope, token);
+		owner->onComplete = ::stana::reactive::detail::ScopeAccess::completion(scope, token);
 		const auto weakOwner = std::weak_ptr{owner};
-		detail::ReactiveRuntime::current().effects.emplace_back([weakOwner] -> void {
-			if (const auto current = weakOwner.lock()) {
-				current->resume();
+		::stana::reactive::detail::ReactiveRuntime::current().effects.emplace_back(
+			[weakOwner] -> void {
+				if (const auto current = weakOwner.lock()) {
+					current->resume();
+				}
 			}
-		});
-		detail::ReactiveRuntime::current().flush();
+		);
+		::stana::reactive::detail::ReactiveRuntime::current().flush();
 	}
 
   private:
-	explicit Task(std::shared_ptr<detail::TaskState> state) : state_(std::move(state)) {}
+	explicit Task(std::shared_ptr<::stana::tasks::detail::TaskState> state)
+		: state_(std::move(state)) {}
 
-	std::shared_ptr<detail::TaskState>
+	std::shared_ptr<::stana::tasks::detail::TaskState>
 		state_{}; ///< Owns the unstarted frame until moved into a scope.
 };
 
@@ -209,7 +218,7 @@ struct TaskDelay {
 
 	void await_suspend(std::coroutine_handle<Task::promise_type> coroutine) const {
 		const auto weakOwner = coroutine.promise().state;
-		detail::TaskScheduler::current().post(duration, [weakOwner] -> void {
+		::stana::tasks::detail::TaskScheduler::current().post(duration, [weakOwner] -> void {
 			if (const auto owner = weakOwner.lock()) {
 				owner->resume();
 			}
@@ -226,4 +235,4 @@ struct TaskDelay {
 	}
 	return {.duration = duration};
 }
-} // namespace stana
+} // namespace stana::tasks

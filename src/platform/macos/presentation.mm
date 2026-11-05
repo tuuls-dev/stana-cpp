@@ -8,7 +8,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace stana::native {
+namespace stana::platform::detail {
 namespace {
 [[nodiscard]] auto now() -> FrameScheduler::Time {
 	return std::chrono::duration_cast<FrameScheduler::Time>(
@@ -725,4 +725,4 @@ void closeRenderer(const std::shared_ptr<WindowState> &state) {
 	state->view.layer = nil;
 	state->layer = nil;
 }
-} // namespace stana::native
+} // namespace stana::platform::detail

@@ -7,28 +7,28 @@ import stana;
 /// @brief Runs the introductory retained Counter without native APIs in consumer code.
 auto main() -> int {
 	try {
-		using namespace stana;
-		const Signal count{0};
+
+		const stana::reactive::Signal count{0};
 		constexpr double windowWidth = 480;
 		constexpr double windowHeight = 320;
 		constexpr double contentPadding = 28;
 		constexpr double stackSpacing = 16;
 		constexpr double headingSize = 24;
 
-		const auto window = Window{
+		const auto window = stana::application::Window{
 			.title = "Stana Counter",
 			.size = {.width = windowWidth, .height = windowHeight},
-			.content = VStack{
+			.content = stana::ui::VStack{
 				.spacing = stackSpacing,
-				.layout = {.padding = Insets::all(contentPadding)},
-				.children = children(
-					Text{
+				.layout = {.padding = stana::Insets::all(contentPadding)},
+				.children = stana::ui::children(
+					stana::ui::Text{
 						.text = count.map([](int value) -> std::string {
 							return "Count: " + std::to_string(value);
 						}),
-						.textStyle = {.font = Font::system(headingSize)}
+						.textStyle = {.font = stana::Font::system(headingSize)}
 					},
-					Button{
+					stana::ui::Button{
 						.text = "Increment",
 						.onClick = [count] -> void {
 							++count;
@@ -38,7 +38,7 @@ auto main() -> int {
 				)
 			}
 		};
-		return Application::run(window);
+		return stana::application::Application::run(window);
 	} catch (const std::exception &error) {
 		std::cerr << error.what() << '\n';
 		return 1;

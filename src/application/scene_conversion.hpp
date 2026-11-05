@@ -2,28 +2,29 @@
 #define STANA_SCENE_CONVERSION_HPP
 
 // Included after imports; shared by the production bridge and private native fixtures.
-namespace stana::application_detail {
-[[nodiscard]] inline auto convertCommand(const PaintCommand &command) -> native::Command {
+namespace stana::application::detail {
+[[nodiscard]] inline auto convertCommand(const stana::rendering::PaintCommand &command)
+	-> stana::platform::detail::Command {
 
-	native::PaintOperation operation{};
+	stana::platform::detail::PaintOperation operation{};
 	switch (command.kind) {
-	case PaintKind::fillRect:
-		operation = native::PaintOperation::fill;
+	case stana::rendering::PaintKind::fillRect:
+		operation = stana::platform::detail::PaintOperation::fill;
 		break;
-	case PaintKind::strokeRect:
-		operation = native::PaintOperation::stroke;
+	case stana::rendering::PaintKind::strokeRect:
+		operation = stana::platform::detail::PaintOperation::stroke;
 		break;
-	case PaintKind::text:
-		operation = native::PaintOperation::text;
+	case stana::rendering::PaintKind::text:
+		operation = stana::platform::detail::PaintOperation::text;
 		break;
-	case PaintKind::line:
-		operation = native::PaintOperation::line;
+	case stana::rendering::PaintKind::line:
+		operation = stana::platform::detail::PaintOperation::line;
 		break;
-	case PaintKind::pushClip:
-		operation = native::PaintOperation::pushClip;
+	case stana::rendering::PaintKind::pushClip:
+		operation = stana::platform::detail::PaintOperation::pushClip;
 		break;
-	case PaintKind::popClip:
-		operation = native::PaintOperation::popClip;
+	case stana::rendering::PaintKind::popClip:
+		operation = stana::platform::detail::PaintOperation::popClip;
 		break;
 	}
 	return {
@@ -44,7 +45,7 @@ namespace stana::application_detail {
 	};
 }
 
-[[nodiscard]] inline auto convertRect(Rect rect) -> native::LogicalRect {
+[[nodiscard]] inline auto convertRect(Rect rect) -> stana::platform::detail::LogicalRect {
 	return {
 		.origin = {.x = rect.origin.x, .y = rect.origin.y},
 		.size = {.width = rect.size.width, .height = rect.size.height}
@@ -54,28 +55,28 @@ namespace stana::application_detail {
 /// @brief One window's last paired roots; no process-global cache or borrowed-address lookup.
 struct SceneConversion {
 	GPUConversion gpuConversion;
-	std::shared_ptr<const detail::RenderSnapshot> source;
-	std::shared_ptr<const native::Scene> converted;
+	std::shared_ptr<const stana::rendering::detail::RenderSnapshot> source;
+	std::shared_ptr<const stana::platform::detail::Scene> converted;
 
 	[[nodiscard]] auto branch(
-		const std::shared_ptr<const detail::SceneBranch> &next,
-		const std::shared_ptr<const detail::SceneBranch> &old,
-		const std::shared_ptr<const native::SceneBranch> &previous
-	) -> std::shared_ptr<const native::SceneBranch> {
+		const std::shared_ptr<const stana::rendering::detail::SceneBranch> &next,
+		const std::shared_ptr<const stana::rendering::detail::SceneBranch> &old,
+		const std::shared_ptr<const stana::platform::detail::SceneBranch> &previous
+	) -> std::shared_ptr<const stana::platform::detail::SceneBranch> {
 		if (!next) {
 			return {};
 		}
 		if (old && previous && next->id == old->id && next->generation == old->generation) {
 			return previous;
 		}
-		auto result = std::make_shared<native::SceneBranch>();
+		auto result = std::make_shared<stana::platform::detail::SceneBranch>();
 		result->id = {.document = next->id.document, .serial = next->id.serial};
 		result->generation = next->generation;
 		result->visible = next->context.visible;
 		if (old && previous && next->paint->identity == old->paint->identity) {
 			result->paint = previous->paint;
 		} else {
-			auto paint = std::make_shared<native::PaintSegments>();
+			auto paint = std::make_shared<stana::platform::detail::PaintSegments>();
 			paint->identity = next->paint->identity;
 			for (const auto &command : next->paint->prefix) {
 				paint->prefix.push_back(convertCommand(command));
@@ -87,7 +88,7 @@ struct SceneConversion {
 				paint->childClipBounds = convertRect(*next->paint->childClipBounds);
 			}
 			if (const auto &gpu = next->paint->gpu) {
-				paint->gpu = native::GPUCanvasLeaf{
+				paint->gpu = stana::platform::detail::GPUCanvasLeaf{
 					.instance =
 						{.document = gpu->instance.document, .serial = gpu->instance.serial},
 					.bounds = convertRect(gpu->bounds),
@@ -117,12 +118,12 @@ struct SceneConversion {
 		return result;
 	}
 
-	[[nodiscard]] auto convert(std::shared_ptr<const detail::RenderSnapshot> next)
-		-> std::shared_ptr<const native::Scene> {
+	[[nodiscard]] auto convert(std::shared_ptr<const stana::rendering::detail::RenderSnapshot> next)
+		-> std::shared_ptr<const stana::platform::detail::Scene> {
 		if (next == source) {
 			return converted;
 		}
-		auto scene = std::make_shared<native::Scene>();
+		auto scene = std::make_shared<stana::platform::detail::Scene>();
 		scene->revision = next->revision;
 		scene->size = {.width = next->size.width, .height = next->size.height};
 		scene->background = {
@@ -142,5 +143,5 @@ struct SceneConversion {
 		return converted;
 	}
 };
-} // namespace stana::application_detail
+} // namespace stana::application::detail
 #endif

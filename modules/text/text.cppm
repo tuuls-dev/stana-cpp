@@ -8,10 +8,10 @@ module;
 #include <string_view>
 #include <vector>
 
-export module stana.text;
-import stana.primitives;
+export module stana:text;
+import :primitives;
 
-export namespace stana {
+export namespace stana::text {
 /// @brief Identifies a UTF-8 byte boundary in one specific editor revision.
 ///
 /// TextBuffer returns these positions for selection and native-service requests.
@@ -113,4 +113,4 @@ class TextBuffer {
 	[[nodiscard]] auto currentState() const -> EditState;
 	void restore(EditState state);
 };
-} // namespace stana
+} // namespace stana::text

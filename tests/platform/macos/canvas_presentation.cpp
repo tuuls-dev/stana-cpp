@@ -12,56 +12,60 @@
 #include <variant>
 #include <vector>
 import stana;
-import stana.core;
 
 namespace {
-using namespace stana;
+
 constexpr double width = 520;
 constexpr double height = 260;
 constexpr double extent = 128;
 constexpr auto delay = std::chrono::milliseconds{50};
 constexpr auto timeout = std::chrono::seconds{10};
 
-[[nodiscard]] auto picture() -> GPUDrawing {
-	const auto shader = GPUShader::source(R"(
+[[nodiscard]] auto picture() -> stana::rendering::GPUDrawing {
+	const auto shader = stana::rendering::GPUShader::source(R"(
 @group(0) @binding(0) var history: texture_2d<f32>;
 @group(0) @binding(1) var next: texture_storage_2d<rgba16float, write>;
 @compute @workgroup_size(1) fn step() {
  textureStore(next, vec2<i32>(0), vec4<f32>(textureLoad(history, vec2<i32>(0), 0).x + 1.0, 0.0, 0.0, 1.0));
 }
 )");
-	const auto state = GPUStateSlot::create({.width = 1, .height = 1});
+	const auto state = stana::rendering::GPUStateSlot::create({.width = 1, .height = 1});
 	if (!shader || !state) {
 		throw std::runtime_error("Invalid canvas qualification resources");
 	}
-	const auto program = GPUProgram::create(
+	const auto program = stana::rendering::GPUProgram::create(
 		{.shader = *shader,
 			.resources = {{"history", *state}},
-			.passes = {GPUComputePass{
+			.passes = {stana::rendering::GPUComputePass{
 				.function = "step",
 				.bindings =
-					{{.resource = "history", .stage = GPUBinding::Stage::compute, .previous = true},
+					{{.resource = "history",
+						 .stage = stana::rendering::GPUBinding::Stage::compute,
+						 .previous = true},
 						{.resource = "history",
 							.binding = 1,
-							.access = GPUBinding::Access::write,
-							.stage = GPUBinding::Stage::compute}}
+							.access = stana::rendering::GPUBinding::Access::write,
+							.stage = stana::rendering::GPUBinding::Stage::compute}}
 			}},
 			.output = "history"}
 	);
 	if (!program) {
 		throw std::runtime_error(program.error().message);
 	}
-	GPUDrawing result{*program};
-	result.fillRect({.size = {.width = extent, .height = extent}}, ExtendedColor{2, 0, 0});
+	stana::rendering::GPUDrawing result{*program};
+	result.fillRect(
+		{.size = {.width = extent, .height = extent}},
+		stana::rendering::ExtendedColor{2, 0, 0}
+	);
 	return result;
 }
 
 struct Scenario : std::enable_shared_from_this<Scenario> {
-	Signal<GPUDrawing> drawing{picture()};
-	Signal<bool> metadata{false};
-	std::shared_ptr<detail::Document> document;
-	WindowDiagnostics before;
-	Metrics coreBefore;
+	stana::reactive::Signal<stana::rendering::GPUDrawing> drawing{picture()};
+	stana::reactive::Signal<bool> metadata{false};
+	std::shared_ptr<stana::document::detail::Document> document;
+	stana::rendering::WindowDiagnostics before;
+	stana::document::Metrics coreBefore;
 	unsigned stage = 0;
 	bool verified = false;
 	bool announced = false;
@@ -69,7 +73,7 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 
 	void queue() {
 		const auto owner = shared_from_this();
-		Application::postAfter(delay, [owner] -> void {
+		stana::application::Application::postAfter(delay, [owner] -> void {
 			owner->tick();
 		});
 	}
@@ -80,14 +84,14 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 				throw std::runtime_error("Canvas presentation stage timed out");
 			}
 			if (!announced) {
-				const auto path = fixtures::resultPath();
+				const auto path = stana::testing::fixtures::platform::macos::resultPath();
 				if (!path.empty()) {
 					std::ofstream ready{path + ".ready"};
 					ready << "ready";
 				}
 				announced = true;
 			}
-			const auto windows = Application::renderingDiagnostics();
+			const auto windows = stana::application::Application::renderingDiagnostics();
 			if (windows.size() != 1) {
 				queue();
 				return;
@@ -120,7 +124,7 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 				next.fillEllipse(
 					{.origin = {.x = extent / 2, .y = extent / 2},
 						.size = {.width = extent, .height = extent}},
-					ExtendedColor{0, 2, 0}
+					stana::rendering::ExtendedColor{0, 2, 0}
 				);
 				drawing.set(std::move(next));
 				++stage;
@@ -156,34 +160,41 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 						  << " trackedBytes=" << current.trackedBytes
 						  << " tiles=" << current.compositedTiles << '\n';
 				verified = true;
-				Application::stop();
+				stana::application::Application::stop();
 				return;
 			}
 			queue();
 		} catch (const std::exception &error) {
 			std::cerr << error.what() << '\n';
-			Application::stop();
+			stana::application::Application::stop();
 		}
 	}
 };
 
 [[nodiscard]] auto run() -> int {
 	auto scenario = std::make_shared<Scenario>();
-	scenario->document = detail::Document::create({.width = width, .height = height});
-	Drawing background;
-	background.fillRect({.size = {.width = extent, .height = extent}}, Color::accent());
-	const Frame fill{.width = Length::fill(), .height = Length::fill()};
-	Transaction::perform([&] -> void {
-		MountContext context{.document = scenario->document, .parent = scenario->document->root()};
-		static_cast<void>(mount(
-			ZStack{
-				.children = children(
-					CPUCanvas{.drawing = background, .layout = {.frame = fill}},
-					GPUCanvas{.drawing = scenario->drawing, .layout = {.frame = fill}},
-					VStack{
-						.children = children(
-							Text{.text = "CPU above GPU"},
-							Toggle{.text = "metadata anchor", .value = scenario->metadata.binding()}
+	scenario->document =
+		stana::document::detail::Document::create({.width = width, .height = height});
+	stana::rendering::Drawing background;
+	background.fillRect({.size = {.width = extent, .height = extent}}, stana::Color::accent());
+	const stana::Frame fill{.width = stana::Length::fill(), .height = stana::Length::fill()};
+	stana::reactive::Transaction::perform([&] -> void {
+		stana::ui::MountContext context{
+			.document = scenario->document,
+			.parent = scenario->document->root()
+		};
+		static_cast<void>(stana::ui::mount(
+			stana::ui::ZStack{
+				.children = stana::ui::children(
+					stana::ui::CPUCanvas{.drawing = background, .layout = {.frame = fill}},
+					stana::ui::GPUCanvas{.drawing = scenario->drawing, .layout = {.frame = fill}},
+					stana::ui::VStack{
+						.children = stana::ui::children(
+							stana::ui::Text{.text = "CPU above GPU"},
+							stana::ui::Toggle{
+								.text = "metadata anchor",
+								.value = scenario->metadata.binding()
+							}
 						)
 					}
 				)
@@ -192,10 +203,10 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 		));
 	});
 	scenario->queue();
-	const int status = detail::runWindows(
+	const int status = stana::application::detail::runWindows(
 		{{.title = "Stana canvas qualification",
 			.size = {.width = width, .height = height},
-			.renderingColorMode = RenderingColorMode::sdr,
+			.renderingColorMode = stana::rendering::RenderingColorMode::sdr,
 			.document = scenario->document}}
 	);
 	return status == 0 && scenario->verified ? 0 : 1;
@@ -204,10 +215,10 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 
 auto main() -> int {
 	try {
-		const auto path = stana::fixtures::resultPath();
+		const auto path = stana::testing::fixtures::platform::macos::resultPath();
 		if (!path.empty()) {
 			std::ofstream pid{path + ".pid"};
-			pid << stana::fixtures::processIdentity();
+			pid << stana::testing::fixtures::platform::macos::processIdentity();
 		}
 		int status = 1;
 		try {

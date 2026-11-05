@@ -1,7 +1,7 @@
 #include "native_contracts.hpp"
 #include <stdexcept>
 
-namespace stana::native {
+namespace stana::platform::detail {
 auto diagnostics() -> std::vector<WindowStatistics> {
 	return {};
 }
@@ -24,4 +24,4 @@ auto createMailboxWakeup(std::function<void()>) -> std::expected<MailboxWakeup, 
 auto measureText(const std::string &, FontRequest, double) -> std::pair<double, double> {
 	throw std::runtime_error("Native text measurement is unavailable on this platform");
 }
-} // namespace stana::native
+} // namespace stana::platform::detail

@@ -9,9 +9,10 @@ module;
 #include <thread>
 #include <utility>
 
-module stana.reactive;
+module stana;
+import :reactive;
 
-namespace stana::detail {
+namespace stana::reactive::detail {
 namespace {
 struct ExecutorThreadState {
 	std::shared_ptr<ExecutorEndpoint> current;
@@ -379,4 +380,4 @@ void rearmDeferredExecutorWakeup() {
 		endpoint->rearmDeferredWakeup();
 	}
 }
-} // namespace stana::detail
+} // namespace stana::reactive::detail

@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 
-namespace stana::fixtures {
+namespace stana::testing::fixtures::platform::macos {
 struct PhysicalViewport {
 	double width = 0;
 	double height = 0;
@@ -15,5 +15,5 @@ void replaceAttachment(const std::string &title);
 void closeWindow(const std::string &title);
 [[nodiscard]] auto resultPath() -> std::string;
 [[nodiscard]] auto processIdentity() -> std::int32_t;
-} // namespace stana::fixtures
+} // namespace stana::testing::fixtures::platform::macos
 #endif

@@ -18,10 +18,11 @@ module;
 #include <utility>
 #include <vector>
 
-module stana.text;
-import stana.primitives;
+module stana;
+import :text;
+import :primitives;
 
-namespace stana {
+namespace stana::text {
 namespace {
 constexpr unsigned char continuationMask = 0xC0;
 constexpr unsigned char continuationTag = 0x80;
@@ -149,7 +150,7 @@ auto utf8Offset(const std::string &text, std::size_t codeUnitOffset)
 
 TextBuffer::TextBuffer(std::string text)
 	: text_(std::move(text)),
-	  revision_(detail::nextIdentity()) {
+	  revision_(stana::detail::nextIdentity()) {
 	if (!isValidUtf8(text_) || text_.find_first_of("\r\n") != std::string::npos) {
 		throw std::invalid_argument("Malformed initial editor text");
 	}
@@ -184,7 +185,7 @@ void TextBuffer::restore(EditState state) {
 	text_ = std::move(state.text);
 	anchor_ = state.anchor;
 	head_ = state.head;
-	revision_ = detail::nextIdentity();
+	revision_ = stana::detail::nextIdentity();
 	marked_.reset();
 }
 
@@ -204,7 +205,7 @@ auto TextBuffer::replaceSelection(const std::string &insertion, bool groupWithPr
 	const auto caret = std::ranges::lower_bound(boundaries, begin + insertion.size());
 	anchor_ = caret == boundaries.end() ? text_.size() : *caret;
 	head_ = anchor_;
-	revision_ = detail::nextIdentity();
+	revision_ = stana::detail::nextIdentity();
 	marked_.reset();
 	return {};
 }
@@ -258,4 +259,4 @@ auto TextBuffer::redo() -> bool {
 	restore(std::move(next));
 	return true;
 }
-} // namespace stana
+} // namespace stana::text

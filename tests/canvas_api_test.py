@@ -8,5 +8,5 @@ for path in [*root.joinpath("modules").rglob("*.cppm"), *root.joinpath("examples
     text = re.sub(r"//[^\n]*|/\*.*?\*/", "", text, flags=re.S)
     if re.search(r"\b(?:metalSource|metalLibrary|metallib|MTL\w+|HLSL|DXIL|SPIRV|BackendSelection)\b", text):
         raise RuntimeError(f"Native payload/selection leaked into public source: {path}")
-    if path.parent.name == "graphics" and re.search(r"#\s*(?:if|ifdef|ifndef).*?(?:APPLE|WIN32|METAL|VULKAN)", text):
-        raise RuntimeError(f"Platform-selected graphics API: {path}")
+    if "rendering" in path.relative_to(root).parts and re.search(r"#\s*(?:if|ifdef|ifndef).*?(?:APPLE|WIN32|METAL|VULKAN)", text):
+        raise RuntimeError(f"Platform-selected rendering API: {path}")

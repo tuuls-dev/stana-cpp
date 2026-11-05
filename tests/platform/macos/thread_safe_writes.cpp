@@ -15,7 +15,7 @@
 import stana;
 
 namespace {
-using namespace stana;
+
 using namespace std::chrono_literals;
 
 constexpr double width = 480;
@@ -86,7 +86,7 @@ struct LivePayload {
 };
 
 struct WorkerScenario : std::enable_shared_from_this<WorkerScenario> {
-	Signal<std::string> text{std::string{"Ready"}};
+	stana::reactive::Signal<std::string> text{std::string{"Ready"}};
 	std::latch releaseWorker{1};
 	std::atomic<int> ticks{0};
 	std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
@@ -95,7 +95,7 @@ struct WorkerScenario : std::enable_shared_from_this<WorkerScenario> {
 
 	void queue() {
 		const auto owner = shared_from_this();
-		Application::postAfter(pollDelay, [owner] -> void {
+		stana::application::Application::postAfter(pollDelay, [owner] -> void {
 			owner->tick();
 		});
 	}
@@ -114,13 +114,13 @@ struct WorkerScenario : std::enable_shared_from_this<WorkerScenario> {
 			if (text.get() == "Done") {
 				require(observed >= releaseAfterTicks, "UI stayed live before worker release");
 				verified = true;
-				Application::stop();
+				stana::application::Application::stop();
 				return;
 			}
 			queue();
 		} catch (const std::exception &error) {
 			std::cerr << error.what() << '\n';
-			Application::stop();
+			stana::application::Application::stop();
 		}
 	}
 };
@@ -131,14 +131,14 @@ struct WorkerScenario : std::enable_shared_from_this<WorkerScenario> {
 		scenario->releaseWorker.wait();
 		text.setThreadSafe(std::string{"Done"});
 	});
-	const auto code = Application::run(
-		Window{
+	const auto code = stana::application::Application::run(
+		stana::application::Window{
 			.title = "Stana thread-safe writes",
 			.size = {.width = width, .height = height},
-			.content = Text{
+			.content = stana::ui::Text{
 				.text = scenario->text,
-				.lifecycle = {.onMount = [scenario](const NodeHandle &) -> void {
-					const auto path = fixtures::resultPath();
+				.lifecycle = {.onMount = [scenario](const stana::document::NodeHandle &) -> void {
+					const auto path = stana::testing::fixtures::platform::macos::resultPath();
 					if (!path.empty()) {
 						std::ofstream ready{path + ".ready"};
 						ready << "ready";
@@ -155,20 +155,22 @@ struct WorkerScenario : std::enable_shared_from_this<WorkerScenario> {
 
 [[nodiscard]] auto runShutdownWithPendingWork() -> int {
 	const auto live = std::make_shared<std::atomic<int>>(0);
-	const Signal value{LivePayload{live, 0}};
-	const auto code = Application::run(
-		Window{
+	const stana::reactive::Signal value{LivePayload{live, 0}};
+	const auto code = stana::application::Application::run(
+		stana::application::Window{
 			.title = "Stana queued shutdown",
 			.size = {.width = width, .height = height},
-			.content = Text{
+			.content = stana::ui::Text{
 				.text = "shutdown",
-				.lifecycle = {.onMount = [value, live](const NodeHandle &) -> void {
-					constexpr int queued = 8;
-					for (int index = 0; index < queued; ++index) {
-						value.setThreadSafe(LivePayload{live, index + 1});
+				.lifecycle = {
+					.onMount = [value, live](const stana::document::NodeHandle &) -> void {
+						constexpr int queued = 8;
+						for (int index = 0; index < queued; ++index) {
+							value.setThreadSafe(LivePayload{live, index + 1});
+						}
+						stana::application::Application::stop();
 					}
-					Application::stop();
-				}}
+				}
 			}
 		}
 	);
@@ -185,19 +187,19 @@ struct WorkerScenario : std::enable_shared_from_this<WorkerScenario> {
 }
 
 [[nodiscard]] auto runApplyException() -> int {
-	const Signal value{0};
-	const auto subscription = observe(value, [](int next) -> void {
+	const stana::reactive::Signal value{0};
+	const auto subscription = stana::reactive::observe(value, [](int next) -> void {
 		if (next == 1) {
 			throw std::runtime_error("native apply failed");
 		}
 	});
-	const auto code = Application::run(
-		Window{
+	const auto code = stana::application::Application::run(
+		stana::application::Window{
 			.title = "Stana queued failure",
 			.size = {.width = width, .height = height},
-			.content = Text{
+			.content = stana::ui::Text{
 				.text = "failure",
-				.lifecycle = {.onMount = [value](const NodeHandle &) -> void {
+				.lifecycle = {.onMount = [value](const stana::document::NodeHandle &) -> void {
 					value.setThreadSafe(1);
 				}}
 			}
@@ -211,10 +213,10 @@ struct WorkerScenario : std::enable_shared_from_this<WorkerScenario> {
 
 auto main() -> int {
 	try {
-		const auto output = fixtures::resultPath();
+		const auto output = stana::testing::fixtures::platform::macos::resultPath();
 		if (!output.empty()) {
 			std::ofstream pid{output + ".pid"};
-			pid << fixtures::processIdentity();
+			pid << stana::testing::fixtures::platform::macos::processIdentity();
 		}
 		int result = 1;
 		try {

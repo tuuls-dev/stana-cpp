@@ -10,11 +10,16 @@
 namespace {
 /// @brief Reference edge classification: a nonuniform 3x3 coverage neighborhood.
 /// Uniform interiors and alpha have no tolerance; this is not a screenshot-wide allowance.
-[[nodiscard]] auto
-referenceEdge(const stana::native::fixtures::Bitmap &bitmap, std::size_t x, std::size_t y) -> bool {
-	using stana::native::bytesPerPixel;
-	const auto center =
-		std::span{bitmap.bytes}.subspan(y * bitmap.bytesPerRow + x * bytesPerPixel, bytesPerPixel);
+[[nodiscard]] auto referenceEdge(
+	const stana::testing::fixtures::platform::macos::Bitmap &bitmap,
+	std::size_t x,
+	std::size_t y
+) -> bool {
+	using stana::platform::detail::bytesPerPixel;
+	const auto center = std::span{bitmap.bytes}.subspan(
+		y * bitmap.bytesPerRow + x * stana::platform::detail::bytesPerPixel,
+		stana::platform::detail::bytesPerPixel
+	);
 	const auto left = x > 0 ? x - 1 : 0;
 	const auto top = y > 0 ? y - 1 : 0;
 	for (auto row = top; row <= std::min(y + 1, bitmap.pixels.height - 1); ++row) {
@@ -22,8 +27,8 @@ referenceEdge(const stana::native::fixtures::Bitmap &bitmap, std::size_t x, std:
 			if (!std::ranges::equal(
 					center,
 					std::span{bitmap.bytes}.subspan(
-						row * bitmap.bytesPerRow + column * bytesPerPixel,
-						bytesPerPixel
+						row * bitmap.bytesPerRow + column * stana::platform::detail::bytesPerPixel,
+						stana::platform::detail::bytesPerPixel
 					)
 				)) {
 				return true;
@@ -36,55 +41,64 @@ referenceEdge(const stana::native::fixtures::Bitmap &bitmap, std::size_t x, std:
 /// @brief R01-R18: actual byte equality for every operation, fractional edge crossings and damage
 /// reuse.
 void parity(double scale) {
-	using namespace stana::native;
-	using namespace stana::native::fixtures;
-	const auto source = scene();
-	PreparationTrace trace;
-	const auto prepared = prepareScene(source, scale, {}, &trace);
-	require(
+
+	const auto source = stana::testing::fixtures::platform::macos::scene();
+	stana::platform::detail::PreparationTrace trace;
+	const auto prepared = stana::platform::detail::prepareScene(source, scale, {}, &trace);
+	stana::testing::fixtures::platform::macos::require(
 		trace.branches.size() == 1 && trace.paints.size() == 1,
 		"actual prepared identity trace"
 	);
 	trace = {};
-	require(
-		prepareScene(source, scale, prepared, &trace) == prepared && trace.paints.empty(),
+	stana::testing::fixtures::platform::macos::require(
+		stana::platform::detail::prepareScene(source, scale, prepared, &trace) == prepared &&
+			trace.paints.empty(),
 		"unchanged prepare is no-op"
 	);
-	const auto grid = makeTileGrid(source->size, scale);
+	const auto grid = stana::platform::detail::makeTileGrid(source->size, scale);
 
-	auto next = std::make_shared<Scene>(*source);
+	auto next = std::make_shared<stana::platform::detail::Scene>(*source);
 	next->revision = 2;
-	auto root = std::make_shared<SceneBranch>(*source->root);
+	auto root = std::make_shared<stana::platform::detail::SceneBranch>(*source->root);
 	root->generation = 2;
-	auto paint = std::make_shared<PaintSegments>(*root->paint);
+	auto paint = std::make_shared<stana::platform::detail::PaintSegments>(*root->paint);
 	paint->identity = 2;
 	paint->prefix.front().blue = 1;
 	root->paint = paint;
 	next->root = root;
-	const auto changed = prepareScene(next, scale, prepared);
-	RenderingWork work;
-	require(sceneDamage(prepared, prepared, grid, work).none(), "R18 no damage for unchanged tree");
-	const auto damage = sceneDamage(prepared, changed, grid, work);
-	require(damage.any(), "R01 color changes actual ink");
-	require(
-		sceneDamage(changed, prepared, grid, work) == damage,
+	const auto changed = stana::platform::detail::prepareScene(next, scale, prepared);
+	stana::platform::detail::RenderingWork work;
+	stana::testing::fixtures::platform::macos::require(
+		stana::platform::detail::sceneDamage(prepared, prepared, grid, work).none(),
+		"R18 no damage for unchanged tree"
+	);
+	const auto damage = stana::platform::detail::sceneDamage(prepared, changed, grid, work);
+	stana::testing::fixtures::platform::macos::require(
+		damage.any(),
+		"R01 color changes actual ink"
+	);
+	stana::testing::fixtures::platform::macos::require(
+		stana::platform::detail::sceneDamage(changed, prepared, grid, work) == damage,
 		"R16 raster revert repairs old pixels"
 	);
 	// Derive a fresh publication; never mutate resources already handed to preparation.
-	auto unusualPaint = std::make_shared<PaintSegments>(*paint);
+	auto unusualPaint = std::make_shared<stana::platform::detail::PaintSegments>(*paint);
 	unusualPaint->prefix.push_back(
-		{.operation = PaintOperation::text, .text = "👩🏽‍💻 é", .fontSize = markerSize}
+		{.operation = stana::platform::detail::PaintOperation::text,
+			.text = "👩🏽‍💻 é",
+			.fontSize = stana::testing::fixtures::platform::macos::markerSize}
 	);
 	unusualPaint->identity = 3;
-	auto unusualSource = std::make_shared<Scene>(*next);
-	auto unusualRoot = std::make_shared<SceneBranch>(*root);
+	auto unusualSource = std::make_shared<stana::platform::detail::Scene>(*next);
+	auto unusualRoot = std::make_shared<stana::platform::detail::SceneBranch>(*root);
 	unusualRoot->paint = unusualPaint;
 	unusualRoot->generation = 3;
 	unusualSource->root = unusualRoot;
 	unusualSource->revision = 3;
-	const auto unusual = prepareScene(unusualSource, scale);
-	require(
-		sceneDamage(prepared, unusual, grid, work) == allTiles(grid) &&
+	const auto unusual = stana::platform::detail::prepareScene(unusualSource, scale);
+	stana::testing::fixtures::platform::macos::require(
+		stana::platform::detail::sceneDamage(prepared, unusual, grid, work) ==
+				stana::platform::detail::allTiles(grid) &&
 			work.fullDamageFallbacks > 0,
 		"R03/R17 unknown color glyphs use full damage"
 	);
@@ -92,38 +106,47 @@ void parity(double scale) {
 	unsigned maximumChannelError = 0;
 	unsigned maximumAlphaError = 0;
 	std::uint64_t absoluteError = 0;
-	Bitmap reference{{.width = grid.viewport.width, .height = grid.viewport.height}};
-	rasterScene(reference.context.get(), *prepared, reference.pixels, false);
+	stana::testing::fixtures::platform::macos::Bitmap reference{
+		{.width = grid.viewport.width, .height = grid.viewport.height}
+	};
+	stana::platform::detail::rasterScene(
+		reference.context.get(),
+		*prepared,
+		reference.pixels,
+		false
+	);
 	for (const auto &tile : grid.tiles) {
-		Bitmap bitmap{tile.pixels};
-		rasterScene(bitmap.context.get(), *prepared, tile.pixels);
+		stana::testing::fixtures::platform::macos::Bitmap bitmap{tile.pixels};
+		stana::platform::detail::rasterScene(bitmap.context.get(), *prepared, tile.pixels);
 		for (std::size_t row = 0; row < tile.pixels.height; ++row) {
-			const auto count = tile.pixels.width * bytesPerPixel;
+			const auto count = tile.pixels.width * stana::platform::detail::bytesPerPixel;
 			const auto tileRow = std::span{bitmap.bytes}.subspan(row * bitmap.bytesPerRow, count);
 			const auto fullRow = std::span{reference.bytes}.subspan(
-				(tile.pixels.y + row) * reference.bytesPerRow + tile.pixels.x * bytesPerPixel,
+				(tile.pixels.y + row) * reference.bytesPerRow +
+					tile.pixels.x * stana::platform::detail::bytesPerPixel,
 				count
 			);
 			for (std::size_t pixel = 0; pixel < tile.pixels.width; ++pixel) {
 				bool differs = false;
-				for (std::size_t channel = 0; channel < bytesPerPixel; ++channel) {
-					const auto actual = std::to_integer<unsigned>(
-						tileRow.subspan(pixel * bytesPerPixel + channel, 1).front()
-					);
-					const auto expected = std::to_integer<unsigned>(
-						fullRow.subspan(pixel * bytesPerPixel + channel, 1).front()
-					);
+				for (std::size_t channel = 0; channel < stana::platform::detail::bytesPerPixel;
+					++channel) {
+					const auto actual = std::to_integer<unsigned>(tileRow
+							.subspan(pixel * stana::platform::detail::bytesPerPixel + channel, 1)
+							.front());
+					const auto expected = std::to_integer<unsigned>(fullRow
+							.subspan(pixel * stana::platform::detail::bytesPerPixel + channel, 1)
+							.front());
 					const auto error = actual > expected ? actual - expected : expected - actual;
 					differs = differs || error != 0;
 					absoluteError += error;
 					maximumChannelError = std::max(maximumChannelError, error);
-					if (channel == bytesPerPixel - 1) {
+					if (channel == stana::platform::detail::bytesPerPixel - 1) {
 						maximumAlphaError = std::max(maximumAlphaError, error);
 					}
 				}
 				if (differs) {
 					++differingPixels;
-					require(
+					stana::testing::fixtures::platform::macos::require(
 						referenceEdge(reference, tile.pixels.x + pixel, tile.pixels.y + row),
 						"solid reference regions must match exactly"
 					);
@@ -141,7 +164,7 @@ void parity(double scale) {
 	// <=0.25% of fixture pixels; exact alpha and exact uniform regions.
 	constexpr unsigned maximumAntialiasError = 32;
 	constexpr std::size_t maximumDifferentPixelDenominator = 400;
-	require(
+	stana::testing::fixtures::platform::macos::require(
 		maximumAlphaError == 0 && maximumChannelError <= maximumAntialiasError &&
 			differingPixels * maximumDifferentPixelDenominator <=
 				grid.viewport.width * grid.viewport.height,
@@ -152,13 +175,14 @@ void parity(double scale) {
 /// @brief R01-R18 damage reconstruction is byte-exact against fresh target tile replay.
 /// This stricter comparison is unaffected by the approved monolithic-reference AA allowance.
 void incrementalReplay(double scale) {
-	using namespace stana::native;
-	using namespace stana::native::fixtures;
-	auto source = std::make_shared<Scene>(*scene());
-	auto root = std::make_shared<SceneBranch>(*source->root);
+
+	auto source = std::make_shared<stana::platform::detail::Scene>(
+		*stana::testing::fixtures::platform::macos::scene()
+	);
+	auto root = std::make_shared<stana::platform::detail::SceneBranch>(*source->root);
 	constexpr std::uint64_t firstIdentity = 100;
 	std::uint64_t identity = firstIdentity;
-	auto emptyPaint = std::make_shared<PaintSegments>();
+	auto emptyPaint = std::make_shared<stana::platform::detail::PaintSegments>();
 	emptyPaint->identity = ++identity;
 	root->paint = emptyPaint;
 	root->generation = ++identity;
@@ -166,7 +190,7 @@ void incrementalReplay(double scale) {
 	constexpr std::size_t clipStart = 6;
 	constexpr std::size_t clipEnd = 8;
 	for (std::size_t index = 0; index < commands.size(); ++index) {
-		auto paint = std::make_shared<PaintSegments>();
+		auto paint = std::make_shared<stana::platform::detail::PaintSegments>();
 		paint->identity = ++identity;
 		paint->prefix.push_back(commands.at(index));
 		if (index == clipStart) {
@@ -174,34 +198,42 @@ void incrementalReplay(double scale) {
 				paint->prefix.push_back(commands.at(++index));
 			}
 		}
-		auto child = std::make_shared<SceneBranch>();
+		auto child = std::make_shared<stana::platform::detail::SceneBranch>();
 		child->id = {.document = 1, .serial = ++identity};
 		child->generation = ++identity;
 		child->paint = paint;
 		root->children.push_back(child);
 	}
 	source->root = root;
-	const auto grid = makeTileGrid(source->size, scale);
-	std::vector<std::unique_ptr<Bitmap>> tiles;
+	const auto grid = stana::platform::detail::makeTileGrid(source->size, scale);
+	std::vector<std::unique_ptr<stana::testing::fixtures::platform::macos::Bitmap>> tiles;
 	tiles.reserve(grid.tiles.size());
 	for (const auto &layout : grid.tiles) {
-		tiles.push_back(std::make_unique<Bitmap>(layout.pixels));
+		tiles.push_back(
+			std::make_unique<stana::testing::fixtures::platform::macos::Bitmap>(layout.pixels)
+		);
 	}
-	std::shared_ptr<const PreparedScene> rasterBaseline;
-	RenderingWork work;
-	auto apply = [&](std::shared_ptr<const Scene> targetSource) -> void {
-		const auto target = prepareScene(std::move(targetSource), scale, rasterBaseline);
-		const auto dirty = sceneDamage(rasterBaseline, target, grid, work);
+	std::shared_ptr<const stana::platform::detail::PreparedScene> rasterBaseline;
+	stana::platform::detail::RenderingWork work;
+	auto apply = [&](std::shared_ptr<const stana::platform::detail::Scene> targetSource) -> void {
+		const auto target =
+			stana::platform::detail::prepareScene(std::move(targetSource), scale, rasterBaseline);
+		const auto dirty = stana::platform::detail::sceneDamage(rasterBaseline, target, grid, work);
 		for (const auto &layout : grid.tiles) {
 			auto &tile = *tiles.at(layout.ordinal);
 			if (dirty.test(layout.ordinal)) {
-				rasterScene(tile.context.get(), *target, layout.pixels);
+				stana::platform::detail::rasterScene(tile.context.get(), *target, layout.pixels);
 			}
-			Bitmap fresh{layout.pixels};
-			rasterScene(fresh.context.get(), *target, layout.pixels, false);
+			stana::testing::fixtures::platform::macos::Bitmap fresh{layout.pixels};
+			stana::platform::detail::rasterScene(
+				fresh.context.get(),
+				*target,
+				layout.pixels,
+				false
+			);
 			for (std::size_t row = 0; row < layout.pixels.height; ++row) {
-				const auto bytes = layout.pixels.width * bytesPerPixel;
-				require(
+				const auto bytes = layout.pixels.width * stana::platform::detail::bytesPerPixel;
+				stana::testing::fixtures::platform::macos::require(
 					std::ranges::equal(
 						std::span{tile.bytes}.subspan(row * tile.bytesPerRow, bytes),
 						std::span{fresh.bytes}.subspan(row * fresh.bytesPerRow, bytes)
@@ -213,7 +245,7 @@ void incrementalReplay(double scale) {
 		rasterBaseline = target;
 	};
 	apply(source);
-	const std::shared_ptr<const Scene> original = source;
+	const std::shared_ptr<const stana::platform::detail::Scene> original = source;
 	enum class Edit : std::uint8_t {
 		color,
 		shorten,
@@ -241,14 +273,15 @@ void incrementalReplay(double scale) {
 		Edit::remove
 	};
 	for (const auto edit : edits) {
-		auto next = std::make_shared<Scene>(*source);
+		auto next = std::make_shared<stana::platform::detail::Scene>(*source);
 		next->revision = ++identity;
-		auto nextRoot = std::make_shared<SceneBranch>(*source->root);
+		auto nextRoot = std::make_shared<stana::platform::detail::SceneBranch>(*source->root);
 		nextRoot->generation = ++identity;
 		next->root = nextRoot;
-		auto child = std::make_shared<SceneBranch>(*nextRoot->children.front());
+		auto child =
+			std::make_shared<stana::platform::detail::SceneBranch>(*nextRoot->children.front());
 		child->generation = ++identity;
-		auto paint = std::make_shared<PaintSegments>(*child->paint);
+		auto paint = std::make_shared<stana::platform::detail::PaintSegments>(*child->paint);
 		paint->identity = ++identity;
 		child->paint = paint;
 		nextRoot->children.front() = child;
@@ -263,9 +296,12 @@ void incrementalReplay(double scale) {
 			break;
 		case Edit::shorten: {
 			constexpr std::size_t textIndex = 5;
-			auto label = std::make_shared<SceneBranch>(*nextRoot->children.at(textIndex));
+			auto label = std::make_shared<stana::platform::detail::SceneBranch>(
+				*nextRoot->children.at(textIndex)
+			);
 			label->generation = ++identity;
-			auto labelPaint = std::make_shared<PaintSegments>(*label->paint);
+			auto labelPaint =
+				std::make_shared<stana::platform::detail::PaintSegments>(*label->paint);
 			labelPaint->identity = ++identity;
 			labelPaint->prefix.front().text = "I";
 			label->paint = labelPaint;
@@ -286,17 +322,20 @@ void incrementalReplay(double scale) {
 			paint->prefix.front().width = shifted;
 			break;
 		case Edit::clip: {
-			auto clipping = std::make_shared<PaintSegments>();
+			auto clipping = std::make_shared<stana::platform::detail::PaintSegments>();
 			clipping->identity = ++identity;
 			clipping->prefix.push_back(
-				{.operation = PaintOperation::pushClip,
+				{.operation = stana::platform::detail::PaintOperation::pushClip,
 					.width = clipWidth,
 					.height = clipHeight,
-					.radius = markerSize}
+					.radius = stana::testing::fixtures::platform::macos::markerSize}
 			);
-			clipping->suffix.push_back({.operation = PaintOperation::popClip});
-			clipping->childClipBounds =
-				LogicalRect{.size = {.width = clipWidth, .height = clipHeight}};
+			clipping->suffix.push_back(
+				{.operation = stana::platform::detail::PaintOperation::popClip}
+			);
+			clipping->childClipBounds = stana::platform::detail::LogicalRect{
+				.size = {.width = clipWidth, .height = clipHeight}
+			};
 			nextRoot->paint = clipping;
 			break;
 		}
@@ -318,40 +357,41 @@ void incrementalReplay(double scale) {
 	}
 	apply(original);
 	const auto confirmedA = rasterBaseline;
-	auto blue = std::make_shared<Scene>(*original);
+	auto blue = std::make_shared<stana::platform::detail::Scene>(*original);
 	blue->revision = ++identity;
-	auto blueRoot = std::make_shared<SceneBranch>(*original->root);
+	auto blueRoot = std::make_shared<stana::platform::detail::SceneBranch>(*original->root);
 	blueRoot->generation = ++identity;
-	auto blueChild = std::make_shared<SceneBranch>(*blueRoot->children.front());
+	auto blueChild =
+		std::make_shared<stana::platform::detail::SceneBranch>(*blueRoot->children.front());
 	blueChild->generation = ++identity;
-	auto bluePaint = std::make_shared<PaintSegments>(*blueChild->paint);
+	auto bluePaint = std::make_shared<stana::platform::detail::PaintSegments>(*blueChild->paint);
 	bluePaint->identity = ++identity;
 	bluePaint->prefix.front().blue = 1;
 	blueChild->paint = bluePaint;
 	blueRoot->children.front() = blueChild;
 	blue->root = blueRoot;
 	apply(blue); // CPU B succeeded but no presentation was admitted.
-	auto redAgain = std::make_shared<Scene>(*blue);
+	auto redAgain = std::make_shared<stana::platform::detail::Scene>(*blue);
 	redAgain->revision = ++identity;
-	auto redRoot = std::make_shared<SceneBranch>(*blueRoot);
+	auto redRoot = std::make_shared<stana::platform::detail::SceneBranch>(*blueRoot);
 	redRoot->generation = ++identity;
-	auto redChild = std::make_shared<SceneBranch>(*blueChild);
+	auto redChild = std::make_shared<stana::platform::detail::SceneBranch>(*blueChild);
 	redChild->generation = ++identity;
-	auto redPaint = std::make_shared<PaintSegments>(*bluePaint);
+	auto redPaint = std::make_shared<stana::platform::detail::PaintSegments>(*bluePaint);
 	redPaint->identity = ++identity;
 	redPaint->prefix.front().blue = 0;
 	redChild->paint = redPaint;
 	redRoot->children.front() = redChild;
 	redAgain->root = redRoot;
-	const auto restored = prepareScene(redAgain, scale, rasterBaseline);
-	require(
-		sceneDamage(confirmedA, restored, grid, work).none() &&
-			sceneDamage(rasterBaseline, restored, grid, work).any(),
+	const auto restored = stana::platform::detail::prepareScene(redAgain, scale, rasterBaseline);
+	stana::testing::fixtures::platform::macos::require(
+		stana::platform::detail::sceneDamage(confirmedA, restored, grid, work).none() &&
+			stana::platform::detail::sceneDamage(rasterBaseline, restored, grid, work).any(),
 		"R16 display-equivalent fresh A still repairs raster-only B damage"
 	);
 	apply(redAgain);
-	require(
-		sceneDamage(rasterBaseline, rasterBaseline, grid, work).none(),
+	stana::testing::fixtures::platform::macos::require(
+		stana::platform::detail::sceneDamage(rasterBaseline, rasterBaseline, grid, work).none(),
 		"unchanged target has no raster demand"
 	);
 }
@@ -361,7 +401,7 @@ void incrementalReplay(double scale) {
 auto main() -> int {
 	@autoreleasepool {
 		try {
-			stana::native::fixtures::require(
+			stana::testing::fixtures::platform::macos::require(
 				NSApp == nil,
 				"CPU raster must not initialize NSApplication"
 			);
@@ -376,7 +416,10 @@ auto main() -> int {
 					passed = false;
 				}
 			}
-			stana::native::fixtures::require(NSApp == nil, "CPU raster initialized NSApplication");
+			stana::testing::fixtures::platform::macos::require(
+				NSApp == nil,
+				"CPU raster initialized NSApplication"
+			);
 			if (passed) {
 				std::cout << "Approved edge-bounded full/tile 1x/2x parity, exact alpha/interiors, "
 							 "1025x769 logical\n";
