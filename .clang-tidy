@@ -14,11 +14,11 @@ Checks: >-
   readability-braces-around-statements,
   readability-implicit-bool-conversion,
   custom-*
-WarningsAsErrors: '*'
-HeaderFilterRegex: '.*'
+WarningsAsErrors: "*"
+HeaderFilterRegex: ".*"
 SystemHeaders: false
 CheckOptions:
-  modernize-use-nodiscard.ReplacementString: '[[nodiscard]]'
+  modernize-use-nodiscard.ReplacementString: "[[nodiscard]]"
   modernize-avoid-c-arrays.AllowStringArrays: false
   cppcoreguidelines-pro-bounds-avoid-unchecked-container-access.FixMode: at
 CustomChecks:
@@ -27,19 +27,19 @@ CustomChecks:
       match callExpr(callee(functionDecl(hasAnyName("strcpy", "strcat", "strncpy", "strncat", "sprintf", "vsprintf", "gets", "memcpy", "memmove", "memset"))), unless(isExpansionInSystemHeader())).bind("bad")
     Diagnostic:
       - BindName: bad
-        Message: 'Unsafe legacy buffer APIs are forbidden; use containers, ranges and std::format.'
+        Message: "Unsafe legacy buffer APIs are forbidden; use containers, ranges and std::format."
         Level: Warning
   - Name: no-raw-allocation
     Query: |
       match expr(anyOf(cxxNewExpr(), cxxDeleteExpr()), unless(isExpansionInSystemHeader())).bind("bad")
     Diagnostic:
       - BindName: bad
-        Message: 'Explicit new/delete is forbidden; use RAII factories and containers.'
+        Message: "Explicit new/delete is forbidden; use RAII factories and containers."
         Level: Warning
   - Name: no-c-style-cast
     Query: |
       match cStyleCastExpr(unless(isExpansionInSystemHeader())).bind("bad")
     Diagnostic:
       - BindName: bad
-        Message: 'C-style casts are forbidden; use a checked conversion or an appropriate named cast.'
+        Message: "C-style casts are forbidden; use a checked conversion or an appropriate named cast."
         Level: Warning

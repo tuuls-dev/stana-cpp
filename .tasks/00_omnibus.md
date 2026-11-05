@@ -1,6 +1,7 @@
 ---
 status: todo
 ---
+
 # Native application framework backlog
 
 This is an implementation specification for remaining framework capabilities,
@@ -108,17 +109,17 @@ are in `stana`; member-only blocks explicitly name their receiving type. Do not
 replace these contracts with an unrelated service locator, second editor runtime,
 or application-owned focus mechanism.
 
-| Module / implementation | Owns | May depend on |
-| --- | --- | --- |
-| `stana.primitives` | Font/style values, geometry, IDs, portable errors | Standard library only |
-| `stana.text` / `src/text/` | Unicode, buffer/history/composition, text-layout value/provider contracts | Primitives, ICU in implementation |
-| `stana.graphics` / `src/scene/` | Paint records and immutable text-layout references | Primitives, text; scene implementation belongs to core |
-| `stana.core` / `src/core/`, `src/layout/` | Document, editor records, input/focus/hover, services, semantics, layout | Primitives, reactive, tasks, text, graphics |
-| `stana.ui` / `src/ui/` | Aggregates, mounting, property observation, responsive factories | Core and existing public dependencies; re-export text |
-| `stana.application` / `src/application/` | Native service installation, explicit transport conversion, runtime URL service | UI/core/graphics and private native contracts |
-| `src/platform/native_contracts.hpp` | Module-free owning transport and native service declarations | Standard library; no imports or public module types |
-| `src/platform/macos/` | OS event translation, Core Text resources, clipboard/accessibility/URL implementation | Private native contracts and native frameworks |
-| `stana.testing` / `tests/` | Input wrappers and explicit deterministic providers | Same core dispatch; no native application initialization |
+| Module / implementation                   | Owns                                                                                  | May depend on                                            |
+| ----------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `stana.primitives`                        | Font/style values, geometry, IDs, portable errors                                     | Standard library only                                    |
+| `stana.text` / `src/text/`                | Unicode, buffer/history/composition, text-layout value/provider contracts             | Primitives, ICU in implementation                        |
+| `stana.graphics` / `src/scene/`           | Paint records and immutable text-layout references                                    | Primitives, text; scene implementation belongs to core   |
+| `stana.core` / `src/core/`, `src/layout/` | Document, editor records, input/focus/hover, services, semantics, layout              | Primitives, reactive, tasks, text, graphics              |
+| `stana.ui` / `src/ui/`                    | Aggregates, mounting, property observation, responsive factories                      | Core and existing public dependencies; re-export text    |
+| `stana.application` / `src/application/`  | Native service installation, explicit transport conversion, runtime URL service       | UI/core/graphics and private native contracts            |
+| `src/platform/native_contracts.hpp`       | Module-free owning transport and native service declarations                          | Standard library; no imports or public module types      |
+| `src/platform/macos/`                     | OS event translation, Core Text resources, clipboard/accessibility/URL implementation | Private native contracts and native frameworks           |
+| `stana.testing` / `tests/`                | Input wrappers and explicit deterministic providers                                   | Same core dispatch; no native application initialization |
 
 Keep templates in module interfaces, non-generic algorithms in compiled sources.
 Extend existing modules rather than introduce a new public module per feature.
@@ -231,14 +232,14 @@ selection; its committed replacement is always stamped by the containing snapsho
 Use this mapping, where composition replaces committed `[a,b)` with `P` and occupies
 displayed `[a,a + P.size())`:
 
-| Request | Required normalization in the buffer |
-| --- | --- |
-| Replacement omitted, no composition | Use current committed selection. |
-| Replacement omitted, composition active | Replace the whole provisional region; keep `[a,b)` as its committed replacement. |
+| Request                                                       | Required normalization in the buffer                                                                                                                                                                                                                   |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Replacement omitted, no composition                           | Use current committed selection.                                                                                                                                                                                                                       |
+| Replacement omitted, composition active                       | Replace the whole provisional region; keep `[a,b)` as its committed replacement.                                                                                                                                                                       |
 | Explicit displayed range inside/intersecting provisional text | Expand the replacement's committed extent to include `[a,b)` and any touched committed prefix/suffix. Preserve displayed text outside the explicit range inside that expanded extent. Provisional selection is shifted by the preserved prefix length. |
-| Explicit displayed range disjoint from composition | Map it to committed coordinates, cancel the previous composition, then edit/start composition at that mapped range. Do not implicitly commit discarded preedit. |
-| Explicit committed range while composition active | Cancel preedit and use the requested committed range. |
-| Commit text intersecting composition | Resolve the expanded provisional region, including preserved prefix/suffix, as one committed replacement and one undo entry. |
+| Explicit displayed range disjoint from composition            | Map it to committed coordinates, cancel the previous composition, then edit/start composition at that mapped range. Do not implicitly commit discarded preedit.                                                                                        |
+| Explicit committed range while composition active             | Cancel preedit and use the requested committed range.                                                                                                                                                                                                  |
+| Commit text intersecting composition                          | Resolve the expanded provisional region, including preserved prefix/suffix, as one committed replacement and one undo entry.                                                                                                                           |
 
 All mapping is in `stana.text`, not duplicated in native adapters. Adapters only
 convert their encoding/unit conventions and pass missing ranges as `std::nullopt`.
@@ -956,14 +957,14 @@ The canonical service interfaces are `ClipboardServices` above; command availabi
 is a pure query and must not read the OS clipboard or mutate selection/history.
 Use this eligibility table after checking active focused-editor eligibility:
 
-| Command | Available when |
-| --- | --- |
-| Copy / cut | Committed selection is nonempty. |
-| Paste | A read-text service exists; clipboard contents are checked on execution. |
-| Undo / redo | Corresponding buffer history is nonempty. |
-| Select all | Committed text is nonempty. |
-| Navigation / deletion | A focused editor exists; boundary no-ops remain handled. |
-| Submit / cancel | A focused editor exists, even without an application callback. |
+| Command               | Available when                                                           |
+| --------------------- | ------------------------------------------------------------------------ |
+| Copy / cut            | Committed selection is nonempty.                                         |
+| Paste                 | A read-text service exists; clipboard contents are checked on execution. |
+| Undo / redo           | Corresponding buffer history is nonempty.                                |
+| Select all            | Committed text is nonempty.                                              |
+| Navigation / deletion | A focused editor exists; boundary no-ops remain handled.                 |
+| Submit / cancel       | A focused editor exists, even without an application callback.           |
 
 Pending preedit is cancelled before executing an available explicit clipboard/
 history command. Capture the resulting store stamp and selection before a service
@@ -1511,13 +1512,13 @@ auto resolveAxis(Length request, double intrinsic, std::optional<double> offered
 
 The resolution table is part of the contract:
 
-| Request | Bounded offer | Unconstrained offer |
-| --- | --- | --- |
-| automatic | Intrinsic extent measured with that offer | Intrinsic extent |
-| points | Requested points | Requested points |
-| percent | Percentage of offered extent | Intrinsic extent |
-| fill outside a horizontal main axis | Offered extent | Intrinsic extent |
-| horizontal fill | Stored `allocateHorizontal()` result | Intrinsic extent |
+| Request                             | Bounded offer                             | Unconstrained offer |
+| ----------------------------------- | ----------------------------------------- | ------------------- |
+| automatic                           | Intrinsic extent measured with that offer | Intrinsic extent    |
+| points                              | Requested points                          | Requested points    |
+| percent                             | Percentage of offered extent              | Intrinsic extent    |
+| fill outside a horizontal main axis | Offered extent                            | Intrinsic extent    |
+| horizontal fill                     | Stored `allocateHorizontal()` result      | Intrinsic extent    |
 
 Validate constraints, resolve the request, then apply min/max. Arrange uses the
 resolved allocation and only recomputes alignment/position, not another stretch.

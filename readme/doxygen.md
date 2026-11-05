@@ -6,9 +6,9 @@ This guide establishes clear, consistent conventions for documenting code across
 
 ### 1. General Principles
 
-* **Document the *Why* and *Contracts*, Not Just the *What*:** The code itself explains *how* it works. Documentation should explain *why* a design choice was made, what invariants must hold true, and any subtle side effects or preconditions.
-* **Keep Comments Up-to-Date:** Out-of-date documentation is worse than no documentation. When you change behavior, update the docs.
-* **Prefer Inline and Concise Briefs:** Use brief, one-sentence summaries for classes, structs, functions, and enum values.
+- **Document the _Why_ and _Contracts_, Not Just the _What_:** The code itself explains _how_ it works. Documentation should explain _why_ a design choice was made, what invariants must hold true, and any subtle side effects or preconditions.
+- **Keep Comments Up-to-Date:** Out-of-date documentation is worse than no documentation. When you change behavior, update the docs.
+- **Prefer Inline and Concise Briefs:** Use brief, one-sentence summaries for classes, structs, functions, and enum values.
 
 ---
 
@@ -22,9 +22,9 @@ Provide a clear overview of the class's responsibility, thread-safety guarantees
 
 ```cpp
 /// @brief Manages platform-independent display list recording and execution.
-/// 
-/// The `DisplayList` records portable paint commands in logical coordinates 
-/// for deferred rendering. It is thread-safe for recording but must be 
+///
+/// The `DisplayList` records portable paint commands in logical coordinates
+/// for deferred rendering. It is thread-safe for recording but must be
 /// flushed on the main render thread.
 class DisplayList {
 public:
@@ -44,7 +44,7 @@ Document parameters, return values, preconditions, and failure modes.
 /// @param size The number of bytes to allocate.
 /// @param alignment Required memory alignment boundary.
 /// @return A raw pointer to the allocated memory block, or `nullptr` if exhausted.
-/// @note The returned memory does not need to be manually freed; it is released 
+/// @note The returned memory does not need to be manually freed; it is released
 ///       when the parent arena is reset.
 [[nodiscard]] void* allocate(std::size_t size, std::size_t alignment);
 
@@ -80,10 +80,10 @@ Every major module, package, or directory containing a distinct component should
 
 Before submitting a pull request, verify that:
 
-* [ ] All public classes, structs, enums, and functions have proper detailed documentation for the next person.
-* [ ] Template parameters (`@tparam`), parameters (`@param`), and return values (`@return`) are explicitly documented where their purpose isn't self-evident.
-* [ ] Complex algorithms, thread-safety assumptions, or non-obvious performance trade-offs are explained in comments.
-* [ ] Typographical and grammatical errors are cleaned up.
+- [ ] All public classes, structs, enums, and functions have proper detailed documentation for the next person.
+- [ ] Template parameters (`@tparam`), parameters (`@param`), and return values (`@return`) are explicitly documented where their purpose isn't self-evident.
+- [ ] Complex algorithms, thread-safety assumptions, or non-obvious performance trade-offs are explained in comments.
+- [ ] Typographical and grammatical errors are cleaned up.
 
 ---
 
