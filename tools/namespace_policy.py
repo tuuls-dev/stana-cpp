@@ -18,6 +18,33 @@ def tokens(source: str) -> list[str]:
     return [match["token"] for match in LEXER.finditer(source) if match["token"]]
 
 
+def root_helper_declaration(declaration: list[str]) -> bool:
+    # Ignore attributes before locating the function declarator's first `(`.
+    # Looking for a helper call anywhere in the signature would also accept an
+    # unrelated function mentioning nextIdentity in decltype/noexcept.
+    signature = []
+    attribute_depth = 0
+    index = 0
+    while index < len(declaration):
+        pair = declaration[index:index + 2]
+        if pair == ["[", "["]:
+            attribute_depth += 1
+            index += 2
+        elif pair == ["]", "]"] and attribute_depth:
+            attribute_depth -= 1
+            index += 2
+        else:
+            if not attribute_depth:
+                signature.append(declaration[index])
+            index += 1
+    if "(" not in signature or "=" in signature:
+        return False
+    position = signature.index("(")
+    return position > 0 and signature[position - 1] in ROOT_HELPERS and not any(
+        word in signature for word in ("class", "struct", "enum", "using", "typedef")
+    )
+
+
 def violations(source: str) -> list[str]:
     """Track lexical namespace scopes, including nested and qualified spellings."""
     words = tokens(source)
@@ -60,13 +87,11 @@ def violations(source: str) -> list[str]:
             # Namespace aliases must not recreate retired names.
             if names and names[0] in {"native", "fixtures"} and current == ("stana",):
                 errors.append("retired namespace alias")
+            if current + tuple(names) == ("stana", "detail") and cursor < len(words) and words[cursor] == "=":
+                errors.append("root detail may not be a namespace alias")
         direct_root_detail = current == ("stana", "detail") and (not scopes or scopes[-1][1])
         if word in {"{", ";"} and direct_root_detail and pending:
-            helper_declaration = any(
-                name in ROOT_HELPERS and position + 1 < len(pending) and pending[position + 1] == "("
-                for position, name in enumerate(pending)
-            )
-            if not helper_declaration or "=" in pending or any(name in pending for name in ("class", "struct", "enum", "using", "typedef")):
+            if not root_helper_declaration(pending):
                 errors.append("root detail declaration is not an allowlisted primitive helper")
         if word == "{":
             scopes.append((current, False))

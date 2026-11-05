@@ -40,9 +40,12 @@ class NamespacePolicyTests(unittest.TestCase):
                 self.assertTrue(policy.violations(source))
 
     def test_root_detail_not_a_dumping_ground(self):
-        for declaration in ("struct Cache {};", "using Cache = int;", "inline int cache = 0;", "void flush();", "auto cache = nextIdentity();", "namespace rendering {}"):
+        for declaration in ("struct Cache {};", "using Cache = int;", "inline int cache = 0;", "void flush();", "void flush(decltype(nextIdentity()) value);", "void flush() noexcept(noexcept(nextIdentity()));", "auto cache = nextIdentity();", "namespace rendering {}"):
             with self.subTest(declaration=declaration):
                 self.assertTrue(policy.violations(f"namespace stana {{ namespace detail {{ {declaration} }} }}"))
+
+    def test_root_detail_alias(self):
+        self.assertTrue(policy.violations("namespace stana { namespace detail = rendering::detail; }"))
 
     def test_retired_modules(self):
         for source in ("export module stana.graphics;", "import stana.text;", "export import stana.reactive;", "export module separate;"):
