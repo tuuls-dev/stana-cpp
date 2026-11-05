@@ -6,6 +6,7 @@ module;
 
 export module stana.graphics;
 export import :presentation;
+export import :gpu;
 export import stana.primitives;
 
 export namespace stana {

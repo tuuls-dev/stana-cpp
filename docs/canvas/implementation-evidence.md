@@ -32,3 +32,26 @@ own evidence; this Apple Silicon machine cannot establish those passes.
   to compare resolved paint values, not unresolved authoring tokens.
 - Focused regression distinguishes outer node motion from padded local origins
   in RTL; environment direction invalidates local text/canvas paint as needed.
+- `ctest --preset debug -E 'stana.consumer|stana.native'`: 11/11 pass
+  (73.68 seconds; includes production CoreGraphics raster tests, not GPU pixels).
+
+### Portable GPU / compiler checkpoint
+
+- Official Dawn/Tint pin: `cb91d23e247042a2a5490c27d9b06300db91afef`;
+  exact Dawn, Abseil and SPIRV-Headers archive digests are recorded in
+  `tools/bootstrap_tint.py`. SPIRV-Headers is an upstream configure requirement,
+  not an enabled application shader-ingress API.
+- `python3 tools/bootstrap_tint.py --compiler /opt/homebrew/opt/llvm@22/bin/clang++ --offline`:
+  pass using verified cached archives. Reader, validator/inspector, IR and MSL
+  writer build without Dawn graphics backends. Compiler archive: 13 MiB on arm64.
+- `cmake --preset debug`, `cmake --build --preset debug --parallel 3`: pass.
+- `ctest --preset debug -R 'stana.gpu-values|stana.shaders|stana.cpu-canvas|stana.incremental|stana.ui|stana.canvas-api'`:
+  6/6 pass (3.98 seconds). The shader suite invokes production Tint parsing,
+  inspection and lowering, including WGSL render/compute, typed overrides,
+  resolved workgroup size, logical remapping, robust runtime-array size metadata,
+  and cached-pipeline binding-size revalidation. It creates no native device.
+- Owning module-free transport retains shared source/byte/index owners and packed
+  immutable meshes. Typed TestHost inspection exposes mixed painter order and
+  explicitly excludes GPU pixels from CPU compatibility flattening.
+- Native GPU execution, cross-host compiler builds, installed/relocated GPU
+  consumers and native color/presentation gates remain unqualified at this checkpoint.

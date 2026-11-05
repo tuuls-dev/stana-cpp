@@ -10,6 +10,7 @@ module;
 #include <set>
 #include <span>
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -34,7 +35,8 @@ enum class NodeKind : std::uint8_t {
 	button,
 	toggle,
 	scroll,
-	cpuCanvas
+	cpuCanvas,
+	gpuCanvas
 };
 } // namespace detail
 
@@ -133,11 +135,20 @@ enum class [[clang::flag_enum]] Dirty : std::uint8_t {
 inline constexpr Dirty fullWork =
 	Dirty::measure | Dirty::arrange | Dirty::paint | Dirty::snapshot | Dirty::structure;
 
+struct GPUCanvasLeaf {
+	NodeId instance;
+	Rect bounds;
+	GPUDrawing drawing;
+	Environment environment;
+	double opacity = 1;
+};
+
 /// @brief Local painter segments; the suffix restores the node clip before its outline.
 struct PaintSegments {
 	std::uint64_t identity = 0;
 	std::vector<PaintCommand> prefix;
 	std::vector<PaintCommand> suffix;
+	std::optional<GPUCanvasLeaf> gpu;
 	std::optional<Rect> childClipBounds;
 };
 
@@ -308,7 +319,10 @@ struct Node {
 		accessibilityLabel{};	  ///< Explicit application-authored semantic label, if any.
 	std::string diagnosticName{}; ///< Debug identity supplied by lifecycle configuration, not an
 								  ///< accessible name.
-	Drawing drawing{};			  ///< Local-coordinate CPUCanvas commands copied at mount.
+	Drawing drawing{};
+	std::optional<GPUDrawing> gpuDrawing;
+	std::function<void(const GPUDiagnostic &)>
+		onGPUError; ///< Local-coordinate CPUCanvas commands copied at mount.
 	std::function<void()> onClick;
 	std::function<void(PointerEvent &)> onPointerDown;
 	std::function<void(PointerEvent &)> onPointerDownCapture;
@@ -393,6 +407,7 @@ class Document : public std::enable_shared_from_this<Document> {
 	void abandonPresentation(PresentationAttempt attempt);
 	/// @brief Invalidates submission identities after surface/attachment replacement.
 	void resetPresentation(std::uint64_t epoch);
+	void queueGPUDiagnostic(GPUDiagnostic, std::uint64_t drawingVersion, std::uint64_t epoch);
 	[[nodiscard]] auto hitTest(Point point) const -> std::optional<NodeId>;
 
 	[[nodiscard]] auto
@@ -470,6 +485,9 @@ class Document : public std::enable_shared_from_this<Document> {
 	std::vector<Rect> ambiguousRegions_;
 	bool surfaceGated_ = false;
 	std::uint64_t presentationEpoch_ = 0;
+	using GPUFailureKey =
+		std::tuple<NodeId, std::uint64_t, std::uint64_t, std::uint64_t, GPUDiagnostic::Category>;
+	std::set<GPUFailureKey> gpuFailures_;
 
 	[[nodiscard]] auto interactionBounds(NodeId identity) const -> std::optional<Rect>;
 	void rememberGeometry();

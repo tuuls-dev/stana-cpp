@@ -53,6 +53,8 @@ constexpr double focusBorderWidth = 2;
 		return "scroll";
 	case cpuCanvas:
 		return "cpuCanvas";
+	case gpuCanvas:
+		return "gpuCanvas";
 	}
 	throw std::logic_error("Unknown Stana node kind");
 }
@@ -226,6 +228,15 @@ auto Document::project(
 				);
 			}
 			scene.commands.push_back(std::move(command));
+		}
+		if (node->gpuDrawing) {
+			paint->gpu = GPUCanvasLeaf{
+				.instance = identity,
+				.bounds = content,
+				.drawing = *node->gpuDrawing,
+				.environment = environment_,
+				.opacity = opacity
+			};
 		}
 		paint->prefix = std::move(scene.commands);
 		if (node->clip) {

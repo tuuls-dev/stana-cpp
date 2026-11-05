@@ -321,4 +321,23 @@ auto mount(const CPUCanvas &description, MountContext &context) -> NodeHandle {
 	);
 	return context.document->handle(identity);
 }
+
+auto mount(const GPUCanvas &description, MountContext &context) -> NodeHandle {
+	const auto identity =
+		detail::createConfigured(description, detail::NodeKind::gpuCanvas, context);
+	context.document->find(identity)->clip = description.appearance.clip.value_or(true);
+	context.document->find(identity)->onGPUError = description.onError;
+	context.document->bind(
+		identity,
+		description.drawing,
+		[](detail::Node &node, const GPUDrawing &value) -> detail::Dirty {
+			if (node.gpuDrawing && *node.gpuDrawing == value) {
+				return detail::Dirty::none;
+			}
+			node.gpuDrawing = value;
+			return detail::Dirty::paint;
+		}
+	);
+	return context.document->handle(identity);
+}
 } // namespace stana

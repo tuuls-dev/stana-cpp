@@ -14,7 +14,9 @@ module;
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <utility>
+#include <variant>
 #include <vector>
 
 module stana.core;
@@ -81,7 +83,8 @@ auto Document::createNode(NodeKind kind, NodeId parent) -> NodeId {
 	node->id = nodeId;
 	node->parent = parent;
 	node->kind = kind;
-	node->clip = kind == NodeKind::scroll || kind == NodeKind::cpuCanvas;
+	node->clip =
+		kind == NodeKind::scroll || kind == NodeKind::cpuCanvas || kind == NodeKind::gpuCanvas;
 	if (kind == NodeKind::button || kind == NodeKind::toggle) {
 		node->padding = Insets::all(buttonPadding);
 		node->cornerRadius = defaultCornerRadius;
@@ -272,8 +275,9 @@ void Document::setEnvironment(Environment environment) {
 		Dirty domains = Dirty::none;
 		if (directionChanged) {
 			domains = domains | Dirty::arrange | Dirty::snapshot;
-			if (node->kind == NodeKind::cpuCanvas || node->kind == NodeKind::text ||
-				node->kind == NodeKind::button || node->kind == NodeKind::toggle) {
+			if (node->kind == NodeKind::cpuCanvas || node->kind == NodeKind::gpuCanvas ||
+				node->kind == NodeKind::text || node->kind == NodeKind::button ||
+				node->kind == NodeKind::toggle) {
 				domains = domains | Dirty::paint;
 			}
 		}
@@ -285,6 +289,9 @@ void Document::setEnvironment(Environment environment) {
 			if (themeChanged && !node->isForegroundExplicit) {
 				domains = domains | Dirty::paint;
 			}
+		}
+		if (colorChanged && node->gpuDrawing) {
+			domains = domains | Dirty::paint;
 		}
 		if (colorChanged) {
 			const auto semantic = [](Color color) -> bool {
@@ -323,6 +330,79 @@ void Document::setTextMeasure(std::function<Size(const std::string &, Font, doub
 
 void Document::setOnPublish(std::function<void()> callback) {
 	onPublish_ = std::move(callback);
+}
+
+void Document::queueGPUDiagnostic(
+	GPUDiagnostic diagnostic,
+	std::uint64_t drawingVersion,
+	std::uint64_t epoch
+) {
+	const auto current =
+		[&](NodeId instance, std::uint64_t version, std::uint64_t generation) -> bool {
+		const auto *node = find(instance);
+		return !isClosed_ && generation == presentationEpoch_ && node != nullptr &&
+			node->gpuDrawing && node->gpuDrawing->version() == version;
+	};
+	if (!current(diagnostic.instance, drawingVersion, epoch)) {
+		return;
+	}
+	if (diagnostic.programVersion != 0) {
+		const auto *node = find(diagnostic.instance);
+		if (node == nullptr || !node->gpuDrawing) {
+			return;
+		}
+		bool matches = false;
+		for (const auto &command : detail::GPUAccess::commands(*node->gpuDrawing)) {
+			if (const auto *program = std::get_if<GPUProgram>(&command);
+				program != nullptr && program->version() == diagnostic.programVersion) {
+				matches = true;
+			}
+		}
+		if (!matches) {
+			return;
+		}
+	}
+	constexpr std::size_t queueLimit = 256;
+	constexpr std::size_t messageLimit = 8192;
+	for (auto iterator = gpuFailures_.begin(); iterator != gpuFailures_.end();) {
+		if (!current(std::get<0>(*iterator), std::get<1>(*iterator), std::get<2>(*iterator))) {
+			iterator = gpuFailures_.erase(iterator);
+		} else {
+			++iterator;
+		}
+	}
+	const GPUFailureKey key{
+		diagnostic.instance,
+		drawingVersion,
+		epoch,
+		diagnostic.programVersion,
+		diagnostic.category
+	};
+	if (gpuFailures_.size() >= queueLimit || !gpuFailures_.insert(key).second) {
+		return;
+	}
+	if (diagnostic.message.size() > messageLimit) {
+		diagnostic.message.resize(messageLimit);
+	}
+	const auto weak = weak_from_this();
+	ReactiveRuntime::current().effects.emplace_back(
+		[weak, queued = std::move(diagnostic), drawingVersion, epoch] -> void {
+			if (const auto owner = weak.lock();
+				owner && !owner->isClosed_ && owner->presentationEpoch_ == epoch) {
+				const auto *node = owner->find(queued.instance);
+				if (node == nullptr || !node->gpuDrawing ||
+					node->gpuDrawing->version() != drawingVersion || !node->onGPUError) {
+					return;
+				}
+				const auto handler = node->onGPUError;
+				try {
+					handler(queued);
+				} catch (...) {
+					owner->report(Error::nativeFailure);
+				}
+			}
+		}
+	);
 }
 
 void Document::report(Error error) {

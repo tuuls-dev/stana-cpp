@@ -1,6 +1,7 @@
 #ifndef STANA_NATIVE_CONTRACTS_HPP
 #define STANA_NATIVE_CONTRACTS_HPP
 
+#include "gpu_contracts.hpp"
 #include <chrono>
 #include <compare>
 #include <cstdint>
@@ -83,11 +84,19 @@ struct NodeIdentity {
 	auto operator<=>(const NodeIdentity &) const = default;
 };
 
+struct GPUCanvasLeaf {
+	NodeIdentity instance;
+	LogicalRect bounds;
+	std::shared_ptr<const gpu::Drawing> drawing;
+	double opacity = 1;
+};
+
 /// @brief Local immutable transport, reused independently of ancestor branch copies.
 struct PaintSegments {
 	std::uint64_t identity = 0;
 	std::vector<Command> prefix;
 	std::vector<Command> suffix;
+	std::optional<GPUCanvasLeaf> gpu;
 	std::optional<LogicalRect> childClipBounds;
 };
 
@@ -172,9 +181,11 @@ struct FrameIdentity {
 /// Native hosts own this value until closure. Callback captures must not borrow
 /// component descriptions, because descriptions are already destroyed after mounting.
 struct Window {
-	std::string title{};						  ///< Initial UTF-8 native title.
-	double width = 0;							  ///< Initial content width in logical points.
-	double height = 0;							  ///< Initial content height in logical points.
+	std::string title{}; ///< Initial UTF-8 native title.
+	double width = 0;	 ///< Initial content width in logical points.
+	double height = 0;	 ///< Initial content height in logical points.
+	gpu::ColorMode colorMode = gpu::ColorMode::automatic;
+	std::function<void(gpu::Diagnostic)> gpuError{};
 	std::function<SceneResult()> scene{};		  ///< Produces an owning current scene.
 	std::function<void(double, double)> resize{}; ///< Reflows the retained viewport.
 	std::function<void(bool isDark)>

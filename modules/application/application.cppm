@@ -28,6 +28,7 @@ template <Component Content> struct Window {
 	std::string title{}; ///< Initial native title; owns its UTF-8 characters.
 	Size size{};		 ///< Initial content dimensions in logical points, excluding native chrome.
 	Content content;	 ///< Root description mounted once when the application starts.
+	RenderingColorMode renderingColorMode = RenderingColorMode::automatic;
 };
 
 namespace detail {
@@ -38,6 +39,7 @@ namespace detail {
 struct WindowSession {
 	std::string title{}; ///< Owning title configuration for native construction.
 	Size size{};		 ///< Initial logical viewport matching document construction.
+	RenderingColorMode renderingColorMode = RenderingColorMode::automatic;
 	std::shared_ptr<Document> document{}; ///< Authoritative retained window state.
 };
 
@@ -154,7 +156,12 @@ class Application {
 			MountContext context{.document = document, .parent = document->root()};
 			static_cast<void>(mount(window.content, context));
 		});
-		return {.title = window.title, .size = window.size, .document = std::move(document)};
+		return {
+			.title = window.title,
+			.size = window.size,
+			.renderingColorMode = window.renderingColorMode,
+			.document = std::move(document)
+		};
 	}
 };
 

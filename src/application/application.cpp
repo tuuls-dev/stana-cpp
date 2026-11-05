@@ -2,7 +2,9 @@ module;
 
 #include "../platform/native_contracts.hpp"
 
+#include "../graphics/limits.hpp"
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <exception>
@@ -13,15 +15,37 @@ module;
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <tuple>
+#include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 module stana.application;
 import stana.core;
 import stana.graphics;
+#include "gpu_conversion.hpp"
 
 namespace stana {
 namespace {
+using application_detail::convertMode;
+using application_detail::GPUConversion;
+
+[[nodiscard]] auto diagnosticCategory(native::gpu::Diagnostic::Category value)
+	-> GPUDiagnostic::Category {
+	switch (value) {
+	case native::gpu::Diagnostic::Category::compiler:
+		return GPUDiagnostic::Category::compiler;
+	case native::gpu::Diagnostic::Category::binding:
+		return GPUDiagnostic::Category::binding;
+	case native::gpu::Diagnostic::Category::capability:
+		return GPUDiagnostic::Category::capability;
+	case native::gpu::Diagnostic::Category::execution:
+		return GPUDiagnostic::Category::execution;
+	}
+	throw std::logic_error("Unknown GPU diagnostic category");
+}
+
 /// @brief Converts the private transport identity without losing retry/surface qualification.
 [[nodiscard]] auto portableAttempt(native::FrameIdentity frame) -> PresentationAttempt {
 	return {.epoch = frame.epoch, .sequence = frame.sequence, .sceneRevision = frame.sceneRevision};
@@ -77,10 +101,11 @@ namespace {
 
 /// @brief One window's last paired roots; no process-global cache or borrowed-address lookup.
 struct SceneConversion {
+	GPUConversion gpuConversion;
 	std::shared_ptr<const detail::RenderSnapshot> source;
 	std::shared_ptr<const native::Scene> converted;
 
-	[[nodiscard]] static auto branch(
+	[[nodiscard]] auto branch(
 		const std::shared_ptr<const detail::SceneBranch> &next,
 		const std::shared_ptr<const detail::SceneBranch> &old,
 		const std::shared_ptr<const native::SceneBranch> &previous
@@ -108,6 +133,15 @@ struct SceneConversion {
 			}
 			if (next->paint->childClipBounds) {
 				paint->childClipBounds = convertRect(*next->paint->childClipBounds);
+			}
+			if (const auto &gpu = next->paint->gpu) {
+				paint->gpu = native::GPUCanvasLeaf{
+					.instance =
+						{.document = gpu->instance.document, .serial = gpu->instance.serial},
+					.bounds = convertRect(gpu->bounds),
+					.drawing = gpuConversion.drawing(gpu->drawing, gpu->environment),
+					.opacity = gpu->opacity
+				};
 			}
 			result->paint = std::move(paint);
 		}
@@ -190,6 +224,22 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 				{.title = session.title,
 					.width = session.size.width,
 					.height = session.size.height,
+					.colorMode = convertMode(session.renderingColorMode),
+					.gpuError = [weakDocument](native::gpu::Diagnostic diagnostic) -> void {
+						if (const auto owner = weakDocument.lock()) {
+							owner->queueGPUDiagnostic(
+								{.category = diagnosticCategory(diagnostic.category),
+									.message = std::move(diagnostic.message),
+									.instance =
+										{.document = diagnostic.document,
+											.serial = diagnostic.instance},
+									.programVersion = diagnostic.programVersion},
+								diagnostic.drawingVersion,
+								diagnostic.epoch
+							);
+							detail::ReactiveRuntime::current().flush();
+						}
+					},
 					.scene = [weakDocument, conversion] -> native::SceneResult {
 						if (const auto owner = weakDocument.lock()) {
 							const auto snapshot = owner->renderSnapshot();

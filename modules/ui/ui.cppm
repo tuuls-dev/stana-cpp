@@ -278,6 +278,18 @@ struct CPUCanvas {
 	LifecycleProperties lifecycle{};
 };
 
+/// @brief Reactive ordered GPU drawing, cropped to its padded content output.
+/// Default outer clipping is rounded; errors are delivered to this mounted occurrence.
+struct GPUCanvas {
+	Property<GPUDrawing> drawing{};
+	LayoutProperties layout{};
+	AppearanceProperties appearance{};
+	InteractionProperties interaction{};
+	AccessibilityProperties accessibility{};
+	LifecycleProperties lifecycle{};
+	std::function<void(const GPUDiagnostic &)> onError{};
+};
+
 /// @brief A statically composed column arranged in child order.
 ///
 /// Use .children = children(...) so CTAD infers tuple storage. .spacing is reactive;
@@ -491,6 +503,7 @@ createConfigured(const Description &description, NodeKind kind, MountContext &co
 [[nodiscard]] auto mount(const Toggle &description, MountContext &context) -> NodeHandle;
 [[nodiscard]] auto mount(const Spacer &description, MountContext &context) -> NodeHandle;
 [[nodiscard]] auto mount(const CPUCanvas &description, MountContext &context) -> NodeHandle;
+[[nodiscard]] auto mount(const GPUCanvas &description, MountContext &context) -> NodeHandle;
 
 template <typename T>
 	requires requires(const T &description, ComponentContext &context) {
