@@ -146,7 +146,9 @@ struct PassPlan {
 			!std::holds_alternative<GPUStateSlot>(resources.at(descriptor.output)))) {
 		return invalid("Output must name a produced target or state texture");
 	}
-	if (!std::isfinite(descriptor.sourcePeak) || descriptor.sourcePeak <= 0 ||
+	if ((descriptor.outputColor != GPUColorEncoding::encodedSRGB &&
+			descriptor.outputColor != GPUColorEncoding::extendedLinear) ||
+		!std::isfinite(descriptor.sourcePeak) || descriptor.sourcePeak <= 0 ||
 		descriptor.sourcePeak > halfMaximum ||
 		(descriptor.samplingRadius &&
 			(!std::isfinite(*descriptor.samplingRadius) || *descriptor.samplingRadius < 0))) {
@@ -183,6 +185,10 @@ struct PassPlan {
 					}
 					return 0;
 				} else {
+					if (value.filter != GPUSampler::Filter::nearest &&
+						value.filter != GPUSampler::Filter::linear) {
+						return invalid("Invalid sampler filter");
+					}
 					return 0;
 				}
 			},
@@ -254,7 +260,12 @@ struct PassPlan {
 		std::map<std::pair<std::uint32_t, std::uint32_t>, GPUBinding> coordinates;
 		std::set<std::tuple<std::uint32_t, std::uint32_t, GPUBinding::Stage>> declarations;
 		for (const auto &binding : bindings) {
-			if (binding.group >= 4 || binding.binding >= descriptorLimit ||
+			if ((binding.stage != GPUBinding::Stage::vertex &&
+					binding.stage != GPUBinding::Stage::fragment &&
+					binding.stage != GPUBinding::Stage::compute) ||
+				(binding.access != GPUBinding::Access::read &&
+					binding.access != GPUBinding::Access::write) ||
+				binding.group >= 4 || binding.binding >= descriptorLimit ||
 				!resources.contains(binding.resource)) {
 				return invalid("Invalid logical binding coordinate or missing resource");
 			}

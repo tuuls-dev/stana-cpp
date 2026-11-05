@@ -5,6 +5,7 @@
 #import <Foundation/Foundation.h>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <exception>
 #include <functional>
@@ -132,6 +133,111 @@ void mixed() {
 				 "readback; retry reuse\n";
 }
 
+void builtinsAndReconstruction() {
+	using namespace stana::native;
+	const auto device = gpu::DeviceResources::get(MTLCreateSystemDefaultDevice());
+	require(device.has_value(), device ? "" : device.error().message);
+	const auto sources = fixtures::builtinScenes();
+	constexpr double doubled = 2;
+	constexpr double fractional = 1.25;
+	for (const double scale : {1.0, doubled, fractional}) {
+		const auto incremental =
+			gpu::Compositor::create(*device, std::make_shared<RasterAccounting>());
+		require(incremental.has_value(), incremental ? "" : incremental.error().message);
+		for (const auto &source : sources) {
+			const auto scene = prepareScene(source, scale);
+			const auto grid = makeTileGrid(source->size, scale);
+			const auto render =
+				[&](const std::shared_ptr<gpu::Compositor> &compositor) -> gpu::Capture {
+				const auto result = compositor->prepare(scene, grid, 1, gpu::ColorMode::automatic);
+				require(result.has_value(), result ? "" : result.error().message);
+				pump([&] -> bool {
+					return !compositor->isInFlight() && compositor->readyPacket() &&
+						compositor->readyPacket()->scene == scene;
+				});
+				return read(*device, compositor->readyPacket(), grid);
+			};
+			const auto actual = render(*incremental);
+			const auto full =
+				gpu::Compositor::create(*device, std::make_shared<RasterAccounting>());
+			require(full.has_value(), full ? "" : full.error().message);
+			const auto reference = render(*full);
+			if (actual.bytes != reference.bytes) {
+				std::size_t count = 0;
+				for (std::size_t offset = 0; offset < actual.bytes.size(); ++offset) {
+					if (actual.bytes.at(offset) != reference.bytes.at(offset)) {
+						if (count == 0) {
+							std::cerr
+								<< "first byte=" << offset
+								<< " actual=" << std::to_integer<unsigned>(actual.bytes.at(offset))
+								<< " expected="
+								<< std::to_integer<unsigned>(reference.bytes.at(offset)) << '\n';
+						}
+						++count;
+					}
+				}
+				std::cerr << "reconstruction scale=" << scale << " revision=" << source->revision
+						  << " differing bytes=" << count
+						  << " samples=" << (*incremental)->readyPacket()->samples << "/"
+						  << (*full)->readyPacket()->samples
+						  << " dirty=" << (*incremental)->readyPacket()->dirty.count() << '\n';
+			}
+			require(
+				actual.bytes == reference.bytes,
+				"incremental built-ins differ from fresh full reconstruction"
+			);
+			require(
+				actual.format == gpu::Format::rgba16,
+				"mesh/extended scene requires linear composition"
+			);
+			const auto sample = [&](std::array<double, 2> point, std::size_t component) -> double {
+				constexpr std::size_t halfStride = 8;
+				const auto column = static_cast<std::size_t>(point.front() * scale);
+				const auto row = static_cast<std::size_t>(point.back() * scale);
+				return stana::graphics_detail::halfAt(
+					actual.bytes,
+					(row * actual.width + column) * halfStride + component * 2
+				);
+			};
+			constexpr double center = 24;
+			constexpr double ellipseCenter = 104;
+			constexpr double lineCenter = 512;
+			constexpr double lineY = 30;
+			constexpr double dot = 700;
+			require(std::is_eq(sample({center, center}, 0) <=> 1.0), "rounded rectangle interior");
+			require(
+				std::is_eq(sample({ellipseCenter, center}, 1) <=> 1.0),
+				"non-square ellipse interior"
+			);
+			require(
+				std::is_eq(sample({lineCenter, lineY}, 0) <=> 1.0) &&
+					std::is_eq(sample({lineCenter, lineY}, 2) <=> 1.0),
+				"round polyline crosses tile seam"
+			);
+			require(std::is_eq(sample({dot, lineY}, 1) <=> 1.0), "one-point round disk");
+			constexpr double meshSampleX = 220;
+			constexpr double meshSampleY = 28;
+			constexpr double meshX = 200.25;
+			constexpr double meshY = 8.25;
+			constexpr double meshExtent = 80;
+			const double u = ((std::floor(meshSampleX * scale) + 0.5) / scale - meshX) / meshExtent;
+			const double v = ((std::floor(meshSampleY * scale) + 0.5) / scale - meshY) / meshExtent;
+			constexpr double tolerance = 0.002;
+			require(
+				std::abs(sample({meshSampleX, meshSampleY}, 0) - (1 - u - v)) <= tolerance &&
+					std::abs(sample({meshSampleX, meshSampleY}, 1) - u) <= tolerance &&
+					std::abs(sample({meshSampleX, meshSampleY}, 2) - v) <= tolerance,
+				"independent linear gradient interpolation"
+			);
+			(*full)->close();
+		}
+		(*incremental)->close();
+	}
+	std::cout
+		<< "Built-ins: rounded rect, non-square ellipse, gradient mesh, duplicate/one-point round "
+		   "line; fractional origins, partial tiles, exact full reconstruction at 1x/2x/1.25x\n";
+}
+
 void temporal() {
 	using namespace stana::native;
 	id<MTLDevice> const device = MTLCreateSystemDefaultDevice();
@@ -204,6 +310,7 @@ auto main() -> int {
 		try {
 			temporal();
 			mixed();
+			builtinsAndReconstruction();
 			return 0;
 		} catch (const std::exception &error) {
 			std::cerr << error.what() << '\n';

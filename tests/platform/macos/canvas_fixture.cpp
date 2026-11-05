@@ -61,6 +61,94 @@ auto mixedScene(bool extended) -> std::shared_ptr<const Scene> {
 	return result;
 }
 
+auto builtinScenes() -> std::vector<std::shared_ptr<const Scene>> {
+	constexpr double width = 1031;
+	constexpr double height = 173;
+	constexpr double quarter = 0.25;
+	constexpr double rounded = 48;
+	constexpr double radius = 12;
+	constexpr double ellipseX = 64;
+	constexpr double ellipseWidth = 80;
+	constexpr double ellipseHeight = 32;
+	constexpr double top = 8;
+	constexpr double meshX = 200;
+	constexpr double meshExtent = 80;
+	GPUDrawing picture;
+	picture.fillRect(
+		{.origin = {.x = quarter, .y = quarter}, .size = {.width = rounded, .height = rounded}},
+		ExtendedColor{1, 0, 0},
+		radius
+	);
+	picture.fillEllipse(
+		{.origin = {.x = ellipseX + quarter, .y = top + quarter},
+			.size = {.width = ellipseWidth, .height = ellipseHeight}},
+		ExtendedColor{0, 1, 0}
+	);
+	const std::array vertices{
+		GPUVertex{
+			.position = {.x = meshX + quarter, .y = top + quarter},
+			.color = ExtendedColor{1, 0, 0}
+		},
+		GPUVertex{
+			.position = {.x = meshX + meshExtent + quarter, .y = top + quarter},
+			.color = ExtendedColor{0, 1, 0}
+		},
+		GPUVertex{
+			.position = {.x = meshX + quarter, .y = top + meshExtent + quarter},
+			.color = ExtendedColor{0, 0, 1}
+		}
+	};
+	const std::array<std::uint32_t, 3> indices{0, 1, 2};
+	const auto mesh = GPUMesh::create(vertices, indices);
+	if (!mesh) {
+		throw std::runtime_error(mesh.error().message);
+	}
+	picture.drawMesh(*mesh);
+	constexpr double lineStart = 400;
+	constexpr double lineEnd = 560;
+	constexpr double lineY = 30;
+	constexpr double lineBottom = 90;
+	constexpr double lineWidth = 10;
+	const std::array line{
+		Point{.x = lineStart, .y = lineY},
+		Point{.x = lineStart, .y = lineY},
+		Point{.x = lineEnd, .y = lineY},
+		Point{.x = lineEnd, .y = lineBottom}
+	};
+	picture.strokePolyline(line, ExtendedColor{1, 0, 1}, lineWidth);
+	constexpr double dotX = 700;
+	const std::array point{Point{.x = dotX, .y = lineY}};
+	picture.strokePolyline(point, ExtendedColor{0, 1, 1}, radius);
+	const Signal model{picture};
+	const Frame fill{.width = Length::fill(), .height = Length::fill()};
+	auto document = detail::Document::create({.width = width, .height = height});
+	Transaction::perform([&] -> void {
+		MountContext context{.document = document, .parent = document->root()};
+		static_cast<void>(
+			stana::mount(GPUCanvas{.drawing = model, .layout = {.frame = fill}}, context)
+		);
+	});
+	document->commit();
+	application_detail::SceneConversion conversion;
+	std::vector<std::shared_ptr<const Scene>> scenes{
+		conversion.convert(document->renderSnapshot())
+	};
+	constexpr double changeX = 490.25;
+	constexpr double changeY = 110.5;
+	constexpr double changeWidth = 70;
+	constexpr double changeHeight = 30;
+	picture.fillRect(
+		{.origin = {.x = changeX, .y = changeY},
+			.size = {.width = changeWidth, .height = changeHeight}},
+		ExtendedColor{1, 1, 0}
+	);
+	model.set(picture);
+	document->commit();
+	scenes.push_back(conversion.convert(document->renderSnapshot()));
+	document->close();
+	return scenes;
+}
+
 auto counterPrograms() -> std::vector<std::shared_ptr<const gpu::Program>> {
 	const auto shader = GPUShader::source(R"(
 @group(0) @binding(0) var previous: texture_2d<f32>;

@@ -69,7 +69,8 @@ struct Resources {
 		std::uint32_t,
 		Format,
 		MTLTextureUsage,
-		std::shared_ptr<AllocationLease> = {}
+		std::shared_ptr<AllocationLease> = {},
+		std::uint32_t samples = 1
 	) -> Result<std::shared_ptr<TextureOwner>>;
 	[[nodiscard]] auto mesh(const std::shared_ptr<const Mesh> &)
 		-> Result<std::shared_ptr<MeshUpload>>;

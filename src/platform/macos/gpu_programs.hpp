@@ -35,7 +35,7 @@ void requestCompilation(
 	const std::shared_ptr<DeviceResources> &,
 	std::uint64_t window,
 	std::shared_ptr<const Program>,
-	std::function<void(Result<std::shared_ptr<const Pipeline>>)>
+	std::function<void(Result<std::shared_ptr<const Pipeline>>, bool)>
 );
 void cancelCompilation(const std::shared_ptr<DeviceResources> &, std::uint64_t window);
 

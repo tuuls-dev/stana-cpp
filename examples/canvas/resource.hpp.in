@@ -1,0 +1,7 @@
+#ifndef STANA_CANVAS_EXAMPLE_RESOURCE_HPP
+#define STANA_CANVAS_EXAMPLE_RESOURCE_HPP
+#include <string_view>
+namespace canvas_example {
+inline constexpr std::string_view shaderSource = R"STANA_APP(@stana_canvas_wgsl@)STANA_APP";
+}
+#endif

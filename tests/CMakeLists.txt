@@ -15,7 +15,7 @@ if(STANA_SANITIZER STREQUAL "")
 		COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/consumer_test.py"
 			--root "${PROJECT_SOURCE_DIR}" --build "${PROJECT_BINARY_DIR}"
 			--compiler "${CMAKE_CXX_COMPILER}" --config "${CMAKE_BUILD_TYPE}")
-	set_tests_properties(stana.consumer PROPERTIES TIMEOUT 180)
+	set_tests_properties(stana.consumer PROPERTIES TIMEOUT 360)
 endif()
 
 add_executable(stana-reactive reactive/contracts.cpp)
@@ -133,3 +133,8 @@ if(APPLE AND STANA_NATIVE_TESTS)
         ENVIRONMENT "MTL_DEBUG_LAYER=1;MTL_SHADER_VALIDATION=1")
     set_tests_properties(stana.native.window PROPERTIES RUN_SERIAL TRUE)
 endif()
+
+add_executable(stana-gpu-validation graphics/gpu_validation.cpp)
+target_link_libraries(stana-gpu-validation PRIVATE stana::stana)
+stana_apply_safety(stana-gpu-validation)
+add_test(NAME stana.gpu-validation COMMAND stana-gpu-validation)

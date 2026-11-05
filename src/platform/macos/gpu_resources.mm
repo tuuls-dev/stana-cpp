@@ -153,14 +153,20 @@ auto Resources::texture(
 	std::uint32_t height,
 	Format format,
 	MTLTextureUsage usage,
-	std::shared_ptr<AllocationLease> lease
+	std::shared_ptr<AllocationLease> lease,
+	std::uint32_t samples
 ) -> Result<std::shared_ptr<TextureOwner>> {
-	const auto length = graphics_detail::textureBytes(width, height, pixelBytes(format));
-	if (!length) {
-		return capability(length.error());
+	const auto pixels = graphics_detail::textureBytes(width, height, pixelBytes(format));
+	if (!pixels) {
+		return capability(pixels.error());
 	}
+	if ((samples != 1 && samples != 4) || ![device->device supportsTextureSampleCount:samples] ||
+		*pixels > graphics_detail::payloadLimit / samples) {
+		return capability("Unsupported multisample allocation profile");
+	}
+	const auto length = *pixels * samples;
 	if (!lease) {
-		auto reserved = reserve(*length);
+		auto reserved = reserve(length);
 		if (!reserved) {
 			return std::unexpected(reserved.error());
 		}
@@ -172,13 +178,17 @@ auto Resources::texture(
 														  height:height
 													   mipmapped:NO];
 	descriptor.storageMode = MTLStorageModePrivate;
+	descriptor.sampleCount = samples;
+	if (samples > 1) {
+		descriptor.textureType = MTLTextureType2DMultisample;
+	}
 	descriptor.usage = usage;
 	id<MTLTexture> const texture = [device->device newTextureWithDescriptor:descriptor];
 	if (texture == nil) {
 		return capability("GPU texture allocation/usage is unsupported");
 	}
 	return std::make_shared<TextureOwner>(
-		TextureOwner{.texture = texture, .lease = lease->split(*length), .bytes = *length}
+		TextureOwner{.texture = texture, .lease = lease->split(length), .bytes = length}
 	);
 }
 

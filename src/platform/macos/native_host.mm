@@ -208,6 +208,22 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 	}
 }
 
+- (void)windowDidChangeScreen:(NSNotification *)notification {
+	static_cast<void>(notification);
+	if (state_ && !state_->isClosed) {
+		// Backing-scale changes replace the surface separately. A display/headroom
+		// change only remaps the cached linear packet; it must not step state.
+		stana::native::requestFrame(state_);
+	}
+}
+
+- (void)screenParametersChanged:(NSNotification *)notification {
+	static_cast<void>(notification);
+	if (state_ && !state_->isClosed) {
+		stana::native::requestFrame(state_);
+	}
+}
+
 - (void)windowDidChangeOcclusionState:(NSNotification *)notification {
 	static_cast<void>(notification);
 	if (state_ && !state_->isClosed) {
@@ -216,6 +232,7 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 }
 
 - (void)windowWillClose:(NSNotification *)notification {
+	[NSNotificationCenter.defaultCenter removeObserver:self];
 	NSWindow *const closingWindow = notification.object;
 	if (state_ && !std::exchange(state_->isClosed, true)) {
 		stana::native::closeRenderer(state_);
@@ -269,6 +286,9 @@ auto diagnostics() -> std::vector<WindowStatistics> {
 					.linearWorking = state->compositor->readyPacket() &&
 						state->compositor->readyPacket()->linear,
 					.linearOutput = state->linearOutput,
+					.meshSampleCount = state->compositor->readyPacket()
+						? state->compositor->readyPacket()->samples
+						: 1,
 					.offscreenRevision = gpuWork.completedRevision,
 					.stateSteps = gpuWork.stateSteps,
 					.pipelineBuilds = gpuWork.pipelineBuilds,
@@ -403,6 +423,11 @@ auto run(std::vector<Window> windows) -> std::expected<int, std::string> {
 			STANAWindowDelegate *const delegate = [[STANAWindowDelegate alloc] init];
 			delegate->state_ = state;
 			window.delegate = delegate;
+			[NSNotificationCenter.defaultCenter
+				addObserver:delegate
+				   selector:@selector(screenParametersChanged:)
+					   name:NSApplicationDidChangeScreenParametersNotification
+					 object:nil];
 			[delegates addObject:delegate];
 			[nativeWindows addObject:window];
 			publishAppearance(state);

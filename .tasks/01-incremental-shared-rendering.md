@@ -60,13 +60,13 @@ Reading order:
 | Decision | Committed behavior |
 | --- | --- |
 | Incremental scope | Optimize retained-core layout and scene generation as well as native rasterization. |
-| CPU/GPU handoff | CoreGraphics writes directly into shared Metal buffer memory. |
+| CPU/GPU handoff | CoreGraphics writes directly into shared Metal buffer memory on unified devices; task 03 adds explicitly synchronized managed memory on discrete devices. |
 | Final-copy scope | Avoid copies for unchanged tiles through tile-level presentation. |
 | Raster executor | Keep preparation, CoreGraphics drawing, and mutable renderer state on the UI executor. |
-| Native hardware | Apple Silicon, macOS 26+, Apple-family unified-memory Metal device. |
+| Native hardware | macOS 26+ capability-selected Metal device; unified and discrete profiles as superseded by task 03. |
 | Portable engine | Remains buildable and testable headlessly on the currently supported build targets. |
 | Public changes | Preserve existing authoring and inspection APIs; add only contracts needed for testing, diagnostics, and composite evidence. |
-| Drawing technology | CoreGraphics/Core Text continue to produce pixels; no shader-based UI renderer. |
+| Drawing technology | CoreGraphics/Core Text produce ordinary UI/CPU pixels. Task 03 permits GPUCanvas shaders and ordered composition/final mapping, not a replacement shader renderer for ordinary UI. |
 | Specification reference | Use the architecture, concrete declarations, edge cases, and acceptance-gate detail of `.tasks/00_omnibus.md`. |
 
 ### Intended improvement
@@ -101,9 +101,10 @@ sibling arrangement. If text changes size, layout-dependent siblings must move.
 
 ### Non-goals and honest limits
 
-- Do not add a raster worker, display-link animation loop, shader-based primitive
-  renderer, native Windows/Linux host, general graphics abstraction, or service
-  locator. Use the existing modules and application composition root.
+- Do not add a raster worker, display-link animation loop, shader renderer for
+  ordinary UI, native Windows/Linux host, general graphics abstraction, or service
+  locator. Task 03 permits GPUCanvas leaves and required texture composition/display
+  mapping. Use the existing modules and application composition root.
 - Do not add sub-tile partial repainting, retained GPU shape geometry, scroll blits,
   occlusion subtraction, glyph atlases, or a general spatial-index package.
 - Do not silently implement the backlog's changed sizing/allocation, wrapping,
@@ -130,7 +131,7 @@ These are named internal constants, not new authoring options.
 | --- | --- | --- |
 | `tilePixels` | 512 | Full tile width/height in physical pixels; edge tiles are smaller. |
 | `rasterRowAlignment` | 256 bytes | Shared bitmap row-pitch alignment. |
-| `bytesPerPixel` | 4 | BGRA8 pixel payload. |
+| `bytesPerPixel` | 4 | CPU bitmap/SDR BGRA8 payload; task-03 half-float composition uses 8 bytes/pixel and accounts for its selected sample count. |
 | `maximumDimension` | 16,384 pixels | Maximum physical viewport extent on either axis. |
 | `maximumTiles` | 1,024 | Maximum tile-layer count in one window. |
 | `maximumRasterBytes` | 256 MiB/window | Current plus retired shared raster-buffer ownership. |
@@ -1037,7 +1038,8 @@ frame; do not introduce another view-space Y flip. Keep tile content orientation
 consistent with the existing bitmap transform and verify with an asymmetric
 reference fixture, not a symmetric rectangle.
 
-Each tile layer uses the selected device, BGRA8Unorm, sRGB, `opaque=YES`,
+Each tile layer uses the selected device, BGRA8Unorm/sRGB for SDR or task-03
+RGBA16Float/extended-linear sRGB for supported EDR output, `opaque=YES`,
 `framebufferOnly=NO`, `maximumDrawableCount=2`, `displaySyncEnabled=YES`,
 `presentsWithTransaction=YES`, and `allowsNextDrawableTimeout=YES`.
 
@@ -1432,19 +1434,21 @@ application code while holding renderer-resource iterators or mutable node point
 
 ### Hardware selection and compatibility
 
-Require a Metal device supporting Apple-family GPU capability and unified memory.
-Check Metal capabilities, not a parsed product name. `hasUnifiedMemory` alone is
-not the Apple-Silicon-only check because other integrated hardware can share memory.
+Task 03 supersedes the original Apple-family-only restriction. Require a macOS
+26+ Metal device with the actual selected format, usage, and sample capabilities.
+Unified devices keep direct shared-buffer handoff and zero separate CPU upload;
+discrete devices use managed CPU buffers with explicit `didModifyRange` and
+readback synchronization, with copy bytes reported. Unsupported capabilities fail
+explicitly, never select an old CPU fallback renderer. Actual Intel/AMD output
+qualification remains separately recorded, not inferred from capability selection.
 
-Keep the current macOS 26 deployment minimum. Unsupported native hardware returns
-an explicit diagnostic before creating a partially functioning tile host. Do not
-fall back to the old image upload renderer or introduce managed-buffer support
-contrary to the selected scope.
+Non-Apple platforms retain portable/headless support with the existing toolchain.
+Native headers never enter exported interfaces or portable core/scene tests.
 
-Intel/macOS and non-Apple platforms retain portable/headless engine support where
-the existing toolchain permits it. Apple-only headers and source files must not
-leak into portable core/scene/geometry tests. Update README hardware claims and
-native test prerequisites accordingly.
+Task 03 also makes CPUCanvas/GPUCanvas/ScrollView outer clips default-on, retaining
+explicit `.clip = false`. Unclipped CPU damage still uses actual ink; default clips
+are not permission to substitute layout bounds for all canvas damage. The original
+CPU-only raster/performance and bounded evidence/recovery gates remain in force.
 
 ## Diagnostics and public compatibility
 

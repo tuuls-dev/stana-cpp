@@ -30,9 +30,11 @@ struct BuiltinFunctions {
 	id<MTLLibrary> library,
 	const BuiltinFunctions &functions,
 	Format format,
-	bool blend
+	bool blend,
+	std::uint32_t samples = 1
 ) -> Result<id<MTLRenderPipelineState>> {
 	MTLRenderPipelineDescriptor *const descriptor = [[MTLRenderPipelineDescriptor alloc] init];
+	descriptor.rasterSampleCount = samples;
 	descriptor.vertexFunction = [library newFunctionWithName:functions.vertex];
 	descriptor.fragmentFunction = [library newFunctionWithName:functions.fragment];
 	MTLRenderPipelineColorAttachmentDescriptor *const color =
@@ -207,46 +209,60 @@ auto Compositor::create(
 	static std::uint64_t windows = 0;
 	increment(windows);
 	result->window_ = windows;
-	for (std::size_t index = 0; index < 2; ++index) {
-		const auto format = index == 0 ? Format::bgra8 : Format::rgba16;
+	if (![result->resources_.device->device supportsTextureSampleCount:4]) {
+		result->samples_ = 1;
+	}
+	for (std::size_t index = 0; index < 4; ++index) {
+		const auto samples = index < 2 ? 1U : 4U;
+		if (samples == 4 && result->samples_ == 1) {
+			continue;
+		}
+		const auto format = index % 2 == 0 ? Format::bgra8 : Format::rgba16;
 		const auto shape = pipeline(
 			result->resources_.device->device,
 			result->resources_.device->builtins,
 			{.vertex = @"stana_quad", .fragment = @"stana_shape"},
 			format,
-			true
+			true,
+			samples
 		);
 		const auto texture = pipeline(
 			result->resources_.device->device,
 			result->resources_.device->builtins,
 			{.vertex = @"stana_quad", .fragment = @"stana_texture"},
 			format,
-			true
+			true,
+			samples
 		);
 		const auto mesh = pipeline(
 			result->resources_.device->device,
 			result->resources_.device->builtins,
 			{.vertex = @"stana_mesh", .fragment = @"stana_mesh_fragment"},
 			format,
-			true
+			true,
+			samples
 		);
-		const auto display = pipeline(
-			result->resources_.device->device,
-			result->resources_.device->builtins,
-			{.vertex = @"stana_quad", .fragment = @"stana_display"},
-			format,
-			false
-		);
-		if (!shape || !texture || !mesh || !display) {
-			return !shape ? std::unexpected(shape.error())
-						  : (!texture ? std::unexpected(texture.error())
-									  : (!mesh ? std::unexpected(mesh.error())
-											   : std::unexpected(display.error())));
+		if (!shape || !texture || !mesh) {
+			return !shape
+				? std::unexpected(shape.error())
+				: (!texture ? std::unexpected(texture.error()) : std::unexpected(mesh.error()));
 		}
 		result->shape_.at(index) = *shape;
 		result->texture_.at(index) = *texture;
 		result->mesh_.at(index) = *mesh;
-		result->display_.at(index) = *display;
+		if (index < 2) {
+			const auto display = pipeline(
+				result->resources_.device->device,
+				result->resources_.device->builtins,
+				{.vertex = @"stana_quad", .fragment = @"stana_display"},
+				format,
+				false
+			);
+			if (!display) {
+				return std::unexpected(display.error());
+			}
+			result->display_.at(index) = *display;
+		}
 	}
 	return result;
 }
@@ -289,6 +305,7 @@ void Compositor::desired(std::shared_ptr<const Scene> scene) {
 
 void Compositor::reset(std::uint64_t epoch) {
 	epoch_ = epoch;
+	samples_ = [resources_.device->device supportsTextureSampleCount:4] ? 4U : 1U;
 	ready_.reset();
 	instances_.clear();
 	changed_.clear();
@@ -348,7 +365,8 @@ void Compositor::compile(const GPUCanvasLeaf &leaf, const std::shared_ptr<const 
 		resources_.device,
 		window_,
 		program,
-		[weak, epoch, leaf, program](Result<std::shared_ptr<const Pipeline>> compiled) -> void {
+		[weak, epoch, leaf, program](Result<std::shared_ptr<const Pipeline>> compiled, bool built)
+			-> void {
 			if (const auto owner = weak.lock();
 				owner && !owner->closed_ && owner->epoch_ == epoch) {
 				owner->compilerActive_ = false;
@@ -357,7 +375,11 @@ void Compositor::compile(const GPUCanvasLeaf &leaf, const std::shared_ptr<const 
 					found->second.desired->version == program->version) {
 					if (compiled) {
 						found->second.pipeline = std::move(*compiled);
-						++owner->work_.pipelineBuilds;
+						if (built) {
+							++owner->work_.pipelineBuilds;
+						} else {
+							++owner->work_.pipelineCacheHits;
+						}
 					} else {
 						found->second.failedVersion = program->version;
 						owner->report(leaf, program->version, compiled.error());
@@ -834,24 +856,41 @@ auto Compositor::prepare(
 	if (!clips.empty()) {
 		return failed(Diagnostic::Category::execution, "Mixed clip stack did not balance");
 	}
-	std::size_t finalBytes = 0;
-	for (const auto &tile : grid.tiles) {
-		if (packet->dirty.test(tile.ordinal)) {
-			const auto bpp = pixelBytes(linear ? Format::rgba16 : Format::bgra8);
+	std::map<std::pair<std::size_t, std::size_t>, std::shared_ptr<TextureOwner>> scratch;
+	const auto reserveTiles =
+		[&](std::uint32_t samples) -> Result<std::shared_ptr<AllocationLease>> {
+		std::size_t total = 0;
+		std::set<std::pair<std::size_t, std::size_t>> extents;
+		const auto bpp = pixelBytes(linear ? Format::rgba16 : Format::bgra8);
+		for (const auto &tile : grid.tiles) {
+			if (!packet->dirty.test(tile.ordinal)) {
+				continue;
+			}
 			const auto bytes = tile.pixels.width * tile.pixels.height * bpp;
-			if (bytes > windowAllocationLimit - finalBytes) {
+			const bool extra =
+				samples > 1 && extents.emplace(tile.pixels.width, tile.pixels.height).second;
+			const auto count = 1 + (extra ? samples : 0);
+			if (bytes > windowAllocationLimit / count ||
+				bytes * count > windowAllocationLimit - total) {
 				return failed(
 					Diagnostic::Category::capability,
-					"Complete final tile candidate exceeds budget"
+					"Complete composition candidate exceeds allocation budget"
 				);
 			}
-			finalBytes += bytes;
+			total += bytes * count;
 		}
+		return resources_.reserve(total);
+	};
+	auto reservation = reserveTiles(samples_);
+	if (!reservation && samples_ > 1) {
+		samples_ = 1;
+		packet->dirty = allTiles(grid);
+		reservation = reserveTiles(samples_);
 	}
-	auto reservation = resources_.reserve(finalBytes);
 	if (!reservation) {
 		return std::unexpected(reservation.error());
 	}
+	packet->samples = samples_;
 	const std::array<std::byte, sizeof(Clip)> zero{};
 	auto empty = resources_.buffer(zero.size(), zero);
 	if (!empty) {
@@ -877,8 +916,29 @@ auto Compositor::prepare(
 		MTLRenderPassColorAttachmentDescriptor *const color =
 			[descriptor.colorAttachments objectAtIndexedSubscript:0];
 		color.texture = packet->tiles.at(tile.ordinal)->texture;
+		if (samples_ > 1) {
+			const auto key = std::pair{tile.pixels.width, tile.pixels.height};
+			if (!scratch.contains(key)) {
+				auto allocated = resources_.texture(
+					static_cast<std::uint32_t>(tile.pixels.width),
+					static_cast<std::uint32_t>(tile.pixels.height),
+					linear ? Format::rgba16 : Format::bgra8,
+					MTLTextureUsageRenderTarget,
+					*reservation,
+					samples_
+				);
+				if (!allocated) {
+					return std::unexpected(allocated.error());
+				}
+				scratch.emplace(key, *allocated);
+				packet->multisample.push_back(std::move(*allocated));
+			}
+			color.texture = scratch.at(key)->texture;
+			color.resolveTexture = packet->tiles.at(tile.ordinal)->texture;
+		}
+
 		color.loadAction = MTLLoadActionClear;
-		color.storeAction = MTLStoreActionStore;
+		color.storeAction = samples_ > 1 ? MTLStoreActionMultisampleResolve : MTLStoreActionStore;
 		const auto background = packet->scene->source->background;
 		color.clearColor = MTLClearColorMake(
 			linear ? graphics_detail::decodeSRGB(background.red) : background.red,
@@ -909,7 +969,7 @@ auto Compositor::prepare(
 			}
 			auto quad = item.quad;
 			quad.viewport = floats(viewport);
-			const auto profile = static_cast<std::size_t>(linear);
+			const auto profile = static_cast<std::size_t>(linear) + (samples_ > 1 ? 2U : 0U);
 			[encoder setCullMode:MTLCullModeNone];
 			[encoder setFragmentBytes:&quad length:sizeof(quad) atIndex:0];
 			[encoder setFragmentBuffer:item.clips ? item.clips->buffer : (*empty)->buffer

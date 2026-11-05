@@ -6,6 +6,7 @@
 
 namespace stana::native::fixtures {
 [[nodiscard]] auto mixedScene(bool extended = false) -> std::shared_ptr<const Scene>;
+[[nodiscard]] auto builtinScenes() -> std::vector<std::shared_ptr<const Scene>>;
 [[nodiscard]] auto counterPrograms() -> std::vector<std::shared_ptr<const gpu::Program>>;
 } // namespace stana::native::fixtures
 #endif

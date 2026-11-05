@@ -87,6 +87,7 @@ struct WindowDiagnostics {
 	bool unifiedMemory = false;
 	bool linearWorking = false;
 	bool linearOutput = false;
+	std::uint32_t meshSampleCount = 1;
 	std::uint64_t offscreenRevision = 0;
 	std::uint64_t stateSteps = 0;
 	std::uint64_t pipelineBuilds = 0;

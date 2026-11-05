@@ -19,7 +19,7 @@ add_library(stana::stana ALIAS stana)
 target_sources(stana
 	PUBLIC FILE_SET modules TYPE CXX_MODULES BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/modules"
 		FILES modules/stana.cppm modules/primitives/primitives.cppm modules/reactive/reactive.cppm modules/tasks/tasks.cppm modules/graphics/graphics.cppm modules/graphics/presentation.cppm modules/graphics/program.cppm modules/graphics/gpu.cppm modules/core/core.cppm modules/ui/ui.cppm modules/testing/testing.cppm modules/application/application.cppm modules/text/text.cppm
-	PRIVATE src/graphics/shader_compiler.cpp src/graphics/drawing.cpp src/graphics/gpu.cpp src/graphics/gpu_program.cpp src/version.cpp src/core/document.cpp src/core/input.cpp src/layout/layout.cpp src/scene/scene.cpp src/scene/geometry.cpp src/platform/tiles.cpp src/platform/scheduler.cpp src/ui/mount.cpp src/application/application.cpp src/text/text.cpp)
+	PRIVATE src/testing/shaders.cpp src/graphics/shader_compiler.cpp src/graphics/drawing.cpp src/graphics/gpu.cpp src/graphics/gpu_program.cpp src/version.cpp src/core/document.cpp src/core/input.cpp src/layout/layout.cpp src/scene/scene.cpp src/scene/geometry.cpp src/platform/tiles.cpp src/platform/scheduler.cpp src/ui/mount.cpp src/application/application.cpp src/text/text.cpp)
 target_compile_features(stana PUBLIC cxx_std_23)
 target_link_libraries(stana PRIVATE ICU::uc ICU::i18n ICU::data stana::tint)
 if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
@@ -70,12 +70,28 @@ if(PROJECT_IS_TOP_LEVEL)
 	endif()
 	target_link_libraries(stana-counter PRIVATE stana::stana)
 	stana_apply_safety(stana-counter)
+	file(READ "${CMAKE_CURRENT_SOURCE_DIR}/examples/canvas/field.wgsl" stana_canvas_wgsl)
+	set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS examples/canvas/field.wgsl)
+	configure_file(examples/canvas/resource.hpp.in generated/canvas_resource.hpp @ONLY)
+	add_executable(stana-canvas examples/canvas/main.cpp)
+	target_include_directories(stana-canvas PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+	target_link_libraries(stana-canvas PRIVATE stana::stana)
+	stana_apply_safety(stana-canvas)
+	if(APPLE)
+		set_target_properties(stana-canvas PROPERTIES MACOSX_BUNDLE YES
+			MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/cmake/AppInfo.plist.in"
+			MACOSX_BUNDLE_GUI_IDENTIFIER "dev.stana.canvas"
+			MACOSX_BUNDLE_BUNDLE_NAME "Stana Canvas"
+			MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+			MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
+	endif()
 endif()
 
 
 if(PROJECT_IS_TOP_LEVEL)
 	enable_testing()
 	add_subdirectory(tests)
+	add_test(NAME stana.canvas-example COMMAND stana-canvas --validate)
 	file(GLOB_RECURSE stana_format_sources CONFIGURE_DEPENDS
 		"${CMAKE_CURRENT_SOURCE_DIR}/modules/*.cppm"
 		"${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.hpp"

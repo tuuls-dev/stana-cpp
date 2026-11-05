@@ -31,6 +31,8 @@ void validateCommand(const PaintCommand &command) {
 	case strokeRect:
 	case line: {
 		detail::requireNonnegative(command.lineWidth);
+		detail::requireFinite(std::abs(rect.size.width) + command.lineWidth);
+		detail::requireFinite(std::abs(rect.size.height) + command.lineWidth);
 		const double half = command.lineWidth / 2;
 		for (const double endpoint :
 			{rect.origin.x,
@@ -120,7 +122,7 @@ void Drawing::fillRect(Rect bounds, Color color, double radius) {
 		.cornerRadius = radius
 	};
 	validateCommand(command);
-	command.cornerRadius = std::min({radius, bounds.size.width / 2, bounds.size.height / 2});
+
 	commands.push_back(std::move(command));
 }
 
@@ -133,7 +135,7 @@ void Drawing::strokeRect(Rect bounds, Color color, double width, double radius) 
 		.lineWidth = width
 	};
 	validateCommand(command);
-	command.cornerRadius = std::min({radius, bounds.size.width / 2, bounds.size.height / 2});
+
 	commands.push_back(std::move(command));
 }
 } // namespace stana

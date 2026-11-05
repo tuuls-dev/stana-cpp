@@ -3,8 +3,9 @@
 A **C++23 retained desktop UI toolkit**, consumed with **`import stana;`**.
 The portable engine uses typed aggregate descriptions, tuple composition and
 fine-grained signals. The initial native backend is macOS 26+ (AppKit, Core Text,
-Core Graphics and Metal) on Apple Silicon with unified-memory Apple-family GPUs,
-with no Swift runtime dependency. Intel macOS retains headless engine support.
+Core Graphics and Metal), with capability-selected unified or discrete resource
+profiles and no Swift runtime dependency. Native qualification currently covers
+Apple M1 Pro; Intel/AMD output remains unqualified.
 
 **Port in progress:** the native Counter, reactive runtime, structural components,
 headless testing and Unicode editing buffer are implemented. Full upstream desktop
@@ -111,8 +112,9 @@ On supported Macs, CoreGraphics/Core Text rasterize on the UI executor directly
 into reusable shared Metal buffers. Physical 512×512 tiles (smaller at edges) own
 persistent Metal layers. Only dirty tiles are cleared/replayed and copied into
 fresh, completely initialized drawables; unchanged layers are untouched. There is
-no intermediate scene texture, bitmap upload, old renderer fallback, or runtime
-render-path switch. There **is** a tile-sized GPU buffer-to-drawable copy and normal
+no intermediate scene texture or bitmap upload in the CPU-only unified path.
+Mixed CPU/GPU scenes use retained offscreen composition, not an old renderer fallback.
+There **is** a tile-sized GPU buffer-to-drawable copy and normal
 Core Animation compositor traffic; this is not a claim of zero total copies.
 
 One active composite per window joins GPU success for every copied tile, an issued
@@ -127,8 +129,26 @@ A transaction groups tiles but does not prove per-tile display or scanout-atomic
 shared-buffer allocations, and separate estimated drawable payload. The 256 MiB
 per-window shared-raster budget includes retired GPU owners, **not** Core Text,
 driver allocations, compositor surfaces, or total process memory. Many tile layers
-have measurable overhead. Native support requires macOS 26+ and an Apple-family
-Metal GPU with unified memory; unsupported hardware fails explicitly.
+have measurable overhead. Native support requires macOS 26+ and compatible Metal
+formats/usages; unsupported capabilities fail explicitly. Discrete CPU writes are
+notified and accounted, rather than described as zero-upload.
+
+## CPU and GPU canvases
+
+`Canvas` is now **`CPUCanvas`** (no alias). Both canvases accept reactive drawings,
+use padded local coordinates, and clip by default; `.appearance = {.clip = false}`
+opts out of the outer clip. GPU output still has a finite content extent.
+
+[`examples/canvas/main.cpp`](examples/canvas/main.cpp) is a complete reactive CPU
+chart plus portable WGSL compute → render/state, mesh and round-line demo. Its
+application-owned shader is embedded at build time, not read from the working
+directory. Run `build/debug/stana-canvas.app/Contents/MacOS/stana-canvas` on macOS;
+pass `--validate` to validate the complete shader graph without a window/device.
+Other hosts build/validate the same source but have no native window adapter.
+
+See [canvas contracts and migration](docs/canvas/README.md) for colors, resources,
+state, errors, limits and compiler provisioning; [implementation evidence](docs/canvas/implementation-evidence.md)
+distinguishes verified gates from pending qualification.
 
 ## Build and test
 
@@ -262,5 +282,3 @@ python3 tools/release.py package --build build/release --output dist
 
 No license has been selected yet; choose one before distributing this project
 under open-source terms.
-
-codex resume 01a1a724-4245-7f70-bd6b-09c22b9f12bc

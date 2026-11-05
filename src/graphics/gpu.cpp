@@ -9,7 +9,9 @@ module;
 #include <cstdint>
 #include <expected>
 #include <limits>
+#include <map>
 #include <memory>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -33,7 +35,7 @@ struct RenderVersion {
 	);
 }
 
-[[nodiscard]] auto pixelBytes(GPUTextureFormat format) -> std::size_t {
+[[nodiscard]] auto pixelBytes(GPUTextureFormat format) -> std::optional<std::size_t> {
 	switch (format) {
 	case GPUTextureFormat::bgra8Unorm:
 		return 4;
@@ -44,7 +46,7 @@ struct RenderVersion {
 	case GPUTextureFormat::r8Unorm:
 		return 1;
 	}
-	throw std::invalid_argument("Unknown texture format");
+	return {};
 }
 
 void point(Point value) {
@@ -128,8 +130,13 @@ struct GPUTexture::Data {
 };
 
 auto GPUTexture::create(GPUTextureDescriptor descriptor) -> std::expected<GPUTexture, GPUError> {
-	const auto length =
-		textureBytes(descriptor.width, descriptor.height, pixelBytes(descriptor.format));
+	const auto bpp = pixelBytes(descriptor.format);
+	if (!bpp ||
+		(descriptor.encoding != GPUColorEncoding::encodedSRGB &&
+			descriptor.encoding != GPUColorEncoding::extendedLinear)) {
+		return invalid("Unknown texture format or color encoding");
+	}
+	const auto length = textureBytes(descriptor.width, descriptor.height, *bpp);
 	if (!length) {
 		return invalid(length.error());
 	}
@@ -202,8 +209,11 @@ struct GPUStateSlot::Data {
 
 auto GPUStateSlot::create(GPUStateSlotDescriptor descriptor)
 	-> std::expected<GPUStateSlot, GPUError> {
-	const auto length =
-		textureBytes(descriptor.width, descriptor.height, pixelBytes(descriptor.format));
+	const auto bpp = pixelBytes(descriptor.format);
+	if (!bpp) {
+		return invalid("Unknown texture format");
+	}
+	const auto length = textureBytes(descriptor.width, descriptor.height, *bpp);
 	if (!length) {
 		return invalid(length.error());
 	}
@@ -296,6 +306,8 @@ auto GPUMesh::operator==(const GPUMesh &other) const noexcept -> bool {
 struct GPUDrawing::Data {
 	RenderVersion version{};
 	std::vector<detail::GPUCommand> commands;
+	std::map<std::uint64_t, std::size_t> owned;
+	std::size_t bytes = 0;
 };
 
 GPUDrawing::GPUDrawing() : data_(std::make_shared<Data>()) {
@@ -327,14 +339,83 @@ void GPUDrawing::append(detail::GPUCommand command) {
 	if (data_ && data_->commands.size() >= commandLimit) {
 		throw std::invalid_argument("GPU drawing command limit");
 	}
+	std::map<std::uint64_t, std::size_t> additions;
+	std::size_t direct = sizeof(detail::GPUCommand);
+	std::visit(
+		[&](const auto &operation) -> void {
+			using T = std::decay_t<decltype(operation)>;
+			if constexpr (std::is_same_v<T, GPUMesh>) {
+				additions.emplace(
+					operation.version(),
+					operation.vertices().size() * sizeof(GPUVertex) +
+						operation.indices().size() * sizeof(std::uint32_t)
+				);
+			} else if constexpr (std::is_same_v<T, detail::GPUPolyline>) {
+				direct += operation.points.size() * sizeof(Point);
+			} else if constexpr (std::is_same_v<T, GPUProgram>) {
+				const auto &descriptor = operation.descriptor();
+				additions.emplace(descriptor.shader.version(), descriptor.shader.source().size());
+				for (const auto &[name, resource] : descriptor.resources) {
+					direct += name.size() + sizeof(GPUResource);
+					std::visit(
+						[&](const auto &value) -> void {
+							using R = std::decay_t<decltype(value)>;
+							if constexpr (std::is_same_v<R, GPUBuffer> ||
+								std::is_same_v<R, GPUTexture>) {
+								additions.emplace(value.version(), value.bytes().size());
+							} else if constexpr (std::is_same_v<R, GPUStateSlot>) {
+								additions.emplace(
+									value.version(),
+									value.descriptor().initialBytes.size() +
+										value.descriptor().resetKey.size()
+								);
+							}
+						},
+						resource
+					);
+				}
+				for (const auto &pass : descriptor.passes) {
+					std::visit(
+						[&](const auto &value) -> void {
+							for (const auto &bound : value.bindings) {
+								direct += sizeof(GPUBinding) + bound.resource.size();
+							}
+						},
+						pass
+					);
+				}
+			}
+		},
+		command
+	);
+	std::size_t bytes = data_ ? data_->bytes : 0;
+	if (direct > payloadLimit - bytes) {
+		throw std::invalid_argument("GPU drawing aggregate input exceeds budget");
+	}
+	bytes += direct;
+	for (auto iterator = additions.begin(); iterator != additions.end();) {
+		if (data_ && data_->owned.contains(iterator->first)) {
+			iterator = additions.erase(iterator);
+		} else {
+			if (iterator->second > payloadLimit - bytes) {
+				throw std::invalid_argument("GPU drawing aggregate input exceeds budget");
+			}
+			bytes += iterator->second;
+			++iterator;
+		}
+	}
 	const RenderVersion next;
 	if (!data_ || data_.use_count() != 1) {
 		auto candidate = data_ ? std::make_shared<Data>(*data_) : std::make_shared<Data>();
 		candidate->commands.push_back(std::move(command));
+		candidate->owned.merge(additions);
+		candidate->bytes = bytes;
 		candidate->version = next;
 		data_ = std::move(candidate);
 	} else {
 		data_->commands.push_back(std::move(command));
+		data_->owned.merge(additions);
+		data_->bytes = bytes;
 		data_->version = next;
 	}
 }

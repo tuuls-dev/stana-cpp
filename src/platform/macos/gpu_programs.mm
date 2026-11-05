@@ -71,6 +71,19 @@ namespace {
 	);
 }
 
+[[nodiscard]] auto
+bindingsFor(const Program &program, Stage stage, const std::vector<Binding> &bindings)
+	-> std::vector<shader_detail::Binding> {
+	std::vector<shader_detail::Binding> result;
+	result.reserve(bindings.size());
+	for (const auto &binding : bindings) {
+		if (binding.stage == stage) {
+			result.push_back(resourceBinding(binding, program.resources.at(binding.resource)));
+		}
+	}
+	return result;
+}
+
 [[nodiscard]] auto request(
 	const Program &program,
 	const std::string &name,
@@ -83,13 +96,7 @@ namespace {
 		.stage = stage,
 		.constants = program.constants
 	};
-	for (const auto &binding : bindings) {
-		if (binding.stage == stage) {
-			result.bindings.push_back(
-				resourceBinding(binding, program.resources.at(binding.resource))
-			);
-		}
-	}
+	result.bindings = bindingsFor(program, stage, bindings);
 	return result;
 }
 
@@ -205,20 +212,19 @@ void launchNext(const std::shared_ptr<DeviceResources> &device) {
 				if constexpr (std::is_same_v<T, RenderPipeline>) {
 					const auto &bindings = std::get<RenderPass>(program.passes.at(index)).bindings;
 					for (const auto *entry : {&pass.vertex, &pass.fragment}) {
-						const auto input = request(program, "", entry->stage, bindings);
-						const auto result = shader_detail::validateBindings(*entry, input.bindings);
+						const auto input = bindingsFor(program, entry->stage, bindings);
+						const auto result = shader_detail::validateBindings(*entry, input);
 						if (!result) {
 							return compilerFailure(result.error());
 						}
 					}
 				} else {
-					const auto input = request(
+					const auto input = bindingsFor(
 						program,
-						"",
 						Stage::compute,
 						std::get<ComputePass>(program.passes.at(index)).bindings
 					);
-					const auto result = shader_detail::validateBindings(pass.entry, input.bindings);
+					const auto result = shader_detail::validateBindings(pass.entry, input);
 					if (!result) {
 						return compilerFailure(result.error());
 					}
@@ -245,6 +251,8 @@ auto compileProgram(const std::shared_ptr<DeviceResources> &device, const Progra
 			if (!checked) {
 				return std::unexpected(checked.error());
 			}
+			std::erase(device->pipelineLRU, program.pipelineVersion);
+			device->pipelineLRU.push_back(program.pipelineVersion);
 			return found->second;
 		}
 	}
@@ -381,7 +389,7 @@ void requestCompilation(
 	const std::shared_ptr<DeviceResources> &device,
 	std::uint64_t window,
 	std::shared_ptr<const Program> program,
-	std::function<void(Result<std::shared_ptr<const Pipeline>>)> callback
+	std::function<void(Result<std::shared_ptr<const Pipeline>>, bool)> callback
 ) {
 	{
 		const std::scoped_lock lock{device->mutex};
@@ -390,7 +398,8 @@ void requestCompilation(
 			!device->waitingCompilers.contains(window)) {
 			dispatch_async(dispatch_get_main_queue(), ^{
 			  callback(
-				  failure(Diagnostic::Category::capability, "Compiler admission capacity exceeded")
+				  failure(Diagnostic::Category::capability, "Compiler admission capacity exceeded"),
+				  false
 			  );
 			});
 			return;
@@ -399,14 +408,19 @@ void requestCompilation(
 			window,
 			[device, jobProgram = std::move(program), completion = std::move(callback)] -> void {
 				try {
+					bool cached = false;
+					{
+						const std::scoped_lock cacheLock{device->mutex};
+						cached = device->pipelines.contains(jobProgram->pipelineVersion);
+					}
 					const auto result = compileProgram(device, *jobProgram);
 					dispatch_async(dispatch_get_main_queue(), ^{
-					  completion(result);
+					  completion(result, !cached);
 					});
 				} catch (const std::exception &error) {
 					const auto message = std::string{error.what()};
 					dispatch_async(dispatch_get_main_queue(), ^{
-					  completion(failure(Diagnostic::Category::compiler, message));
+					  completion(failure(Diagnostic::Category::compiler, message), false);
 					});
 				}
 			}

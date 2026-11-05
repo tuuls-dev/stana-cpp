@@ -280,6 +280,7 @@ auto Application::renderingDiagnostics() -> std::vector<WindowDiagnostics> {
 				.unifiedMemory = window.unifiedMemory,
 				.linearWorking = window.linearWorking,
 				.linearOutput = window.linearOutput,
+				.meshSampleCount = window.meshSampleCount,
 				.offscreenRevision = window.offscreenRevision,
 				.stateSteps = window.stateSteps,
 				.pipelineBuilds = window.pipelineBuilds,

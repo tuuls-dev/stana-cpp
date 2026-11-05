@@ -16,7 +16,6 @@ constexpr double doubleExtent = 20;
 constexpr double height = 30;
 constexpr double width = 40;
 constexpr double trailing = 7;
-constexpr double halfExtent = 5;
 
 void require(bool value, const std::string &message) {
 	if (!value) {
@@ -40,8 +39,8 @@ void values() {
 	const Rect rect{.size = {.width = doubleExtent, .height = extent}};
 	drawing.fillRect(rect, Color::accent(), doubleExtent);
 	require(
-		std::is_eq(drawing.commands.front().cornerRadius <=> halfExtent),
-		"radius canonicalized"
+		std::is_eq(drawing.commands.front().cornerRadius <=> doubleExtent),
+		"authored radius preserved for structural value equality"
 	);
 	Drawing copy = drawing;
 	copy.commands.front().text = "ignored";

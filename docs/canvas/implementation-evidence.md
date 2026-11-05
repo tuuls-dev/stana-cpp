@@ -104,3 +104,21 @@ own evidence; this Apple Silicon machine cannot establish those passes.
   broader injected-failure and long-running memory/performance gates remain pending.
 - The CPU-only direct raster-buffer path remains; discrete-device managed writes
   are explicitly notified/accounted, without asserting untested Intel/AMD output.
+
+### Sampling / portable validation / example checkpoint
+
+- Final mixed tiles now select 4x MSAA when supported/admitted, otherwise a
+  consistent 1x epoch profile; the selected mesh sample count is diagnostic.
+  Scratch resolve storage participates in peak admission and is reused per extent.
+- `ctest --preset asan-ubsan -E 'stana.consumer|stana.native|stana.policy'`:
+  14/14 passed (18.76 s), with the private compiler built under ASan/UBSan too.
+- `stana.gpu-validation` adds exhaustive finite binary16 round trips, signed sRGB
+  transfer, lease retirement, safe diagnostic close/removal/dedup, prepared geometry
+  pinning and 100 deterministic eight-pass DAGs (seed 0x531a).
+- `stana.canvas-example` passes headless production WGSL validation, including its
+  owned embedded application resource, compute-to-render graph and temporal slot.
+  The complete example includes checked factories, a mesh, round polyline,
+  reactive CPU/GPU updates and accessible text equivalents without platform branches.
+- Screen/headroom notifications request a final remap of retained linear output;
+  they do not themselves replace/step program state. Actual changing EDR hardware
+  headroom remains pending qualification.

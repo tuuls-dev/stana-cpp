@@ -109,6 +109,49 @@ void resourcesAndGraph() {
 	require(texture.has_value(), "valid transparent texture");
 	const auto state = GPUStateSlot::create({.width = 1, .height = 1, .resetKey = "initial"});
 	require(state.has_value(), "zero initializer state");
+	constexpr auto unknown = std::numeric_limits<std::uint8_t>::max();
+	require(
+		!GPUTexture::create(
+			{.width = 1,
+				.height = 1,
+				.format = static_cast<GPUTextureFormat>(unknown),
+				.bytes = bytes}
+		),
+		"unknown texture enum rejected"
+	);
+	require(
+		!GPUTexture::create(
+			{.width = 1,
+				.height = 1,
+				.bytes = bytes,
+				.encoding = static_cast<GPUColorEncoding>(unknown)}
+		),
+		"unknown encoding rejected"
+	);
+	GPUProgramDescriptor malformed{
+		.shader = *shader,
+		.passes = {GPURenderPass{.vertex = "vs", .fragment = "fs"}}
+	};
+	malformed.outputColor = static_cast<GPUColorEncoding>(unknown);
+	require(!GPUProgram::create(malformed), "unknown output encoding rejected");
+	malformed.outputColor = GPUColorEncoding::extendedLinear;
+	malformed.resources.emplace(
+		"sampler",
+		GPUSampler{.filter = static_cast<GPUSampler::Filter>(unknown)}
+	);
+	require(!GPUProgram::create(malformed), "unknown sampler rejected");
+	malformed.resources.erase("sampler");
+	for (const bool access : {false, true}) {
+		auto &pass = std::get<GPURenderPass>(malformed.passes.front());
+		GPUBinding binding{.resource = "output"};
+		if (access) {
+			binding.access = static_cast<GPUBinding::Access>(unknown);
+		} else {
+			binding.stage = static_cast<GPUBinding::Stage>(unknown);
+		}
+		pass.bindings = {binding};
+		require(!GPUProgram::create(malformed), "unknown binding enum rejected");
+	}
 	GPUProgramDescriptor descriptor{.shader = *shader};
 	descriptor.resources.emplace("history", *state);
 	descriptor.resources.emplace("temporary", GPUTarget{});
