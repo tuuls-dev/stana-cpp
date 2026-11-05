@@ -94,6 +94,7 @@ struct WindowDiagnostics {
 	std::uint64_t pipelineCacheHits = 0;
 	std::uint64_t resourceUploadBytes = 0;
 	std::uint64_t compositedTiles = 0;
+	std::uint64_t gpuLeafDraws = 0; ///< Ordered GPU command contributions encoded into dirty tiles.
 	std::uint64_t trackedBytes = 0;
 	std::uint64_t peakTrackedBytes = 0;
 	std::uint64_t managedWriteBytes = 0;

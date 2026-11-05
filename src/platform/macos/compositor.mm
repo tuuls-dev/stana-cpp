@@ -6,12 +6,14 @@
 #include <array>
 #include <cmath>
 #include <compare>
+#include <cstddef>
 #include <limits>
 #include <set>
 #include <span>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 namespace stana::native::gpu {
 namespace {
@@ -195,6 +197,26 @@ struct DrawItem {
 	visit(visit, root);
 	return result;
 }
+
+[[nodiscard]] auto programKey(const GPUCanvasLeaf &leaf, std::size_t ordinal)
+	-> ProgramInstanceKey {
+	return {.node = leaf.instance, .ordinal = ordinal};
+}
+
+[[nodiscard]] auto liveProgramKeys(const std::shared_ptr<const SceneBranch> &root)
+	-> std::set<ProgramInstanceKey> {
+	std::set<ProgramInstanceKey> keys;
+	for (const auto *leaf : allGPU(root, false)) {
+		std::size_t ordinal = 0;
+		for (const auto &command : leaf->drawing->commands) {
+			if (std::holds_alternative<std::shared_ptr<const Program>>(command)) {
+				keys.insert(programKey(*leaf, ordinal));
+			}
+			++ordinal;
+		}
+	}
+	return keys;
+}
 } // namespace
 
 auto Compositor::create(
@@ -290,10 +312,7 @@ void Compositor::desired(std::shared_ptr<const Scene> scene) {
 	if (!desired_) {
 		return;
 	}
-	std::set<NodeIdentity> alive;
-	for (const auto *leaf : allGPU(desired_->root, false)) {
-		alive.insert(leaf->instance);
-	}
+	const auto alive = liveProgramKeys(desired_->root);
 	for (auto iterator = instances_.begin(); iterator != instances_.end();) {
 		if (!alive.contains(iterator->first)) {
 			iterator = instances_.erase(iterator);
@@ -348,11 +367,16 @@ void Compositor::report(const GPUCanvasLeaf &leaf, std::uint64_t program, const 
 	});
 }
 
-void Compositor::compile(const GPUCanvasLeaf &leaf, const std::shared_ptr<const Program> &program) {
+void Compositor::compile(
+	const GPUCanvasLeaf &leaf,
+	std::size_t ordinal,
+	const std::shared_ptr<const Program> &program
+) {
 	if (compilerActive_) {
 		return;
 	}
-	auto &instance = instances_[leaf.instance];
+	const auto key = programKey(leaf, ordinal);
+	auto &instance = instances_[key];
 	if (instance.failedVersion == program->version ||
 		instance.requestedVersion == program->version) {
 		return;
@@ -365,12 +389,14 @@ void Compositor::compile(const GPUCanvasLeaf &leaf, const std::shared_ptr<const 
 		resources_.device,
 		window_,
 		program,
-		[weak, epoch, leaf, program](Result<std::shared_ptr<const Pipeline>> compiled, bool built)
-			-> void {
+		[weak, epoch, leaf, key, program](
+			Result<std::shared_ptr<const Pipeline>> compiled,
+			bool built
+		) -> void {
 			if (const auto owner = weak.lock();
 				owner && !owner->closed_ && owner->epoch_ == epoch) {
 				owner->compilerActive_ = false;
-				const auto found = owner->instances_.find(leaf.instance);
+				const auto found = owner->instances_.find(key);
 				if (found != owner->instances_.end() && found->second.desired &&
 					found->second.desired->version == program->version) {
 					if (compiled) {
@@ -738,12 +764,13 @@ auto Compositor::prepare(
 								.points = std::move(points)}
 						);
 					} else if constexpr (std::is_same_v<T, std::shared_ptr<const Program>>) {
-						auto &instance = instances_[leaf.instance];
+						const auto key = programKey(leaf, commandIndex);
+						auto &instance = instances_[key];
 						instance.desired = value;
 						if ((!instance.pipeline ||
 								instance.pipeline->version != value->pipelineVersion) &&
 							instance.failedVersion != value->version) {
-							compile(leaf, value);
+							compile(leaf, commandIndex, value);
 						}
 						std::shared_ptr<const ProgramBundle> output = instance.committed;
 						const bool newInput = !output ||
@@ -765,7 +792,7 @@ auto Compositor::prepare(
 							if (candidate) {
 								output = candidate->next;
 								packet->candidates.push_back(std::move(*candidate));
-								packet->candidateInstances.push_back(leaf.instance);
+								packet->candidateInstances.push_back(key);
 								selectTiles(grid, packet->scene->scale, leaf.bounds, packet->dirty);
 							} else {
 								instance.failedVersion = value->version;
@@ -785,7 +812,7 @@ auto Compositor::prepare(
 							if (candidate) {
 								output = candidate->next;
 								packet->candidates.push_back(std::move(*candidate));
-								packet->candidateInstances.push_back(leaf.instance);
+								packet->candidateInstances.push_back(key);
 							} else {
 								report(leaf, value->version, candidate.error());
 							}
@@ -1019,13 +1046,11 @@ auto Compositor::prepare(
 				return;
 			}
 			if (success) {
+				const auto alive =
+					liveProgramKeys(owner->desired_ ? owner->desired_->root : nullptr);
 				for (std::size_t index = 0; index < packet->candidates.size(); ++index) {
-					const auto alive =
-						allGPU(owner->desired_ ? owner->desired_->root : nullptr, false);
 					const auto id = packet->candidateInstances.at(index);
-					if (std::ranges::none_of(alive, [&](const auto *leaf) -> bool {
-							return leaf->instance == id;
-						})) {
+					if (!alive.contains(id)) {
 						continue;
 					}
 					if (const auto found = owner->instances_.find(id);

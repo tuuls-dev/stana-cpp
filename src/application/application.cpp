@@ -287,6 +287,7 @@ auto Application::renderingDiagnostics() -> std::vector<WindowDiagnostics> {
 				.pipelineCacheHits = window.pipelineCacheHits,
 				.resourceUploadBytes = window.resourceUploadBytes,
 				.compositedTiles = window.compositedTiles,
+				.gpuLeafDraws = window.gpuLeafDraws,
 				.trackedBytes = window.trackedBytes,
 				.peakTrackedBytes = window.peakTrackedBytes,
 				.managedWriteBytes = window.managedWriteBytes,

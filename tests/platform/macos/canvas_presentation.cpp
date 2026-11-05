@@ -109,7 +109,7 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 					return;
 				}
 				if (current.offscreenRevision == 0 || current.compositedTiles == 0 ||
-					!current.linearWorking || current.linearOutput) {
+					current.gpuLeafDraws == 0 || !current.linearWorking || current.linearOutput) {
 					throw std::runtime_error(
 						"HDR mixed output was not mapped once to the requested SDR display profile"
 					);

@@ -3,6 +3,8 @@
 #include "gpu_programs.hpp"
 #include "renderer.hpp"
 #include <array>
+#include <compare>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -34,6 +36,13 @@ struct ProgramInstance {
 	std::uint64_t requestedVersion = 0;
 };
 
+/// @brief Temporal state is per mounted occurrence and program command, not per node alone.
+struct ProgramInstanceKey {
+	NodeIdentity node{};
+	std::size_t ordinal = 0;
+	auto operator<=>(const ProgramInstanceKey &) const = default;
+};
+
 struct CompositePacket {
 	std::shared_ptr<const PreparedScene> scene;
 	std::shared_ptr<AllocationLedger> budget;
@@ -44,7 +53,7 @@ struct CompositePacket {
 	std::vector<std::shared_ptr<MeshUpload>> meshes;
 	std::vector<std::shared_ptr<BufferOwner>> buffers;
 	std::vector<ProgramCandidate> candidates;
-	std::vector<NodeIdentity> candidateInstances;
+	std::vector<ProgramInstanceKey> candidateInstances;
 	TileMask dirty;
 	bool linear = false;
 	bool outputLinear = false;
@@ -121,7 +130,7 @@ class Compositor : public std::enable_shared_from_this<Compositor> {
 	bool inFlight_ = false;
 	std::shared_ptr<RasterAccounting> rasterAccounting_;
 	std::shared_ptr<const Scene> desired_;
-	std::map<NodeIdentity, ProgramInstance> instances_;
+	std::map<ProgramInstanceKey, ProgramInstance> instances_;
 	std::map<CPUKey, std::weak_ptr<CPUAsset>> cpuCache_;
 	std::map<std::pair<std::uint64_t, std::size_t>, std::weak_ptr<BufferOwner>> lineCache_;
 	std::array<id<MTLRenderPipelineState>, 4> shape_{};
@@ -136,7 +145,8 @@ class Compositor : public std::enable_shared_from_this<Compositor> {
 	std::uint32_t samples_ = 4;
 	std::size_t diagnosticPending_ = 0;
 	std::vector<LogicalRect> changed_;
-	void compile(const GPUCanvasLeaf &, const std::shared_ptr<const Program> &);
+	void
+	compile(const GPUCanvasLeaf &, std::size_t ordinal, const std::shared_ptr<const Program> &);
 	void report(const GPUCanvasLeaf &, std::uint64_t program, const Failure &);
 	[[nodiscard]] auto
 	cpu(const PreparedOperation &,

@@ -59,7 +59,8 @@ auto main() -> int {
 	}
 	stana::Metrics metrics;
 	stana::WindowDiagnostics diagnostics;
-	if (metrics.measurements != 0 || diagnostics.renderingWork.cpuUploadBytes != 0) {
+	if (metrics.measurements != 0 || diagnostics.renderingWork.cpuUploadBytes != 0 ||
+		diagnostics.gpuLeafDraws != 0) {
 		return 1;
 	}
 	return stana::version() == "0.1.0"sv ? 0 : 1;

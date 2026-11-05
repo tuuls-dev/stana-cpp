@@ -4,6 +4,7 @@
 #include <cmath>
 #include <compare>
 #include <map>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 
@@ -280,15 +281,35 @@ void addInk(
 	}
 }
 
+/// @brief GPU leaves share CPU clip/border commands; content identity is the converted drawing.
+[[nodiscard]] auto
+gpuEquivalent(const std::optional<GPUCanvasLeaf> &left, const std::optional<GPUCanvasLeaf> &right)
+	-> bool {
+	if (!left.has_value() && !right.has_value()) {
+		return true;
+	}
+	if (!left.has_value() || !right.has_value()) {
+		return false;
+	}
+	return left->drawing == right->drawing && std::is_eq(left->opacity <=> right->opacity) &&
+		std::is_eq(left->bounds <=> right->bounds);
+}
+
 /// @brief Complete local value comparison handles coalesced A->B->A with fresh paint identities.
-[[nodiscard]] auto paintEquivalent(const PreparedPaint &left, const PreparedPaint &right) -> bool {
+[[nodiscard]] auto paintEquivalent(
+	const PreparedPaint &left,
+	const PreparedPaint &right,
+	const std::optional<GPUCanvasLeaf> &leftGpu,
+	const std::optional<GPUCanvasLeaf> &rightGpu
+) -> bool {
 	if (left.identity == right.identity) {
 		return true;
 	}
 	const auto sameOperation = [](const PreparedOperation &a, const PreparedOperation &b) -> bool {
 		return a.command == b.command;
 	};
-	return left.prefix.size() == right.prefix.size() && left.suffix.size() == right.suffix.size() &&
+	return gpuEquivalent(leftGpu, rightGpu) && left.prefix.size() == right.prefix.size() &&
+		left.suffix.size() == right.suffix.size() &&
 		std::equal(left.prefix.begin(), left.prefix.end(), right.prefix.begin(), sameOperation) &&
 		std::equal(left.suffix.begin(), left.suffix.end(), right.suffix.begin(), sameOperation);
 }
@@ -320,7 +341,12 @@ void diff(
 	if (!next->source->visible) {
 		return;
 	}
-	if (!paintEquivalent(*old->paint, *next->paint)) {
+	if (!paintEquivalent(
+			*old->paint,
+			*next->paint,
+			old->source->paint->gpu,
+			next->source->paint->gpu
+		)) {
 		addInk(unite(old->paint->prefixInk, old->paint->suffixInk), clip, grid, scale, mask, work);
 		addInk(
 			unite(next->paint->prefixInk, next->paint->suffixInk),

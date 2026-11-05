@@ -295,6 +295,7 @@ auto diagnostics() -> std::vector<WindowStatistics> {
 					.pipelineCacheHits = gpuWork.pipelineCacheHits,
 					.resourceUploadBytes = state->compositor->resources().uploadBytes,
 					.compositedTiles = gpuWork.compositedTiles,
+					.gpuLeafDraws = gpuWork.gpuLeafDraws,
 					.trackedBytes = budget->bytes,
 					.peakTrackedBytes = budget->peak,
 					.managedWriteBytes = state->accounting->managedWriteBytes.load(),

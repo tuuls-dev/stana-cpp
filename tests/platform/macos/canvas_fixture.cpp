@@ -149,7 +149,7 @@ auto builtinScenes() -> std::vector<std::shared_ptr<const Scene>> {
 	return scenes;
 }
 
-auto counterPrograms() -> std::vector<std::shared_ptr<const gpu::Program>> {
+auto counterScenes() -> std::vector<std::shared_ptr<const Scene>> {
 	const auto shader = GPUShader::source(R"(
 @group(0) @binding(0) var previous: texture_2d<f32>;
 @group(0) @binding(1) var next: texture_storage_2d<rgba16float, write>;
@@ -183,17 +183,30 @@ auto counterPrograms() -> std::vector<std::shared_ptr<const gpu::Program>> {
 	if (!program) {
 		throw std::runtime_error(program.error().message);
 	}
-	application_detail::GPUConversion conversion;
-	std::vector<std::shared_ptr<const gpu::Program>> result;
+	constexpr double extent = 32;
+	const Frame fill{.width = Length::fill(), .height = Length::fill()};
+	auto document = detail::Document::create({.width = extent, .height = extent});
+	const Signal model{GPUDrawing{*program}};
+	Transaction::perform([&] -> void {
+		MountContext context{.document = document, .parent = document->root()};
+		static_cast<void>(
+			stana::mount(GPUCanvas{.drawing = model, .layout = {.frame = fill}}, context)
+		);
+	});
+	application_detail::SceneConversion conversion;
+	std::vector<std::shared_ptr<const Scene>> result;
 	constexpr std::size_t steps = 1000;
 	result.reserve(steps);
 	for (std::size_t index = 0; index < steps; ++index) {
-		result.push_back(conversion.program(*program));
+		document->commit();
+		result.push_back(conversion.convert(document->renderSnapshot()));
 		program = program->updatingResources(descriptor.resources);
 		if (!program) {
 			throw std::runtime_error(program.error().message);
 		}
+		model.set(GPUDrawing{*program});
 	}
+	document->close();
 	return result;
 }
 } // namespace stana::native::fixtures
