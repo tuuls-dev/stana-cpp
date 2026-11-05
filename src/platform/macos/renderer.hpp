@@ -1,5 +1,6 @@
 #ifndef STANA_MACOS_RENDERER_HPP
 #define STANA_MACOS_RENDERER_HPP
+#include "../allocation.hpp"
 #include "../tiles.hpp"
 #import <CoreGraphics/CoreGraphics.h>
 #import <CoreText/CoreText.h>
@@ -100,12 +101,19 @@ struct PreparationTrace {
 /// @brief Full-scene reference and production tile replay share typography and state setup.
 /// CPU fixtures supply ordinary bitmap contexts; production supplies shared Metal memory.
 void rasterScene(CGContextRef, const PreparedScene &, PixelRect, bool cullBranches = true);
+void rasterRun(CGContextRef, double scale, PixelRect, const std::vector<PreparedOperation> &);
 
 /// @brief Independent atomic accounting survives off-main GPU resource cleanup.
 struct RasterAccounting {
+	std::shared_ptr<AllocationLedger> deviceBudget = std::make_shared<AllocationLedger>();
+	std::shared_ptr<AllocationLedger> windowBudget = std::make_shared<AllocationLedger>();
+
+	RasterAccounting() { deviceBudget->limit = deviceAllocationLimit; }
+
 	std::atomic<std::size_t> bytes{0};
 	std::atomic<std::size_t> peak{0};
 	std::atomic<std::uint64_t> allocations{0};
+	std::atomic<std::uint64_t> managedWriteBytes{0};
 };
 
 /// @brief One reusable context backed directly by shared Metal memory; noncopyable.
@@ -113,7 +121,9 @@ struct RasterTile {
 	TileLayout layout;
 	id<MTLBuffer> buffer = nil;
 	CGContextRef bitmapContext = nullptr;
+	mutable bool cpuDirty = true;
 	std::shared_ptr<RasterAccounting> accounting;
+	std::shared_ptr<AllocationLease> combinedLease;
 	RasterTile(TileLayout, id<MTLDevice>, std::shared_ptr<RasterAccounting>);
 	RasterTile(const RasterTile &) = delete;
 	RasterTile(RasterTile &&) = delete;

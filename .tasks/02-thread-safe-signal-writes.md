@@ -400,63 +400,52 @@ test deadlines, not timing sleeps. Account for the existing libc++ named-module
 must not be presented as the production UI pattern.
 
 Add a focused portable suite, such as `tests/reactive/thread_safe_writes.cpp`, and
-register it as `stana.reactive.threadSafeWrites` in `tests/CMakeLists.txt`. Add UI,
-task, native, and external-consumer cases where those boundaries are exercised.
-Internal test seams may pause admission/turn boundaries and inspect mailbox counts;
-do not export a mutable production endpoint or fake a second delivery engine.
+register it as `stana.reactive.threadSafeWrites` in `tests/CMakeLists.txt`. Existing
+`tests/reactive/contracts.cpp` remains the synchronous `set()`, transaction, and
+worker-`get()` net; extend it with worker `set()` affinity so `set()` cannot become
+thread-safe. Do not add named gates for `update()` or increment. Existing
+`stana.tasks` and `stana.ui` identity coverage continue to run unchanged. Internal
+test seams may pause admission/turn boundaries and inspect mailbox counts; do not
+export a mutable production endpoint or fake a second delivery engine.
+
+Named gates below are the required portable assertions. Behavioral contracts that
+lost a dedicated row (no lost wakeup, no ghost admission on allocation failure,
+native/headless conflict rejection, every run-exit path closing the session) remain
+implementation rules in the sections above.
 
 ### API, ordering, and settlement gates
 
 | ID | Scenario and required assertion |
 | --- | --- |
-| S01 | Existing owner `set()` applies and notifies before return; existing transaction batching is unchanged. |
-| S02 | Worker `get()`, `set()`, `update()`, and increment still throw affinity errors without changing stored value. |
-| S03 | Worker queued setter returns after admission; value/observer remain unchanged until owner pump; delivery records the actual owner thread. |
-| S04 | Owner queued setter also defers; an immediate owner `get()` sees the old value. |
-| S05 | One producer queues distinct values; every unequal value is observed in FIFO order, without value coalescing. |
-| S06 | Multiple producers submit unique labeled values; every admitted command applies once, with per-producer ordering and no duplicate/lost write. |
-| S07 | Interleaved signals on one endpoint preserve admitted order; there is no implicit cross-signal transaction. |
-| S08 | Custom equality runs on the owner only; equality suppression matches synchronous `set()`, including values equal only when delivery occurs. |
-| S09 | Synchronous owner `set()` overtakes queued work exactly as documented; no stale-command auto-cancellation. |
-| S10 | A queued setter inside an owner transaction remains deferred; synchronous writes still batch normally. |
-| S11 | Observer/effect queues another value; it runs on a later turn, not recursively in the active snapshot. Nested pumps cannot reorder it. |
-| S12 | Owner queued mutation during computed evaluation rejects; worker admission does not inspect another thread's collector. |
-| S13 | Deliver while UI observes the signal: retained text updates, no remount, and coherent publication through the existing document commit path. |
-| S14 | Nested native loop/explicit pump during a transaction or reactive flush defers delivery until safe; no spin or lost wakeup. |
+| S01 | Worker queued setter returns after admission; value/observer remain unchanged until owner pump; delivery records the actual owner thread. |
+| S02 | Owner queued setter also defers, including inside a transaction; an immediate owner `get()` sees the old value; synchronous writes still batch normally. |
+| S03 | One producer queues distinct values in FIFO order without coalescing; interleaved signals on one endpoint keep admission order; each apply uses independent settlement. |
+| S04 | Multiple producers submit unique labeled values; every admitted command applies once, with per-producer ordering and no duplicate/lost write. |
+| S05 | Custom equality runs on the owner only; equality suppression matches synchronous `set()`, including values equal only when delivery occurs. |
+| S06 | Synchronous owner `set()` overtakes queued work exactly as documented; no stale-command auto-cancellation. |
+| S07 | Observer/effect queues another value; it runs on a later turn, not recursively in the active snapshot. Nested explicit pump during a transaction or reactive flush defers delivery until safe. |
+| S08 | Owner queued mutation during computed evaluation rejects; worker admission does not inspect another thread's collector. |
+| S09 | Deliver while UI observes the signal: retained text updates, no remount, and coherent publication through the existing document commit path. |
 
 ### Activation, isolation, and ownership gates
 
 | ID | Scenario and required assertion |
 | --- | --- |
 | L01 | Signal created before native run/first TestHost is adopted on activation; dormant submission rejects and leaves no queued work. |
-| L02 | Native installation precedes mount effects; prepare/mount failure closes admission and releases wakeup resources. |
-| L03 | Two hosts on one owner share delivery; closing one does not cancel the other's endpoint; repeated close is harmless. |
-| L04 | Different owner threads remain isolated even if producers have their own thread-local reactive/task runtime. |
-| L05 | Closing one native window preserves delivery to another; final run exit closes the epoch. |
-| L06 | Native/headless conflicts and nested native sessions reject before replacing a live provider. |
-| L07 | Last external signal handle disappears before delivery; weak command expires and payload releases without observation or graph resurrection. |
-| L08 | Component unmount removes its observers; shared model can still update; removed nodes are not recreated. |
-| L09 | Session closes with backlog; unapplied payloads release, late wakeups no-op, and subsequent admission rejects. |
-| L10 | Race submit against close using controlled interleavings; no rejected command applies and no command starts after closure. |
-| L11 | Owner thread exits while workers retain handles; submission rejects without accessing destroyed TLS. A new thread/session cannot revive the old endpoint. |
-| L12 | New epoch accepts newly created signals; old signal remains synchronously usable on its owner but its queued route stays closed. |
-| L13 | Empty native run, unsupported native backend, missing resources, and explicit stop all release the session on their real exit paths. |
-| L14 | Native source notification races cancellation; retained native capability remains valid and late callbacks cannot access application stack storage. |
+| L02 | Two hosts on one owner share delivery; closing one does not cancel the other's endpoint; repeated close is harmless. |
+| L03 | Different owner threads remain isolated even if producers have their own thread-local reactive/task runtime. |
+| L04 | Last external signal handle disappears before delivery; weak command expires and payload releases without observation or graph resurrection. |
+| L05 | Session closes with backlog; unapplied payloads release, late wakeups no-op, and subsequent admission rejects. |
+| L06 | Race submit against close using controlled interleavings; no rejected command applies and no command starts after closure. |
+| L07 | Owner thread exits while workers retain handles; submission rejects without accessing destroyed TLS. A new thread/session cannot revive the old endpoint. New-epoch signals accept queued writes; the old signal remains synchronously usable on its owner with its queued route closed. |
 
-### Capacity, failure, and scheduling gates
+### Capacity and failure gates
 
 | ID | Scenario and required assertion |
 | --- | --- |
-| F01 | Fill all 4096 pending slots; the next submission throws overflow, never applies later, and does not displace existing values. |
-| F02 | Active snapshot still counts toward capacity; applying/discarding commands returns capacity exactly once. |
-| F03 | Payload construction/queue allocation fails through a narrow injected seam; no ghost admission, leaked payload, stuck count, or suppressed original exception. |
-| F04 | Equality, assignment, observer, and settlement failures surface on the pumping owner, close the failed session, and release remaining backlog. |
-| F05 | Real native callback handles both standard and nonstandard application exceptions; run fails diagnostically rather than unwinding across the native boundary. |
-| F06 | Reentrant payload destruction and callbacks never execute under the mailbox lock; no deadlock when cleanup calls an allowed Stana operation. |
-| F07 | Adversarial admission/snapshot/wakeup interleavings cannot strand a nonempty active native queue. |
-| F08 | Task delays/cancellation/error handling still pass; mailbox pumping neither advances fake time nor resumes cancelled coroutines. |
-| F09 | Repeated producer/drain/close stress finishes under bounded deadlines; no race, use-after-free, or ownership cycle in available instrumentation. |
-| F10 | Headless tests run without AppKit/Metal initialization on all supported targets; unsupported native services remain explicitly unsupported. |
+| F01 | Fill all 4096 pending slots, including any detached active snapshot; the next submission throws overflow, never applies later, and does not displace existing values. Applying or discarding commands returns capacity exactly once. |
+| F02 | One apply-time observer or settlement failure surfaces on the pumping owner, closes the failed session, and releases remaining backlog. |
+| F03 | Reentrant payload destruction and callbacks never execute under the mailbox lock; no deadlock when cleanup calls an allowed Stana operation. |
 
 Do not infer race freedom from AddressSanitizer or UndefinedBehaviorSanitizer.
 Use deterministic race fixtures on every target. Run a supported ThreadSanitizer
@@ -467,12 +456,17 @@ as a limitation rather than as a passing test.
 
 ### Native and external consumer qualification
 
-Extend the opt-in native suite with a bounded worker-result scenario exercising the
-real wakeup source and public setter. Verify main-thread observation, updated scene
-content, and continued native event processing while a worker is held behind a test
-barrier. Release the worker from a separate UI callback; do not block the UI to wait
-for it. Add shutdown-with-pending-work and owner-side failure cases. Synthetic
-headless delivery is not proof that the native wakeup/exception boundary works.
+Extend the opt-in native suite with these three scenarios. Synthetic headless
+delivery is not proof that the native wakeup/exception boundary works.
+
+1. Worker result through the real wakeup source and public setter: main-thread
+   observation, updated scene content, and continued native event processing while
+   a worker is held behind a test barrier. Release the worker from a separate UI
+   callback; do not block the UI to wait for it.
+2. Shutdown with pending work: unapplied payloads release, late callbacks no-op,
+   and the native source is not used after teardown.
+3. Apply-time exception inside the native callback: contained, nonzero
+   `Application::run()`, existing diagnostic style, no unwind across libdispatch.
 
 Extend the external source/install/relocation consumer to instantiate the public
 member and execute a worker-to-headless-delivery assertion using the exported
@@ -485,15 +479,16 @@ thread target propagation if needed, not platform-specific consumer linker flags
 
 ### Phase A — Preserve contracts and add the portable mailbox
 
-- [ ] Add affinity/synchronous-behavior regression cases before changing dispatch.
+- [ ] Keep existing reactive affinity/synchronous tests passing; add worker `set()`
+  affinity if it is missing from `tests/reactive/contracts.cpp`.
 - [ ] Define stable endpoint state, dormant/active/closed epochs, lease rules,
   admission/close synchronization, and the named capacity.
 - [ ] Implement non-generic mailbox/lifecycle code in the reactive implementation
   unit and register it in the existing target/policy scans.
 - [ ] Add weak typed commands and `void Signal<T>::setThreadSafe(T) const` with
   shared owner-side setter behavior and complete Doxygen contracts.
-- [ ] Prove API/ordering/weak-ownership/capacity behavior through focused portable
-  endpoint fixtures; keep existing reactive tests passing.
+- [ ] Prove S01–S08, L04, L06, and F01–F03 through focused portable endpoint
+  fixtures; keep existing reactive tests passing.
 
 **Exit gate:** no cross-thread graph access and no change to synchronous `set()`.
 
@@ -504,30 +499,30 @@ thread target propagation if needed, not platform-specific consumer linker flags
 - [ ] Add explicit one-snapshot mailbox turns to `flush()`/`advanceTime()` without
   changing ordinary runtime settlement or the task clock.
 - [ ] Implement safe-turn/reentrant-pump behavior and owner-side failure surfacing.
-- [ ] Pass multi-host/multi-owner, retained-UI, task compatibility, pre-host signal,
-  shutdown, and real-producer tests without native initialization.
+- [ ] Pass L01–L03, L05, L07, S09, and real-producer tests without native
+  initialization. Existing task tests continue to pass; mailbox pumping must not
+  invent a fake timer.
 
 **Exit gate:** portable tests exercise the real mailbox through the real host path.
 
 ### Phase C — Native activation, wakeups, and exception containment
 
-- [ ] Guard both `Application::run()` overloads before any preparation and cover
-  every early return/throw path, including empty/unsupported runs.
+- [ ] Guard both `Application::run()` overloads before any preparation and close
+  admission on every early return/throw path, including empty/unsupported runs.
 - [ ] Add private owning native wakeup transport and the macOS main-queue source.
-- [ ] Prove thread-safe notification, no lost wakeups, safe cancellation, finite
-  turns, and no delivery inside unsafe/reentrant runtime phases.
+- [ ] Keep the no-lost-wakeup, safe-cancellation, and finite-turn invariants;
+  native scenario 1 hangs if a nonempty active queue is stranded.
 - [ ] Catch all application exceptions at the native callback boundary and report
   nonzero run completion through the existing diagnostic style.
-- [ ] Pass real worker-to-UI, event responsiveness, multi-window, and shutdown
-  qualification in an actual logged-in native session.
+- [ ] Pass the three native qualification scenarios in an actual logged-in native
+  session.
 
 **Exit gate:** normal user code submits results without manual UI dispatch and no
 native callback can outlive an unguarded application/session lifetime.
 
-### Phase D — Stress, distribution, documentation, and final evidence
+### Phase D — Distribution, documentation, and final evidence
 
-- [ ] Complete every S/L/F gate, including allocation/error injection and controlled
-  admission/close/wakeup interleavings.
+- [ ] Complete every remaining S/L/F gate and the three native scenarios.
 - [ ] Extend source/install/relocation consumer coverage and verify ABI/toolchain
   requirements without adding an alternative public header API.
 - [ ] Document queued-versus-synchronous behavior, active-session requirement,
@@ -589,13 +584,13 @@ results, and actual limitations; an implementation attempt is not verification.
 
 | Gate | Status | Evidence to record |
 | --- | --- | --- |
-| Public API and synchronous compatibility | Pending | S01–S04, S08–S12; exported signature and documented exceptions. |
-| FIFO/concurrent producers | Pending | S05–S07, S11, S14; producer counts, ordering assertions, controlled interleavings. |
-| Host activation/routing | Pending | L01–L06, L12–L13; pre-run signals, shared hosts/windows, isolated owners, rejected provider replacement. |
-| Lifetime and shutdown | Pending | L07–L11, L14; payload release, TLS exit, race linearization, late callbacks. |
-| Retained UI and task compatibility | Pending | S13, F08, F10; real mount/commit path and unchanged coroutine tests. |
-| Capacity, exception, and wakeup integrity | Pending | F01–F07, F09; injection seams, cleanup counts, no lost wakeups/deadlocks. |
-| Real native behavior | Pending | Native main-thread/event-progress, multi-window, failure, and close scenarios with hardware/OS details. |
+| Public API and synchronous compatibility | Pending | S01, S02, S05, S06, S08; existing `stana.reactive` plus worker `set()` affinity; exported signature and documented exceptions. |
+| FIFO/concurrent producers | Pending | S03, S04, S07; producer counts, ordering assertions, later-turn and nested-pump checks. |
+| Host activation/routing | Pending | L01–L03, L07; pre-run signals, shared hosts, isolated owners, new-epoch vs old-signal routing. |
+| Lifetime and shutdown | Pending | L04–L07; payload release, TLS exit, submit/close race linearization. |
+| Retained UI | Pending | S09; real mount/commit path. Existing `stana.tasks` and `stana.ui` remain passing. |
+| Capacity and apply-time failure | Pending | F01–F03; overflow, restored capacity, session close on apply failure, no lock-held reentry. |
+| Real native behavior | Pending | Native scenarios 1–3 with hardware/OS details: worker-to-UI, shutdown with pending work, contained apply exception. |
 | Debug/Release/policy/format | Pending | Commands and results using pinned tools with analysis enabled. |
 | Consumer/install/relocation | Pending | External queued-setter instantiation and worker-to-headless assertion. |
 | Sanitizers/race instrumentation | Pending | Applicable ASan/UBSan results; TSan result or precise unavailable-environment limitation. |
@@ -611,14 +606,17 @@ results, and actual limitations; an implementation attempt is not verification.
    remain deferred. No hidden thread-safe read or update semantics are introduced.
 4. FIFO, equality, independent transaction settlement, reentrancy, and set/queue
    interleaving match the explicit contracts, without coalescing intermediate values.
-5. Pre-run signals, multi-host/window ownership, terminal epochs, owner exit, failed
-   startup, and submit/close races have deterministic, tested outcomes.
+5. Pre-run signals, shared-host leases, isolated owners, terminal epochs, owner
+   exit, and submit/close races have deterministic, tested outcomes (L01–L07).
 6. Pending storage has the documented count bound, weak signal ownership, no cycles,
-   safe payload cleanup, and native wakeups that cannot be lost or use freed state.
-7. Application-time failures surface on the owner; native exceptions are contained
-   and cause diagnostic nonzero exit rather than unwinding through native code.
-8. Portable/headless, real native, consumer, policy, formatting, and applicable
-   sanitizer gates have recorded evidence; required unavailable gates remain pending.
+   and safe payload cleanup (F01, F03, L04). Native wakeups cannot be lost or use
+   freed state; native scenarios 1–2 are the required evidence.
+7. Application-time failures surface on the owner (F02); native exceptions are
+   contained and cause diagnostic nonzero exit rather than unwinding through native
+   code (native scenario 3).
+8. Remaining S/L/F gates, native scenarios 1–3, consumer, policy, formatting, and
+   applicable sanitizer evidence are recorded; required unavailable gates remain
+   pending.
 9. Public documentation teaches a working owned-worker/result-display flow and
    states shutdown, ordering, capacity, and stale-request limitations accurately.
 

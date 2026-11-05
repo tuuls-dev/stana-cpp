@@ -1,6 +1,7 @@
 #ifndef STANA_MACOS_PRESENTATION_HPP
 #define STANA_MACOS_PRESENTATION_HPP
 #include "../scheduler.hpp"
+#include "compositor.hpp"
 #include "renderer.hpp"
 #import <AppKit/AppKit.h>
 #import <QuartzCore/CAMetalLayer.h>
@@ -13,6 +14,7 @@ namespace stana::native {
 struct BatchResources {
 	std::vector<std::shared_ptr<RasterTile>> sources;
 	std::shared_ptr<const PreparedScene> target;
+	std::shared_ptr<const gpu::CompositePacket> composite;
 };
 
 struct ActiveBatch {
@@ -20,8 +22,10 @@ struct ActiveBatch {
 	std::uint64_t surfaceEpoch = 0;
 	std::uint64_t attachmentGeneration = 0;
 	std::shared_ptr<const PreparedScene> target;
+	std::shared_ptr<const gpu::CompositePacket> composite;
 	std::vector<TileId>
 		submittedTiles; ///< Complete copy/present set, not a claim of per-tile display proof.
+	double headroom = 1;
 	TileId proofTile{}; ///< User-approved transaction anchor: first actual submitted tile.
 	bool scheduledPresentationIssued = false;
 	std::optional<double>
@@ -33,6 +37,17 @@ struct WindowState {
 	Window callbacks;
 	id<MTLDevice> device = nil;
 	id<MTLCommandQueue> queue = nil;
+	std::shared_ptr<gpu::Compositor> compositor;
+	std::shared_ptr<const gpu::CompositePacket> confirmedPacket;
+	std::shared_ptr<const gpu::CompositePacket> pendingPacket;
+	std::shared_ptr<const PreparedScene> preparingScene;
+	bool hybridSurface = false;
+	bool linearOutput = false;
+	double confirmedHeadroom = 1;
+	bool offscreenRecoveryUsed = false;
+	bool offscreenDeadlineArmed = false;
+	bool offscreenTimedOut = false;
+	std::uint64_t offscreenGeneration = 0;
 	CALayer *layer = nil;
 	__weak NSView *view = nil;
 	std::vector<CAMetalLayer *> tileLayers;
@@ -63,6 +78,7 @@ struct WindowState {
 	[[nodiscard]] auto allowsPointer() const -> bool { return !isClosed && confirmedRevision != 0; }
 };
 
+void rendererFailure(const std::shared_ptr<WindowState> &, const gpu::Failure &);
 void requestFrame(const std::shared_ptr<WindowState> &);
 /// @brief Invalidates input/evidence before draining and replacing an entire attachment.
 void installSurface(const std::shared_ptr<WindowState> &);

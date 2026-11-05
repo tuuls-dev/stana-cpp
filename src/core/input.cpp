@@ -228,7 +228,11 @@ auto Document::beginPresentation(
 		enablePresentationTracking();
 	}
 	const auto found = geometryHistory_.find(revision);
-	if (isClosed_ || found == geometryHistory_.end()) {
+	const auto geometry = found != geometryHistory_.end()
+		? found->second
+		: (preparedGeometry_ && preparedGeometry_->first == revision ? preparedGeometry_->second
+																	 : GeometryRoot{});
+	if (isClosed_ || !geometry) {
 		return std::unexpected(Error::invalidValue);
 	}
 	const auto attempt = presentation_.begin(epoch, revision, tiles);
@@ -239,7 +243,7 @@ auto Document::beginPresentation(
 		}
 		pinnedGeometry_.emplace(
 			attempt->sequence,
-			PinnedGeometry{.attempt = *attempt, .root = found->second}
+			PinnedGeometry{.attempt = *attempt, .root = geometry}
 		);
 	}
 	return attempt;
@@ -321,7 +325,14 @@ void Document::abandonPresentation(PresentationAttempt attempt) {
 	}
 }
 
+void Document::holdPreparedGeometry(std::uint64_t revision) {
+	if (const auto found = geometryHistory_.find(revision); found != geometryHistory_.end()) {
+		preparedGeometry_ = std::pair{revision, found->second};
+	}
+}
+
 void Document::resetPresentation(std::uint64_t epoch) {
+	preparedGeometry_.reset();
 	presentation_.reset(epoch);
 	presentationEpoch_ = epoch;
 	pinnedGeometry_.clear();

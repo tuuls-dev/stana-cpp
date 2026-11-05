@@ -12,6 +12,7 @@ if(APPLE AND (NOT CMAKE_OSX_DEPLOYMENT_TARGET OR
 endif()
 include("${CMAKE_CURRENT_LIST_DIR}/Dependencies.cmake")
 stana_find_icu()
+include("${CMAKE_CURRENT_LIST_DIR}/stanaTint.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/stanaTargets.cmake")
 if(APPLE)
 	if(NOT CMAKE_OSX_SYSROOT)

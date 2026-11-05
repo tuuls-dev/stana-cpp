@@ -206,10 +206,20 @@ struct Frame {
 /// Components store these values without native color objects; renderer adapters
 /// interpret them in the scene color contract. Alpha is opacity, with zero transparent.
 struct Color {
-	double red = 0;	  ///< Red channel in the scene color contract.
-	double green = 0; ///< Green channel in the scene color contract.
-	double blue = 0;  ///< Blue channel in the scene color contract.
-	double alpha = 1; ///< Opacity; zero is transparent and one is opaque.
+	enum class Token : std::uint8_t {
+		explicitColor,
+		surface,
+		background,
+		text,
+		secondaryText,
+		accent,
+		border
+	};
+	double red = 0;						///< Red channel in the scene color contract.
+	double green = 0;					///< Green channel in the scene color contract.
+	double blue = 0;					///< Blue channel in the scene color contract.
+	double alpha = 1;					///< Opacity; zero is transparent and one is opaque.
+	Token token = Token::explicitColor; ///< Explicit numeric colors are never theme-dependent.
 
 	[[nodiscard]] static constexpr auto
 	rgb(double red, double green, double blue, double alpha = 1) noexcept -> Color {
@@ -233,8 +243,70 @@ struct Color {
 			.red = defaults::accentRed,
 			.green = defaults::accentGreen,
 			.blue = defaults::accentBlue,
-			.alpha = 1
+			.alpha = 1,
+			.token = Token::accent
 		};
+	}
+
+	[[nodiscard]] static constexpr auto surface() noexcept -> Color {
+		return {.token = Token::surface};
+	}
+
+	[[nodiscard]] static constexpr auto background() noexcept -> Color {
+		return {.token = Token::background};
+	}
+
+	[[nodiscard]] static constexpr auto text() noexcept -> Color { return {.token = Token::text}; }
+
+	[[nodiscard]] static constexpr auto secondaryText() noexcept -> Color {
+		return {.token = Token::secondaryText};
+	}
+
+	[[nodiscard]] static constexpr auto border() noexcept -> Color {
+		return {.token = Token::border};
+	}
+
+	[[nodiscard]] auto resolved(Theme theme, bool highContrast = false) const noexcept -> Color {
+		constexpr double secondaryDark = 0.72;
+		constexpr double secondaryDarkBlue = 0.74;
+		constexpr double secondaryLight = 0.36;
+		constexpr double secondaryLightBlue = 0.38;
+		constexpr double surfaceDark = 0.17;
+		constexpr double surfaceDarkBlue = 0.18;
+		constexpr double backgroundDark = 0.11;
+		constexpr double backgroundDarkBlue = 0.12;
+		constexpr double backgroundLight = 0.96;
+		constexpr double backgroundLightBlue = 0.97;
+		const bool dark = theme == Theme::dark;
+		Color result;
+		switch (token) {
+		case Token::explicitColor:
+			return *this;
+		case Token::accent:
+			result = rgb(defaults::accentRed, defaults::accentGreen, defaults::accentBlue);
+			break;
+		case Token::text:
+			result = dark ? white() : black();
+			break;
+		case Token::secondaryText:
+			result = dark ? rgb(secondaryDark, secondaryDark, secondaryDarkBlue)
+						  : rgb(secondaryLight, secondaryLight, secondaryLightBlue);
+			break;
+		case Token::surface:
+			result = dark ? rgb(surfaceDark, surfaceDark, surfaceDarkBlue) : white();
+			break;
+		case Token::background:
+			result = dark ? rgb(backgroundDark, backgroundDark, backgroundDarkBlue)
+						  : rgb(backgroundLight, backgroundLight, backgroundLightBlue);
+			break;
+		case Token::border: {
+			const double value = highContrast ? (dark ? 0.8 : 0.2) : (dark ? 0.36 : 0.76);
+			result = rgb(value, value, value);
+			break;
+		}
+		}
+		result.alpha = alpha;
+		return result;
 	}
 
 	auto operator<=>(const Color &) const = default;
@@ -331,6 +403,20 @@ struct Environment {
 };
 
 namespace detail {
+/// @brief The direction-resolved content box shared by text and both canvas projections.
+[[nodiscard]] inline auto contentRect(Rect outer, Insets padding, Direction direction) -> Rect {
+	return {
+		.origin =
+			{.x = outer.origin.x +
+					(direction == Direction::leftToRight ? padding.leading : padding.trailing),
+				.y = outer.origin.y + padding.top},
+		.size = {
+			.width = std::max(0.0, outer.size.width - padding.leading - padding.trailing),
+			.height = std::max(0.0, outer.size.height - padding.top - padding.bottom)
+		}
+	};
+}
+
 /// @brief Reserves a never-reused process-local token for documents, nodes and resources.
 /// Relaxed atomic ordering guarantees uniqueness only, not publication of UI state.
 /// Throws on exhaustion instead of wrapping into an existing identity.

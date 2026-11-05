@@ -28,6 +28,7 @@ template <Component Content> struct Window {
 	std::string title{}; ///< Initial native title; owns its UTF-8 characters.
 	Size size{};		 ///< Initial content dimensions in logical points, excluding native chrome.
 	Content content;	 ///< Root description mounted once when the application starts.
+	RenderingColorMode renderingColorMode = RenderingColorMode::automatic;
 };
 
 namespace detail {
@@ -38,6 +39,7 @@ namespace detail {
 struct WindowSession {
 	std::string title{}; ///< Owning title configuration for native construction.
 	Size size{};		 ///< Initial logical viewport matching document construction.
+	RenderingColorMode renderingColorMode = RenderingColorMode::automatic;
 	std::shared_ptr<Document> document{}; ///< Authoritative retained window state.
 };
 
@@ -81,6 +83,21 @@ struct RenderingWork {
 /// Other tile timestamps remain diagnostic, not independent display proof. This is acknowledged
 /// last-known geometry, not a promise of scanout-atomic input or a performance qualification.
 struct WindowDiagnostics {
+	std::string deviceName{};
+	bool unifiedMemory = false;
+	bool linearWorking = false;
+	bool linearOutput = false;
+	std::uint32_t meshSampleCount = 1;
+	std::uint64_t offscreenRevision = 0;
+	std::uint64_t stateSteps = 0;
+	std::uint64_t pipelineBuilds = 0;
+	std::uint64_t pipelineCacheHits = 0;
+	std::uint64_t resourceUploadBytes = 0;
+	std::uint64_t compositedTiles = 0;
+	std::uint64_t gpuLeafDraws = 0; ///< Ordered GPU command contributions encoded into dirty tiles.
+	std::uint64_t trackedBytes = 0;
+	std::uint64_t peakTrackedBytes = 0;
+	std::uint64_t managedWriteBytes = 0;
 	std::uint64_t surfaceEpoch = 0; ///< Current native geometry/surface generation.
 	std::optional<std::uint64_t> submittedSceneRevision{}; ///< Last GPU submission, if any.
 	std::optional<std::uint64_t>
@@ -154,7 +171,12 @@ class Application {
 			MountContext context{.document = document, .parent = document->root()};
 			static_cast<void>(mount(window.content, context));
 		});
-		return {.title = window.title, .size = window.size, .document = std::move(document)};
+		return {
+			.title = window.title,
+			.size = window.size,
+			.renderingColorMode = window.renderingColorMode,
+			.document = std::move(document)
+		};
 	}
 };
 

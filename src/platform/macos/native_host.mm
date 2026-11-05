@@ -208,6 +208,22 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 	}
 }
 
+- (void)windowDidChangeScreen:(NSNotification *)notification {
+	static_cast<void>(notification);
+	if (state_ && !state_->isClosed) {
+		// Backing-scale changes replace the surface separately. A display/headroom
+		// change only remaps the cached linear packet; it must not step state.
+		stana::native::requestFrame(state_);
+	}
+}
+
+- (void)screenParametersChanged:(NSNotification *)notification {
+	static_cast<void>(notification);
+	if (state_ && !state_->isClosed) {
+		stana::native::requestFrame(state_);
+	}
+}
+
 - (void)windowDidChangeOcclusionState:(NSNotification *)notification {
 	static_cast<void>(notification);
 	if (state_ && !state_->isClosed) {
@@ -216,6 +232,7 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 }
 
 - (void)windowWillClose:(NSNotification *)notification {
+	[NSNotificationCenter.defaultCenter removeObserver:self];
 	NSWindow *const closingWindow = notification.object;
 	if (state_ && !std::exchange(state_->isClosed, true)) {
 		stana::native::closeRenderer(state_);
@@ -253,15 +270,42 @@ auto diagnostics() -> std::vector<WindowStatistics> {
 			const auto latest = state->callbacks.scene();
 			state->work.hasPendingScene = latest &&
 				(!state->confirmedComposite ||
-					state->confirmedComposite->source->revision != (*latest)->revision);
+					state->confirmedComposite->source->revision != (*latest)->revision ||
+					(state->hybridSurface &&
+						(state->compositor->hasPendingWork() ||
+							state->compositor->readyPacket() != state->confirmedPacket)));
+			const auto &gpuWork = state->compositor->statistics();
+			auto work = state->work;
+			work.rasterizedPixels += gpuWork.cpuRasterPixels;
+			const auto &budget = state->compositor->resources().budget;
+			const std::scoped_lock lock{budget->mutex};
+			const char *const deviceName = state->device.name.UTF8String;
 			result.push_back(
-				{.logicalViewport = state->logicalSize,
+				{.deviceName = deviceName != nullptr ? std::string{deviceName} : std::string{},
+					.unifiedMemory = state->device.hasUnifiedMemory,
+					.linearWorking = state->compositor->readyPacket() &&
+						state->compositor->readyPacket()->linear,
+					.linearOutput = state->linearOutput,
+					.meshSampleCount = state->compositor->readyPacket()
+						? state->compositor->readyPacket()->samples
+						: 1,
+					.offscreenRevision = gpuWork.completedRevision,
+					.stateSteps = gpuWork.stateSteps,
+					.pipelineBuilds = gpuWork.pipelineBuilds,
+					.pipelineCacheHits = gpuWork.pipelineCacheHits,
+					.resourceUploadBytes = state->compositor->resources().uploadBytes,
+					.compositedTiles = gpuWork.compositedTiles,
+					.gpuLeafDraws = gpuWork.gpuLeafDraws,
+					.trackedBytes = budget->bytes,
+					.peakTrackedBytes = budget->peak,
+					.managedWriteBytes = state->accounting->managedWriteBytes.load(),
+					.logicalViewport = state->logicalSize,
 					.backingScale = state->scale,
 					.surfaceEpoch = state->surfaceEpoch,
 					.submittedRevision = state->submittedRevision,
 					.confirmedRevision = state->confirmedRevision,
 					.failure = state->failureMessage,
-					.renderingWork = state->work,
+					.renderingWork = work,
 					.preparedBranches = state->preparationTrace.branches,
 					.preparedPaints = state->preparationTrace.paints,
 					.drawableAcquisitions = state->drawableAcquisitions}
@@ -314,13 +358,14 @@ auto run(std::vector<Window> windows) -> std::expected<int, std::string> {
 		[NSApplication sharedApplication];
 		[NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
 		id<MTLDevice> const device = MTLCreateSystemDefaultDevice();
-		if (device == nil || !device.hasUnifiedMemory ||
-			![device supportsFamily:MTLGPUFamilyApple1]) {
-			return std::unexpected(
-				"Native rendering requires an Apple-family unified-memory Metal device (Apple "
-				"Silicon)"
-			);
+		if (device == nil) {
+			return std::unexpected("Native rendering requires an available Metal device");
 		}
+		const auto resources = gpu::DeviceResources::get(device);
+		if (!resources) {
+			return std::unexpected(resources.error().message);
+		}
+
 		// Explicit C++ startup has no NSApplicationMain/nib lifecycle. Complete
 		// registration before exposing layer attachments or admitting drawables.
 		[NSApp finishLaunching];
@@ -336,10 +381,25 @@ auto run(std::vector<Window> windows) -> std::expected<int, std::string> {
 			state->traceRendering =
 				[NSProcessInfo.processInfo.environment objectForKey:@"STANA_TRACE_NATIVE"] != nil;
 			state->device = device;
-			state->queue = [device newCommandQueue];
-			if (state->queue == nil) {
-				return std::unexpected("Unable to create Metal command queue");
+			state->queue = (*resources)->queue;
+			const auto compositor = gpu::Compositor::create(*resources, state->accounting);
+			if (!compositor) {
+				return std::unexpected(compositor.error().message);
 			}
+			state->compositor = *compositor;
+			const auto weak = std::weak_ptr{state};
+			state->compositor->setWake([weak] -> void {
+				if (const auto owner = weak.lock(); owner && !owner->isClosed) {
+					requestFrame(owner);
+				}
+			});
+			state->compositor->setDiagnostic(state->callbacks.gpuError);
+			state->compositor->setExecutionFailure([weak](const gpu::Failure &failure) -> void {
+				if (const auto owner = weak.lock(); owner && !owner->isClosed) {
+					rendererFailure(owner, failure);
+				}
+			});
+
 			const NSRect frame = NSMakeRect(
 				initialWindowOffset,
 				initialWindowOffset,
@@ -364,6 +424,11 @@ auto run(std::vector<Window> windows) -> std::expected<int, std::string> {
 			STANAWindowDelegate *const delegate = [[STANAWindowDelegate alloc] init];
 			delegate->state_ = state;
 			window.delegate = delegate;
+			[NSNotificationCenter.defaultCenter
+				addObserver:delegate
+				   selector:@selector(screenParametersChanged:)
+					   name:NSApplicationDidChangeScreenParametersNotification
+					 object:nil];
 			[delegates addObject:delegate];
 			[nativeWindows addObject:window];
 			publishAppearance(state);

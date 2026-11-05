@@ -478,7 +478,7 @@ void owningCore() {
 	std::vector<Rect> changes;
 	geometryChanges(immutable, root, changes);
 	require(changes.size() == entries / 2, "rotations do not invent changes");
-	const auto canvas = document->createNode(NodeKind::canvas, group);
+	const auto canvas = document->createNode(NodeKind::cpuCanvas, group);
 	document->find(canvas)->drawing.commands.push_back({.kind = PaintKind::popClip});
 	const auto previous = document->renderSnapshot();
 	rejected = false;

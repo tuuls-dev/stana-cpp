@@ -8,6 +8,7 @@ module;
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 export module stana.testing;
@@ -15,6 +16,19 @@ export import stana.ui;
 import stana.core;
 
 export namespace stana {
+/// @brief Owning GPU inspection record; this is not a headless GPU execution result.
+struct GPUCanvasPaint {
+	NodeId instance;
+	Rect bounds;
+	GPUDrawing drawing;
+	Environment environment;
+	double opacity = 1;
+};
+
+using MixedPaint = std::variant<PaintCommand, GPUCanvasPaint>;
+/// @brief Production WGSL validation/inspection/lowering without a native device or fake execution.
+[[nodiscard]] auto validateGPUProgram(const GPUProgram &) -> std::expected<void, GPUError>;
+
 /// @brief Deterministic consumer host. Uses the production mount/document path without
 /// creating NSApplication, a native window, or a wall-clock-driven scheduler.
 class TestHost {
@@ -130,6 +144,51 @@ class TestHost {
 	/// @brief Shares the last complete immutable paint scene, or null before publication.
 	[[nodiscard]] auto scene() const -> std::shared_ptr<const SceneSnapshot> {
 		return document_->scene();
+	}
+
+	/// @brief Complete typed painter order. scene()->commands deliberately excludes GPU pixels.
+	[[nodiscard]] auto mixedPaint() const -> std::vector<MixedPaint> {
+		std::vector<MixedPaint> result;
+		const auto append = [&](const auto &self,
+								const std::shared_ptr<const detail::SceneBranch> &branch) -> void {
+			if (!branch || !branch->context.visible) {
+				return;
+			}
+			for (const auto &command : branch->paint->prefix) {
+				result.emplace_back(command);
+			}
+			if (const auto &gpu = branch->paint->gpu) {
+				result.emplace_back(
+					GPUCanvasPaint{
+						.instance = gpu->instance,
+						.bounds = gpu->bounds,
+						.drawing = gpu->drawing,
+						.environment = gpu->environment,
+						.opacity = gpu->opacity
+					}
+				);
+			}
+			for (const auto &child : branch->children) {
+				self(self, child);
+			}
+			for (const auto &command : branch->paint->suffix) {
+				result.emplace_back(command);
+			}
+		};
+		if (const auto snapshot = document_->renderSnapshot()) {
+			append(append, snapshot->root);
+		}
+		return result;
+	}
+
+	/// @brief Injects exact production diagnostic identities, without fabricating GPU work.
+	void injectGPUDiagnostic(
+		GPUDiagnostic diagnostic,
+		std::uint64_t drawingVersion,
+		std::uint64_t epoch = 0
+	) {
+		document_->queueGPUDiagnostic(std::move(diagnostic), drawingVersion, epoch);
+		flush();
 	}
 
 	/// @brief Creates a non-owning capability for an occurrence in this host document.

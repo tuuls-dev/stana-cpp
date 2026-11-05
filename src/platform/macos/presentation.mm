@@ -69,6 +69,9 @@ void invalidateEvidence(const std::shared_ptr<WindowState> &state) {
 	state->callbacks.resetPresentation(state->presentationEpoch);
 	state->callbacks.gateSurface();
 	state->confirmedComposite.reset();
+	state->confirmedPacket.reset();
+	state->pendingPacket.reset();
+	state->preparingScene.reset();
 }
 
 void processTransition(
@@ -89,6 +92,11 @@ void processTransition(
 		before != FramePhase::draining && before != FramePhase::recovering) {
 		invalidateEvidence(state);
 		if (state->scheduler.recoveryConsumed()) {
+			if (state->offscreenRecoveryUsed) {
+				fail(state, "Renderer recovery exhausted before confirmation");
+				return;
+			}
+			state->offscreenRecoveryUsed = true;
 			++state->work.recoveries;
 		}
 		if (state->traceRendering) {
@@ -142,6 +150,20 @@ void replaceGrid(const std::shared_ptr<WindowState> &state) {
 		state->scheduler.gridInstalled();
 		return;
 	}
+	const auto scene = state->callbacks.scene();
+	if (!scene) {
+		throw std::runtime_error(scene.error());
+	}
+	state->hybridSurface = gpu::Compositor::requiresHybrid(*scene, state->callbacks.colorMode);
+	state->linearOutput = gpu::Compositor::requiresLinear(*scene, state->callbacks.colorMode) &&
+		state->callbacks.colorMode != gpu::ColorMode::sdr;
+	state->compositor->reset(state->presentationEpoch);
+	state->confirmedPacket.reset();
+	state->pendingPacket.reset();
+	state->preparingScene.reset();
+	state->offscreenDeadlineArmed = false;
+	state->offscreenTimedOut = false;
+	advance(state->offscreenGeneration);
 	const double scale = view.window.backingScaleFactor;
 	const LogicalSize size{.width = view.bounds.size.width, .height = view.bounds.size.height};
 	// Release safe obsolete buffers before budgeting a replacement; GPU owners are independent.
@@ -173,14 +195,20 @@ void replaceGrid(const std::shared_ptr<WindowState> &state) {
 		@"backgroundColor" : NSNull.null
 	};
 	state->tileLayers.clear();
-	const CoreOwner colorspace{CGColorSpaceCreateWithName(kCGColorSpaceSRGB)};
+	const CoreOwner colorspace{CGColorSpaceCreateWithName(
+		state->linearOutput ? kCGColorSpaceExtendedLinearSRGB : kCGColorSpaceSRGB
+	)};
 	[CATransaction begin];
 	[CATransaction setDisableActions:YES];
 	for (const auto &layout : state->grid.tiles) {
-		auto tile = std::make_shared<RasterTile>(layout, state->device, state->accounting);
+		auto tile = state->hybridSurface
+			? std::shared_ptr<RasterTile>{}
+			: std::make_shared<RasterTile>(layout, state->device, state->accounting);
 		CAMetalLayer *const layer = [CAMetalLayer layer];
 		layer.device = state->device;
-		layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+		layer.pixelFormat =
+			state->linearOutput ? MTLPixelFormatRGBA16Float : MTLPixelFormatBGRA8Unorm;
+		layer.wantsExtendedDynamicRangeContent = state->linearOutput;
 		layer.colorspace = colorspace.get();
 		layer.opaque = YES;
 		layer.framebufferOnly = NO;
@@ -212,7 +240,9 @@ void replaceGrid(const std::shared_ptr<WindowState> &state) {
 			@{@"bounds" : NSNull.null, @"position" : NSNull.null, @"contents" : NSNull.null};
 		[root addSublayer:layer];
 		state->tileLayers.push_back(layer);
-		state->tiles.push_back(std::move(tile));
+		if (tile) {
+			state->tiles.push_back(std::move(tile));
+		}
 	}
 	view.wantsLayer = YES;
 	view.layer = root;
@@ -221,7 +251,8 @@ void replaceGrid(const std::shared_ptr<WindowState> &state) {
 	[CATransaction flush];
 	state->work.tileCount = state->grid.tiles.size();
 	state->work.estimatedDrawableBytes = state->grid.viewport.width * state->grid.viewport.height *
-		bytesPerPixel * tileDrawableCount;
+		(state->linearOutput ? gpu::pixelBytes(gpu::Format::rgba16) : bytesPerPixel) *
+		tileDrawableCount;
 	state->scheduler.gridInstalled();
 }
 
@@ -231,6 +262,11 @@ void confirmed(const std::shared_ptr<WindowState> &state, FrameIdentity attempt)
 		return;
 	}
 	state->confirmedComposite = state->active->target;
+	state->confirmedPacket = state->active->composite;
+	state->confirmedHeadroom = state->active->headroom;
+	state->offscreenRecoveryUsed = false;
+	state->pendingPacket.reset();
+	state->preparingScene.reset();
 	state->confirmedRevision = attempt.sceneRevision;
 	state->active.reset();
 	advance(state->timerGeneration);
@@ -305,6 +341,25 @@ void issueScheduledPresent(
 }
 
 void render(const std::shared_ptr<WindowState> &state) {
+	const auto result = state->callbacks.scene();
+	if (!result) {
+		throw std::runtime_error(result.error());
+	}
+	const auto &scene = *result;
+	state->compositor->desired(scene);
+	if (state->offscreenTimedOut && !state->compositor->isInFlight()) {
+		state->offscreenTimedOut = false;
+		rendererFailure(
+			state,
+			{.category = gpu::Diagnostic::Category::execution,
+				.message = "Offscreen execution exceeded its deadline"}
+		);
+		return;
+	}
+	if (!state->compositor->isInFlight() && state->offscreenDeadlineArmed) {
+		state->offscreenDeadlineArmed = false;
+		advance(state->offscreenGeneration);
+	}
 	if (!state->scheduler.canBuild(visible(*state))) {
 		if (state->traceRendering) {
 			std::cerr << "Frame deferred phase=" << static_cast<unsigned>(state->scheduler.phase())
@@ -313,36 +368,112 @@ void render(const std::shared_ptr<WindowState> &state) {
 		}
 		return;
 	}
-	const auto result = state->callbacks.scene();
-	if (!result) {
-		throw std::runtime_error(result.error());
-	}
-	const auto &scene = *result;
+
 	if (state->grid.tiles.empty()) {
 		state->callbacks.gateSurface();
 		state->scheduler.noDemand();
 		return;
 	}
-	if (state->confirmedComposite &&
+	if (!state->hybridSurface && state->confirmedComposite &&
 		state->confirmedComposite->source->revision == scene->revision) {
 		state->scheduler.noDemand();
 		return;
 	}
+	const bool hybrid = gpu::Compositor::requiresHybrid(
+		state->preparingScene ? state->preparingScene->source : scene,
+		state->callbacks.colorMode
+	);
+	const bool linear = gpu::Compositor::requiresLinear(
+							state->preparingScene ? state->preparingScene->source : scene,
+							state->callbacks.colorMode
+						) &&
+		state->callbacks.colorMode != gpu::ColorMode::sdr;
+	if (hybrid != state->hybridSurface || linear != state->linearOutput) {
+		installSurface(state);
+		return;
+	}
 	const auto previous = state->latestRequested ? state->latestRequested : state->rasterBaseline;
 	state->preparationTrace = {};
-	const auto target = prepareScene(scene, state->scale, previous, &state->preparationTrace);
+	const auto target = state->preparingScene
+		? state->preparingScene
+		: prepareScene(scene, state->scale, previous, &state->preparationTrace);
 	state->latestRequested = target;
 
 	const auto rasterDirty = sceneDamage(state->rasterBaseline, target, state->grid, state->work);
 	auto presentationDirty =
 		sceneDamage(state->confirmedComposite, target, state->grid, state->work);
-	for (const auto &layout : state->grid.tiles) {
-		if (!rasterDirty.test(layout.ordinal)) {
-			continue;
+	std::shared_ptr<const gpu::CompositePacket> composite;
+	const double headroom = state->linearOutput
+		? std::max(1.0, state->view.window.screen.maximumExtendedDynamicRangeColorComponentValue)
+		: 1.0;
+	if (state->hybridSurface) {
+		if (!state->preparingScene) {
+			state->preparingScene = target;
+			if (state->callbacks.holdPreparedGeometry) {
+				state->callbacks.holdPreparedGeometry(target->source->revision);
+			}
 		}
-		rasterScene(state->tiles.at(layout.ordinal)->bitmapContext, *target, layout.pixels);
-		++state->work.rasterizedTiles;
-		state->work.rasterizedPixels += layout.pixels.width * layout.pixels.height;
+		const auto prepared = state->pendingPacket ? gpu::Result<bool>{true}
+												   : state->compositor->prepare(
+														 target,
+														 state->grid,
+														 state->presentationEpoch,
+														 state->callbacks.colorMode
+													 );
+		if (!prepared) {
+			rendererFailure(state, prepared.error());
+			return;
+		}
+		if (!*prepared) {
+			state->scheduler.noDemand();
+			if (state->compositor->isInFlight() && !state->offscreenDeadlineArmed) {
+				state->offscreenDeadlineArmed = true;
+				advance(state->offscreenGeneration);
+				const auto token = state->offscreenGeneration;
+				const auto weak = std::weak_ptr{state};
+				postAfter(FrameScheduler::confirmationDeadline, [weak, token] -> void {
+					if (const auto owner = weak.lock(); owner && !owner->isClosed &&
+						owner->offscreenGeneration == token && owner->compositor->isInFlight()) {
+						owner->offscreenTimedOut = true;
+						owner->callbacks.gateSurface();
+						postAfter(FrameScheduler::recoveryDrainDeadline, [weak, token] -> void {
+							if (const auto current = weak.lock(); current && !current->isClosed &&
+								current->offscreenGeneration == token &&
+								current->compositor->isInFlight()) {
+								fail(current, "Offscreen GPU drain deadline exceeded");
+							}
+						});
+					}
+				});
+			}
+			return;
+		}
+		composite = state->pendingPacket ? state->pendingPacket : state->compositor->readyPacket();
+		state->pendingPacket = composite;
+		if (state->confirmedPacket != composite) {
+			presentationDirty |= composite->dirty;
+		}
+		if (std::is_neq(headroom <=> state->confirmedHeadroom)) {
+			presentationDirty = allTiles(state->grid);
+		}
+		if (state->confirmedComposite &&
+			state->confirmedComposite->source->revision == target->source->revision &&
+			state->confirmedPacket == composite && presentationDirty.none()) {
+			state->pendingPacket.reset();
+			state->preparingScene.reset();
+			state->scheduler.noDemand();
+			return;
+		}
+	} else {
+		for (const auto &layout : state->grid.tiles) {
+			if (!rasterDirty.test(layout.ordinal)) {
+				continue;
+			}
+			rasterScene(state->tiles.at(layout.ordinal)->bitmapContext, *target, layout.pixels);
+			state->tiles.at(layout.ordinal)->cpuDirty = true;
+			++state->work.rasterizedTiles;
+			state->work.rasterizedPixels += layout.pixels.width * layout.pixels.height;
+		}
 	}
 	state->rasterBaseline = target;
 	const bool anchor = presentationDirty.none();
@@ -359,7 +490,8 @@ void render(const std::shared_ptr<WindowState> &state) {
 		}
 		if (drawable.texture.width != state->grid.tiles.at(tile.value).pixels.width ||
 			drawable.texture.height != state->grid.tiles.at(tile.value).pixels.height ||
-			drawable.texture.pixelFormat != MTLPixelFormatBGRA8Unorm ||
+			drawable.texture.pixelFormat !=
+				(state->linearOutput ? MTLPixelFormatRGBA16Float : MTLPixelFormatBGRA8Unorm) ||
 			drawable.texture.device != state->device) {
 			throw std::runtime_error("Tile drawable does not match grid");
 		}
@@ -383,23 +515,42 @@ void render(const std::shared_ptr<WindowState> &state) {
 	acquired.reset();
 
 	id<MTLCommandBuffer> const buffer = [state->queue commandBuffer];
-	id<MTLBlitCommandEncoder> const encoder = [buffer blitCommandEncoder];
-	if (buffer == nil || encoder == nil) {
-		throw std::runtime_error("Unable to create tile GPU encoding");
+	if (buffer == nil) {
+		throw std::runtime_error("Unable to create complete tile GPU submission");
 	}
 	auto resources = std::make_shared<BatchResources>();
 	resources->target = target;
+	resources->composite = composite;
 	std::uint64_t copiedBytes = 0;
-	for (std::size_t index = 0; index < expected.size(); ++index) {
-		const auto &tile = state->tiles.at(expected.at(index).value);
-		encodeTile(encoder, *tile, [drawables objectAtIndex:index].texture);
-		resources->sources.push_back(tile);
-		copiedBytes += tile->layout.pixels.width * tile->layout.pixels.height * bytesPerPixel;
+	if (composite) {
+		for (std::size_t index = 0; index < expected.size(); ++index) {
+			state->compositor->display(
+				buffer,
+				*composite,
+				expected.at(index).value,
+				[drawables objectAtIndex:index].texture,
+				headroom
+			);
+			const auto &layout = state->grid.tiles.at(expected.at(index).value);
+			copiedBytes += layout.pixels.width * layout.pixels.height *
+				(state->linearOutput ? gpu::pixelBytes(gpu::Format::rgba16) : bytesPerPixel);
+		}
+	} else {
+		id<MTLBlitCommandEncoder> const encoder = [buffer blitCommandEncoder];
+		if (encoder == nil) {
+			throw std::runtime_error("Unable to create tile GPU encoding");
+		}
+		for (std::size_t index = 0; index < expected.size(); ++index) {
+			const auto &tile = state->tiles.at(expected.at(index).value);
+			encodeTile(encoder, *tile, [drawables objectAtIndex:index].texture);
+			resources->sources.push_back(tile);
+			copiedBytes += tile->layout.pixels.width * tile->layout.pixels.height * bytesPerPixel;
+		}
+		[encoder endEncoding];
 	}
-	[encoder endEncoding];
 	const auto admitted = state->callbacks.beginPresentation(
 		{.epoch = state->presentationEpoch,
-			.sceneRevision = scene->revision,
+			.sceneRevision = target->source->revision,
 			.expectedTiles = {proofTile}}
 	);
 	if (!admitted) {
@@ -414,7 +565,9 @@ void render(const std::shared_ptr<WindowState> &state) {
 		.surfaceEpoch = surface,
 		.attachmentGeneration = attachment,
 		.target = target,
+		.composite = composite,
 		.submittedTiles = expected,
+		.headroom = headroom,
 		.proofTile = proofTile
 	};
 	state->scheduler.submitted(attempt, now());
@@ -467,6 +620,7 @@ void render(const std::shared_ptr<WindowState> &state) {
 	  // storage is independently retained until the GPU read hazard has ended.
 	  resources->sources.clear();
 	  resources->target.reset();
+	  resources->composite.reset();
 	  if (tracing) {
 		  std::cerr << "GPU epoch=" << attempt.epoch << " sequence=" << attempt.sequence
 					<< " status=" << static_cast<long>(completed.status) << '\n';
@@ -492,7 +646,7 @@ void render(const std::shared_ptr<WindowState> &state) {
 		CGColorCreateGenericRGB(background.red, background.green, background.blue, 1)
 	};
 	state->layer.backgroundColor = color.get();
-	state->submittedRevision = scene->revision;
+	state->submittedRevision = target->source->revision;
 	state->work.copiedBytes += copiedBytes;
 	if (anchor) {
 		++state->work.anchorAttempts;
@@ -509,6 +663,17 @@ void render(const std::shared_ptr<WindowState> &state) {
 	armNextWake(state);
 }
 } // namespace
+
+void rendererFailure(const std::shared_ptr<WindowState> &state, const gpu::Failure &failure) {
+	state->failureMessage = failure.message;
+	if (state->offscreenRecoveryUsed || state->scheduler.recoveryConsumed()) {
+		fail(state, failure.message);
+		return;
+	}
+	state->offscreenRecoveryUsed = true;
+	++state->work.recoveries;
+	installSurface(state);
+}
 
 void requestFrame(const std::shared_ptr<WindowState> &state) {
 	if (state->isClosed || state->isFrameQueued || state->scheduler.phase() == FramePhase::failed) {
@@ -544,6 +709,11 @@ void installSurface(const std::shared_ptr<WindowState> &state) {
 }
 
 void closeRenderer(const std::shared_ptr<WindowState> &state) {
+	state->compositor->close();
+	state->confirmedPacket.reset();
+	state->pendingPacket.reset();
+	state->preparingScene.reset();
+	advance(state->offscreenGeneration);
 	state->scheduler.close();
 	advance(state->timerGeneration);
 	state->active.reset();

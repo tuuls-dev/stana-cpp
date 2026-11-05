@@ -1,6 +1,7 @@
 #ifndef STANA_NATIVE_CONTRACTS_HPP
 #define STANA_NATIVE_CONTRACTS_HPP
 
+#include "gpu_contracts.hpp"
 #include <chrono>
 #include <compare>
 #include <cstdint>
@@ -83,11 +84,19 @@ struct NodeIdentity {
 	auto operator<=>(const NodeIdentity &) const = default;
 };
 
+struct GPUCanvasLeaf {
+	NodeIdentity instance;
+	LogicalRect bounds;
+	std::shared_ptr<const gpu::Drawing> drawing;
+	double opacity = 1;
+};
+
 /// @brief Local immutable transport, reused independently of ancestor branch copies.
 struct PaintSegments {
 	std::uint64_t identity = 0;
 	std::vector<Command> prefix;
 	std::vector<Command> suffix;
+	std::optional<GPUCanvasLeaf> gpu;
 	std::optional<LogicalRect> childClipBounds;
 };
 
@@ -172,9 +181,11 @@ struct FrameIdentity {
 /// Native hosts own this value until closure. Callback captures must not borrow
 /// component descriptions, because descriptions are already destroyed after mounting.
 struct Window {
-	std::string title{};						  ///< Initial UTF-8 native title.
-	double width = 0;							  ///< Initial content width in logical points.
-	double height = 0;							  ///< Initial content height in logical points.
+	std::string title{}; ///< Initial UTF-8 native title.
+	double width = 0;	 ///< Initial content width in logical points.
+	double height = 0;	 ///< Initial content height in logical points.
+	gpu::ColorMode colorMode = gpu::ColorMode::automatic;
+	std::function<void(gpu::Diagnostic)> gpuError{};
 	std::function<SceneResult()> scene{};		  ///< Produces an owning current scene.
 	std::function<void(double, double)> resize{}; ///< Reflows the retained viewport.
 	std::function<void(bool isDark)>
@@ -193,6 +204,7 @@ struct Window {
 		abandonPresentation{}; ///< Retires expired work without inventing presentation evidence.
 	std::function<void(std::uint64_t)>
 		resetPresentation{}; ///< Invalidates callbacks from previous native attachments/surfaces.
+	std::function<void(std::uint64_t)> holdPreparedGeometry{};
 	std::function<void(FrameIdentity)>
 		gatePendingPresentation{};		 ///< Gates changed geometry before commit.
 	std::function<void()> gateSurface{}; ///< Immediately gates replaced native attachments.
@@ -203,6 +215,21 @@ struct Window {
 
 /// @brief Last-known native progress for one active host; no mutable native objects escape.
 struct WindowStatistics {
+	std::string deviceName{};
+	bool unifiedMemory = false;
+	bool linearWorking = false;
+	bool linearOutput = false;
+	std::uint32_t meshSampleCount = 1;
+	std::uint64_t offscreenRevision = 0;
+	std::uint64_t stateSteps = 0;
+	std::uint64_t pipelineBuilds = 0;
+	std::uint64_t pipelineCacheHits = 0;
+	std::uint64_t resourceUploadBytes = 0;
+	std::uint64_t compositedTiles = 0;
+	std::uint64_t gpuLeafDraws = 0;
+	std::uint64_t trackedBytes = 0;
+	std::uint64_t peakTrackedBytes = 0;
+	std::uint64_t managedWriteBytes = 0;
 	LogicalSize logicalViewport{};	///< Actual attached view size, not a requested window size.
 	double backingScale = 0;		///< Actual surface scale used by grid construction.
 	std::uint64_t surfaceEpoch = 0; ///< Generation of the current surface geometry.

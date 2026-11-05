@@ -2,7 +2,9 @@ module;
 
 #include "../platform/native_contracts.hpp"
 
+#include "../graphics/limits.hpp"
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <exception>
@@ -13,149 +15,42 @@ module;
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <tuple>
+#include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 module stana.application;
 import stana.core;
 import stana.graphics;
+#include "gpu_conversion.hpp"
+#include "scene_conversion.hpp"
 
 namespace stana {
 namespace {
+using application_detail::convertMode;
+using application_detail::SceneConversion;
+
+[[nodiscard]] auto diagnosticCategory(native::gpu::Diagnostic::Category value)
+	-> GPUDiagnostic::Category {
+	switch (value) {
+	case native::gpu::Diagnostic::Category::compiler:
+		return GPUDiagnostic::Category::compiler;
+	case native::gpu::Diagnostic::Category::binding:
+		return GPUDiagnostic::Category::binding;
+	case native::gpu::Diagnostic::Category::capability:
+		return GPUDiagnostic::Category::capability;
+	case native::gpu::Diagnostic::Category::execution:
+		return GPUDiagnostic::Category::execution;
+	}
+	throw std::logic_error("Unknown GPU diagnostic category");
+}
+
 /// @brief Converts the private transport identity without losing retry/surface qualification.
 [[nodiscard]] auto portableAttempt(native::FrameIdentity frame) -> PresentationAttempt {
 	return {.epoch = frame.epoch, .sequence = frame.sequence, .sceneRevision = frame.sceneRevision};
 }
-
-[[nodiscard]] auto convertCommand(const PaintCommand &command) -> native::Command {
-
-	native::PaintOperation operation{};
-	switch (command.kind) {
-	case PaintKind::fillRect:
-		operation = native::PaintOperation::fill;
-		break;
-	case PaintKind::strokeRect:
-		operation = native::PaintOperation::stroke;
-		break;
-	case PaintKind::text:
-		operation = native::PaintOperation::text;
-		break;
-	case PaintKind::line:
-		operation = native::PaintOperation::line;
-		break;
-	case PaintKind::pushClip:
-		operation = native::PaintOperation::pushClip;
-		break;
-	case PaintKind::popClip:
-		operation = native::PaintOperation::popClip;
-		break;
-	}
-	return {
-		.operation = operation,
-		.x = command.bounds.origin.x,
-		.y = command.bounds.origin.y,
-		.width = command.bounds.size.width,
-		.height = command.bounds.size.height,
-		.red = command.color.red,
-		.green = command.color.green,
-		.blue = command.color.blue,
-		.alpha = command.color.alpha,
-		.radius = command.cornerRadius,
-		.lineWidth = command.lineWidth,
-		.text = command.text,
-		.fontSize = command.font.size,
-		.fontWeight = command.font.weight
-	};
-}
-
-[[nodiscard]] auto convertRect(Rect rect) -> native::LogicalRect {
-	return {
-		.origin = {.x = rect.origin.x, .y = rect.origin.y},
-		.size = {.width = rect.size.width, .height = rect.size.height}
-	};
-}
-
-/// @brief One window's last paired roots; no process-global cache or borrowed-address lookup.
-struct SceneConversion {
-	std::shared_ptr<const detail::RenderSnapshot> source;
-	std::shared_ptr<const native::Scene> converted;
-
-	[[nodiscard]] static auto branch(
-		const std::shared_ptr<const detail::SceneBranch> &next,
-		const std::shared_ptr<const detail::SceneBranch> &old,
-		const std::shared_ptr<const native::SceneBranch> &previous
-	) -> std::shared_ptr<const native::SceneBranch> {
-		if (!next) {
-			return {};
-		}
-		if (old && previous && next->id == old->id && next->generation == old->generation) {
-			return previous;
-		}
-		auto result = std::make_shared<native::SceneBranch>();
-		result->id = {.document = next->id.document, .serial = next->id.serial};
-		result->generation = next->generation;
-		result->visible = next->context.visible;
-		if (old && previous && next->paint->identity == old->paint->identity) {
-			result->paint = previous->paint;
-		} else {
-			auto paint = std::make_shared<native::PaintSegments>();
-			paint->identity = next->paint->identity;
-			for (const auto &command : next->paint->prefix) {
-				paint->prefix.push_back(convertCommand(command));
-			}
-			for (const auto &command : next->paint->suffix) {
-				paint->suffix.push_back(convertCommand(command));
-			}
-			if (next->paint->childClipBounds) {
-				paint->childClipBounds = convertRect(*next->paint->childClipBounds);
-			}
-			result->paint = std::move(paint);
-		}
-		std::map<NodeId, std::size_t> pairs;
-		if (old && previous) {
-			for (std::size_t index = 0; index < old->children.size(); ++index) {
-				pairs.emplace(old->children.at(index)->id, index);
-			}
-		}
-		for (const auto &child : next->children) {
-			const auto paired = pairs.find(child->id);
-			result->children.push_back(
-				paired == pairs.end() ? branch(child, {}, {})
-									  : branch(
-											child,
-											old->children.at(paired->second),
-											previous->children.at(paired->second)
-										)
-			);
-		}
-		return result;
-	}
-
-	[[nodiscard]] auto convert(std::shared_ptr<const detail::RenderSnapshot> next)
-		-> std::shared_ptr<const native::Scene> {
-		if (next == source) {
-			return converted;
-		}
-		auto scene = std::make_shared<native::Scene>();
-		scene->revision = next->revision;
-		scene->size = {.width = next->size.width, .height = next->size.height};
-		scene->background = {
-			.red = next->background.red,
-			.green = next->background.green,
-			.blue = next->background.blue,
-			.alpha = next->background.alpha
-		};
-		scene->textEnvironment = next->textEnvironment;
-		scene->root = branch(
-			next->root,
-			source ? source->root : nullptr,
-			converted ? converted->root : nullptr
-		);
-		source = std::move(next);
-		converted = std::move(scene);
-		return converted;
-	}
-};
 
 } // namespace
 
@@ -190,6 +85,22 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 				{.title = session.title,
 					.width = session.size.width,
 					.height = session.size.height,
+					.colorMode = convertMode(session.renderingColorMode),
+					.gpuError = [weakDocument](native::gpu::Diagnostic diagnostic) -> void {
+						if (const auto owner = weakDocument.lock()) {
+							owner->queueGPUDiagnostic(
+								{.category = diagnosticCategory(diagnostic.category),
+									.message = std::move(diagnostic.message),
+									.instance =
+										{.document = diagnostic.document,
+											.serial = diagnostic.instance},
+									.programVersion = diagnostic.programVersion},
+								diagnostic.drawingVersion,
+								diagnostic.epoch
+							);
+							detail::ReactiveRuntime::current().flush();
+						}
+					},
 					.scene = [weakDocument, conversion] -> native::SceneResult {
 						if (const auto owner = weakDocument.lock()) {
 							const auto snapshot = owner->renderSnapshot();
@@ -312,6 +223,11 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 						}
 						document->resetPresentation(epoch);
 					},
+					.holdPreparedGeometry = [weakDocument](std::uint64_t revision) -> void {
+						if (const auto owner = weakDocument.lock()) {
+							owner->holdPreparedGeometry(revision);
+						}
+					},
 					.gatePendingPresentation = [weakDocument](native::FrameIdentity frame) -> void {
 						if (const auto owner = weakDocument.lock()) {
 							owner->gatePendingPresentation(portableAttempt(frame));
@@ -360,7 +276,22 @@ auto Application::renderingDiagnostics() -> std::vector<WindowDiagnostics> {
 	std::vector<WindowDiagnostics> result;
 	for (const auto &window : native::diagnostics()) {
 		result.push_back(
-			{.surfaceEpoch = window.surfaceEpoch,
+			{.deviceName = window.deviceName,
+				.unifiedMemory = window.unifiedMemory,
+				.linearWorking = window.linearWorking,
+				.linearOutput = window.linearOutput,
+				.meshSampleCount = window.meshSampleCount,
+				.offscreenRevision = window.offscreenRevision,
+				.stateSteps = window.stateSteps,
+				.pipelineBuilds = window.pipelineBuilds,
+				.pipelineCacheHits = window.pipelineCacheHits,
+				.resourceUploadBytes = window.resourceUploadBytes,
+				.compositedTiles = window.compositedTiles,
+				.gpuLeafDraws = window.gpuLeafDraws,
+				.trackedBytes = window.trackedBytes,
+				.peakTrackedBytes = window.peakTrackedBytes,
+				.managedWriteBytes = window.managedWriteBytes,
+				.surfaceEpoch = window.surfaceEpoch,
 				.submittedSceneRevision = window.submittedRevision == 0
 					? std::nullopt
 					: std::optional{window.submittedRevision},

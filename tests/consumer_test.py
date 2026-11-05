@@ -63,6 +63,10 @@ def main() -> None:
 			run(*configure, "-B", str(consumer_build))
 		run("cmake", "--build", str(consumer_build), "--parallel", "2")
 		run("ctest", "--test-dir", str(consumer_build), "--output-on-failure")
+		for target, name in (("old-canvas", "Canvas"), ("native_shader", "metalSource"), ("native_library", "metalLibrary")):
+			rejected = subprocess.run(["cmake", "--build", str(consumer_build), "--target", f"rejected-{target}"], capture_output=True, text=True)
+			if rejected.returncode == 0 or name not in rejected.stdout + rejected.stderr:
+				raise RuntimeError(f"The forbidden {name} API must fail compilation")
 		# Each consumer has already proved a clean rebuild. Reclaim its generated
 		# BMIs before testing the next integration mode on space-limited machines.
 		shutil.rmtree(consumer_build)

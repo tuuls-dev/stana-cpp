@@ -218,7 +218,7 @@ void themeDefaultsFollowEnvironment() {
 	require(findText(*light, "Count").color == Color::black(), "light label");
 	require(findText(*light, "Marked").color == marked, "explicit foreground");
 	require(findText(*light, "Increment").color == Color::white(), "button label");
-	require(findFill(*light).color == Color::accent(), "button fill");
+	require(findFill(*light).color == Color::accent().resolved(Theme::light), "button fill");
 
 	auto environment = Environment{};
 	environment.theme = Theme::dark;
@@ -229,7 +229,10 @@ void themeDefaultsFollowEnvironment() {
 	require(findText(*dark, "Count").color == Color::white(), "dark label");
 	require(findText(*dark, "Marked").color == marked, "explicit foreground survives theme");
 	require(findText(*dark, "Increment").color == Color::white(), "button label survives theme");
-	require(findFill(*dark).color == Color::accent(), "button fill survives theme");
+	require(
+		findFill(*dark).color == Color::accent().resolved(Theme::dark),
+		"button fill survives theme"
+	);
 }
 
 /// @brief Removal marks handles dead before cleanup can reenter document closure.

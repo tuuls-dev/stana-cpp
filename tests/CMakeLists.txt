@@ -15,7 +15,7 @@ if(STANA_SANITIZER STREQUAL "")
 		COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/consumer_test.py"
 			--root "${PROJECT_SOURCE_DIR}" --build "${PROJECT_BINARY_DIR}"
 			--compiler "${CMAKE_CXX_COMPILER}" --config "${CMAKE_BUILD_TYPE}")
-	set_tests_properties(stana.consumer PROPERTIES TIMEOUT 180)
+	set_tests_properties(stana.consumer PROPERTIES TIMEOUT 360)
 endif()
 
 add_executable(stana-reactive reactive/contracts.cpp)
@@ -87,3 +87,54 @@ if(APPLE)
 		set_tests_properties(stana.native.shared-copy PROPERTIES TIMEOUT 30 LABELS native)
 	endif()
 endif()
+
+add_executable(stana-cpu-canvas graphics/cpu_canvas.cpp)
+target_link_libraries(stana-cpu-canvas PRIVATE stana::stana)
+stana_apply_safety(stana-cpu-canvas)
+add_test(NAME stana.cpu-canvas COMMAND stana-cpu-canvas)
+
+add_executable(stana-gpu-values graphics/gpu_values.cpp)
+target_link_libraries(stana-gpu-values PRIVATE stana::stana)
+stana_apply_safety(stana-gpu-values)
+add_test(NAME stana.gpu-values COMMAND stana-gpu-values)
+
+add_executable(stana-shader-contracts graphics/shader_compiler.cpp)
+target_link_libraries(stana-shader-contracts PRIVATE stana::stana)
+stana_apply_safety(stana-shader-contracts)
+add_test(NAME stana.shaders COMMAND stana-shader-contracts)
+add_test(NAME stana.canvas-api COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/canvas_api_test.py" "${PROJECT_SOURCE_DIR}")
+
+if(APPLE)
+    option(STANA_NATIVE_OFFSCREEN_TESTS "Run canvas tests requiring a Metal device, not a GUI" OFF)
+    if(STANA_NATIVE_OFFSCREEN_TESTS OR STANA_NATIVE_TESTS)
+        add_executable(stana-canvas-offscreen platform/macos/canvas_offscreen.mm platform/macos/canvas_fixture.cpp)
+        target_link_libraries(stana-canvas-offscreen PRIVATE stana::stana "-framework Metal" "-framework Foundation")
+        target_compile_options(stana-canvas-offscreen PRIVATE "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>")
+        stana_apply_safety(stana-canvas-offscreen)
+        add_test(NAME stana.native.canvas.offscreen COMMAND stana-canvas-offscreen)
+        set_tests_properties(stana.native.canvas.offscreen PROPERTIES TIMEOUT 120 LABELS "native;offscreen" RUN_SERIAL TRUE)
+    endif()
+endif()
+
+if(APPLE AND STANA_NATIVE_TESTS)
+    add_executable(stana-canvas-presentation MACOSX_BUNDLE platform/macos/canvas_presentation.cpp platform/macos/window_fixture.mm)
+    set_target_properties(stana-canvas-presentation PROPERTIES
+        MACOSX_BUNDLE_INFO_PLIST "${PROJECT_SOURCE_DIR}/cmake/AppInfo.plist.in"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "dev.stana.canvas-qualification"
+        MACOSX_BUNDLE_BUNDLE_NAME "Stana Canvas Qualification"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
+    target_compile_options(stana-canvas-presentation PRIVATE "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>")
+    target_link_libraries(stana-canvas-presentation PRIVATE stana::stana)
+    stana_apply_safety(stana-canvas-presentation)
+    add_test(NAME stana.native.canvas.presentation COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/platform/macos/launch_native.py" "$<TARGET_BUNDLE_DIR:stana-canvas-presentation>")
+    set_tests_properties(stana.native.canvas.presentation PROPERTIES TIMEOUT 45 LABELS "native;presentation" RUN_SERIAL TRUE
+        ENVIRONMENT "MTL_DEBUG_LAYER=1;MTL_SHADER_VALIDATION=1")
+    set_tests_properties(stana.native.window PROPERTIES RUN_SERIAL TRUE)
+endif()
+
+add_executable(stana-gpu-validation graphics/gpu_validation.cpp)
+target_link_libraries(stana-gpu-validation PRIVATE stana::stana)
+stana_apply_safety(stana-gpu-validation)
+add_test(NAME stana.gpu-validation COMMAND stana-gpu-validation)
