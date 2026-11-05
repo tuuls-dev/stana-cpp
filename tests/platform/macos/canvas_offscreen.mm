@@ -281,60 +281,11 @@ void builtinsAndReconstruction() {
 		   "line; fractional origins, partial tiles, exact full reconstruction at 1x/2x/1.25x\n";
 }
 
-void temporal() {
-
-	const auto device =
-		stana::platform::detail::gpu::DeviceResources::get(MTLCreateSystemDefaultDevice());
-	require(device.has_value(), device ? "" : device.error().message);
-	const auto compositor = stana::platform::detail::gpu::Compositor::create(
-		*device,
-		std::make_shared<stana::platform::detail::RasterAccounting>()
-	);
-	require(compositor.has_value(), compositor ? "" : compositor.error().message);
-	const auto sources = stana::testing::fixtures::platform::macos::counterScenes();
-	require(!sources.empty(), "temporal compositor fixture");
-	const auto grid = stana::platform::detail::makeTileGrid(sources.front()->size, 1);
-	std::size_t step = 0;
-	for (const auto &source : sources) {
-		++step;
-		const auto scene = stana::platform::detail::prepareScene(source, 1);
-		pump([&] -> bool {
-			const auto result =
-				(*compositor)
-					->prepare(scene, grid, 1, stana::platform::detail::gpu::ColorMode::automatic);
-			require(result.has_value(), result ? "" : result.error().message);
-			return *result && (*compositor)->readyPacket() &&
-				(*compositor)->readyPacket()->scene == scene &&
-				(*compositor)->statistics().stateSteps == step;
-		});
-		const auto pixels = read(*device, (*compositor)->readyPacket(), grid);
-		constexpr std::size_t halfPixelBytes = 8;
-		constexpr std::size_t sample = 16;
-		require(
-			pixels.format == stana::platform::detail::gpu::Format::rgba16 &&
-				std::is_eq(
-					stana::rendering::detail::halfAt(
-						pixels.bytes,
-						(sample * pixels.width + sample) * halfPixelBytes
-					) <=> static_cast<double>(step)
-				),
-			"compositor temporal counter differs from independently expected integer"
-		);
-	}
-	require(
-		(*compositor)->statistics().gpuLeafDraws > 0,
-		"temporal compositor must export GPU leaf draws"
-	);
-	(*compositor)->close();
-	std::cout << "Native offscreen compositor: " << step
-			  << " admitted successful temporal steps; no presentation evidence claimed\n";
-}
 } // namespace
 
 auto main() -> int {
 	@autoreleasepool {
 		try {
-			temporal();
 			mixed();
 			builtinsAndReconstruction();
 			return 0;

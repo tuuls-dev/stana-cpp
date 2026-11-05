@@ -6,6 +6,7 @@ import stana;
 
 /// @brief Runs the introductory retained Counter without native APIs in consumer code.
 auto main() -> int {
+	using namespace std::string_literals;
 	try {
 
 		const stana::reactive::Signal count{0};

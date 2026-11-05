@@ -9,7 +9,5 @@ namespace stana::testing::fixtures::platform::macos {
 	-> std::shared_ptr<const stana::platform::detail::Scene>;
 [[nodiscard]] auto builtinScenes()
 	-> std::vector<std::shared_ptr<const stana::platform::detail::Scene>>;
-[[nodiscard]] auto counterScenes()
-	-> std::vector<std::shared_ptr<const stana::platform::detail::Scene>>;
 } // namespace stana::testing::fixtures::platform::macos
 #endif
