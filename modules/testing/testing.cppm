@@ -37,7 +37,8 @@ class TestHost {
 		Size size = {.width = defaultWidth, .height = defaultHeight},
 		Environment environment = {}
 	)
-		: document_(detail::Document::create(size, environment)) {}
+		: lease_(detail::acquireHeadlessExecutorLease()),
+		  document_(detail::Document::create(size, environment)) {}
 
 	TestHost(const TestHost &) = delete;
 	TestHost(TestHost &&) = delete;
@@ -123,13 +124,22 @@ class TestHost {
 		static_cast<void>(document_->reportPresentation(attempt, observation));
 	}
 
+	/// @brief Drains one mailbox snapshot on this owner, then settles and commits.
+	/// Hosts that share the owner executor also share that mailbox; flushing this
+	/// host can apply queued writes observed by another live host on the same thread.
 	void flush() {
+		if (const auto endpoint = detail::ExecutorEndpoint::currentIfAny()) {
+			endpoint->drain();
+		}
 		detail::ReactiveRuntime::current().flush();
 		document_->commit();
 	}
 
 	/// @brief Permanently disposes this host document; subsequent handles become stale.
-	void close() { document_->close(); }
+	void close() {
+		document_->close();
+		lease_.release();
+	}
 
 	/// @brief Returns value snapshots from the last complete document commit.
 	/// Query again after changes; retaining a snapshot does not keep its node alive.
@@ -240,6 +250,7 @@ class TestHost {
   private:
 	static constexpr double defaultWidth = 800;
 	static constexpr double defaultHeight = 600;
+	detail::HeadlessExecutorLease lease_; ///< Shared-owner claim; last host closes the endpoint.
 	std::shared_ptr<detail::Document>
 		document_; ///< Owns the same retained engine used by native windows.
 	std::uint64_t presentationEpoch_ = detail::nextIdentity(); ///< Synthetic surface generation.

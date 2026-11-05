@@ -8,12 +8,15 @@
 #import <QuartzCore/CATransaction.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
+#include <dispatch/dispatch.h>
 #include <exception>
+#include <expected>
 #include <functional>
 #include <iostream>
 #include <limits>
@@ -28,6 +31,11 @@ void publishAppearance(const std::shared_ptr<WindowState> &state);
 
 namespace {
 constexpr double initialWindowOffset = 40;
+
+[[nodiscard]] auto stopRequested() -> std::atomic<bool> & {
+	static std::atomic<bool> requested{false};
+	return requested;
+}
 
 [[nodiscard]] auto activeWindows() -> std::vector<std::weak_ptr<WindowState>> & {
 	static thread_local std::vector<std::weak_ptr<WindowState>> windows;
@@ -315,6 +323,73 @@ auto diagnostics() -> std::vector<WindowStatistics> {
 	return result;
 }
 
+auto createMailboxWakeup(std::function<void()> onWake)
+	-> std::expected<MailboxWakeup, std::string> {
+	if (![NSThread isMainThread]) {
+		return std::unexpected("Native mailbox wakeup requires the main thread");
+	}
+
+	struct Source {
+		dispatch_source_t source = nullptr;
+		std::atomic<bool> closed{false};
+		std::function<void()> handler;
+
+		Source() = default;
+		Source(const Source &) = delete;
+		Source(Source &&) = delete;
+		auto operator=(const Source &) -> Source & = delete;
+		auto operator=(Source &&) -> Source & = delete;
+
+		~Source() {
+			if (source != nullptr) {
+				dispatch_source_cancel(source);
+			}
+		}
+	};
+
+	const auto state = std::make_shared<Source>();
+	state->handler = std::move(onWake);
+	constexpr uintptr_t unusedHandle = 0;
+	constexpr unsigned long unusedMask = 0;
+	state->source = dispatch_source_create(
+		DISPATCH_SOURCE_TYPE_DATA_ADD,
+		unusedHandle,
+		unusedMask,
+		dispatch_get_main_queue()
+	);
+	if (state->source == nullptr) {
+		return std::unexpected("Failed to create the native mailbox wakeup source");
+	}
+	const std::weak_ptr<Source> weak = state;
+	dispatch_source_set_event_handler(state->source, ^{
+	  const auto current = weak.lock();
+	  if (!current || current->closed.load(std::memory_order_acquire)) {
+		  return;
+	  }
+	  try {
+		  current->handler();
+	  } catch (...) {
+		  std::cerr << "Stana: uncaught mailbox wakeup exception\n";
+		  stop();
+	  }
+	});
+	dispatch_activate(state->source);
+	return MailboxWakeup{
+		.notify = [state] -> void {
+			if (!state->closed.load(std::memory_order_acquire) && state->source != nullptr) {
+				constexpr unsigned long wakeupIncrement = 1;
+				dispatch_source_merge_data(state->source, wakeupIncrement);
+			}
+		},
+		.close = [state] -> void {
+			state->closed.store(true, std::memory_order_release);
+			if (state->source != nullptr) {
+				dispatch_source_cancel(state->source);
+			}
+		}
+	};
+}
+
 void postAfter(std::chrono::milliseconds delay, std::function<void()> callback) {
 	if (delay.count() < 0) {
 		throw std::invalid_argument("Stana delay cannot be negative");
@@ -334,6 +409,10 @@ void postAfter(std::chrono::milliseconds delay, std::function<void()> callback) 
 }
 
 void stop() {
+	stopRequested().store(true, std::memory_order_release);
+	if (NSApp == nil) {
+		return;
+	}
 	[NSApp stop:nil];
 	// AppKit's run loop may be waiting for an event; waking it lets stop take effect.
 	NSEvent *const wake = [NSEvent otherEventWithType:NSEventTypeApplicationDefined
@@ -445,13 +524,19 @@ auto run(std::vector<Window> windows) -> std::expected<int, std::string> {
 			requestFrame(state);
 		}
 		if (windows.empty()) {
+			stopRequested().store(false, std::memory_order_release);
 			return 0;
 		}
 		[NSApp activate];
-		[NSApp run];
+		// Honor Application::stop() issued during prepare/onMount, before this loop starts.
+		if (!stopRequested().exchange(false, std::memory_order_acq_rel)) {
+			[NSApp run];
+		}
 		for (NSUInteger index = 0; index < nativeWindows.count; ++index) {
 			[[nativeWindows objectAtIndex:index] close];
 		}
+		// windowWillClose of the last window also requests stop; drop that for the next run().
+		stopRequested().store(false, std::memory_order_release);
 		for (const auto &state : states) {
 			if (!state->failureMessage.empty()) {
 				return std::unexpected(state->failureMessage);

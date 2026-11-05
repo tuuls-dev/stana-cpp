@@ -7,6 +7,7 @@ include(cmake/Safety.cmake)
 stana_validate_toolchain()
 include(cmake/Dependencies.cmake)
 stana_find_icu()
+find_package(Threads REQUIRED)
 include(cmake/ShaderCompiler.cmake)
 
 add_custom_target(stana-source-policy ALL
@@ -19,9 +20,9 @@ add_library(stana::stana ALIAS stana)
 target_sources(stana
 	PUBLIC FILE_SET modules TYPE CXX_MODULES BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/modules"
 		FILES modules/stana.cppm modules/primitives/primitives.cppm modules/reactive/reactive.cppm modules/tasks/tasks.cppm modules/graphics/graphics.cppm modules/graphics/presentation.cppm modules/graphics/program.cppm modules/graphics/gpu.cppm modules/core/core.cppm modules/ui/ui.cppm modules/testing/testing.cppm modules/application/application.cppm modules/text/text.cppm
-	PRIVATE src/testing/shaders.cpp src/graphics/shader_compiler.cpp src/graphics/drawing.cpp src/graphics/gpu.cpp src/graphics/gpu_program.cpp src/version.cpp src/core/document.cpp src/core/input.cpp src/layout/layout.cpp src/scene/scene.cpp src/scene/geometry.cpp src/platform/tiles.cpp src/platform/scheduler.cpp src/ui/mount.cpp src/application/application.cpp src/text/text.cpp)
+	PRIVATE src/testing/shaders.cpp src/graphics/shader_compiler.cpp src/graphics/drawing.cpp src/graphics/gpu.cpp src/graphics/gpu_program.cpp src/version.cpp src/core/document.cpp src/core/input.cpp src/layout/layout.cpp src/scene/scene.cpp src/scene/geometry.cpp src/platform/tiles.cpp src/platform/scheduler.cpp src/ui/mount.cpp src/application/application.cpp src/text/text.cpp src/reactive/executor.cpp)
 target_compile_features(stana PUBLIC cxx_std_23)
-target_link_libraries(stana PRIVATE ICU::uc ICU::i18n ICU::data stana::tint)
+target_link_libraries(stana PUBLIC Threads::Threads PRIVATE ICU::uc ICU::i18n ICU::data stana::tint)
 if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     set(_stana_tint_include "/imsvc${STANA_TINT_ROOT}/include")
 else()

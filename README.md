@@ -53,6 +53,66 @@ include `stana.primitives`, `stana.reactive`, `stana.graphics`, `stana.text`,
 `stana.ui`, `stana.application` and the separately imported `stana.testing`.
 There is no public header API, header-unit or `import std` requirement.
 
+Background work submits results with `Signal<T>::setThreadSafe(T)`. The call is
+always deferred onto the signal's creating executor, including when invoked on
+that owner thread. Returning means the owning value was admitted to a bounded
+mailbox (4096 pending writes per executor); it is not application, observer
+delivery, or display completion. `set()` stays synchronous and owner-thread-only.
+`get()`, computed evaluation, and graph traversal stay owner-thread-only.
+
+Queued admission requires an active native `Application::run()` session or a live
+`TestHost` on the owner. Signals created before that session are adopted when it
+starts; dormant or closed sessions throw `std::logic_error` rather than stacking
+work. A full mailbox throws `std::overflow_error` without blocking, dropping, or
+replacing earlier commands. Commands hold the payload and a weak signal reference:
+destroying the last handle discards pending writes without resurrecting UI. After a
+session closes, existing signals still support same-thread `get()`/`set()`, but
+queued admission stays closed for that epoch. Freshness is not FIFO completion;
+generation checks remain `Scope::isCurrent(token)` on the owner after a callback,
+not a property of `setThreadSafe`.
+
+```cpp
+#include <stdexcept>
+#include <string>
+#include <thread>
+#include <vector>
+import stana;
+
+using namespace stana;
+
+auto main() -> int {
+	const Signal result{std::string{"Ready"}};
+	std::vector<std::jthread> workers;
+	return Application::run(Window{
+		.title = "Worker result",
+		.size = {.width = 480, .height = 320},
+		.content = VStack{
+			.children = children(
+				Text{.text = result},
+				Button{
+					.text = "Run",
+					.onClick = [result, &workers] -> void {
+						result.set("Working...");
+						workers.emplace_back([result] -> void {
+							try {
+								result.setThreadSafe(std::string{"Done"});
+							} catch (const std::exception &error) {
+								static_cast<void>(error);
+							}
+						});
+					}
+				}
+			)
+		}
+	});
+}
+```
+
+Keep workers owned by the application for the duration of `run()`. Do not join a
+local thread inside the click handler. `std::jthread` is shown for ownership;
+some libc++ named-module builds still need `std::async(std::launch::async, ...)`
+instead.
+
 See [architecture](docs/architecture/README.md) and
 [naming/documentation conventions](docs/coding-conventions.md). Exported types,
 properties and runtime contracts use Doxygen comments for IDE hover documentation.

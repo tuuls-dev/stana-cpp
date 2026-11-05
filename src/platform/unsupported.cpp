@@ -17,6 +17,10 @@ void postAfter(std::chrono::milliseconds, std::function<void()>) {
 	throw std::runtime_error("No native UI executor on this platform");
 }
 
+auto createMailboxWakeup(std::function<void()>) -> std::expected<MailboxWakeup, std::string> {
+	return std::unexpected("No native UI executor on this platform");
+}
+
 auto measureText(const std::string &, FontRequest, double) -> std::pair<double, double> {
 	throw std::runtime_error("Native text measurement is unavailable on this platform");
 }

@@ -24,6 +24,7 @@ module;
 module stana.application;
 import stana.core;
 import stana.graphics;
+import stana.reactive;
 #include "gpu_conversion.hpp"
 #include "scene_conversion.hpp"
 
@@ -55,6 +56,64 @@ using application_detail::SceneConversion;
 } // namespace
 
 namespace detail {
+struct NativeExecutorSession::State {
+	std::shared_ptr<ExecutorEndpoint> endpoint;
+	std::shared_ptr<std::string> failure = std::make_shared<std::string>();
+};
+
+NativeExecutorSession::NativeExecutorSession() : state_(std::make_unique<State>()) {
+	state_->endpoint = ExecutorEndpoint::current();
+	auto wakeup = native::createMailboxWakeup(
+		[weak = std::weak_ptr{state_->endpoint}, failure = state_->failure] -> void {
+			try {
+				if (const auto endpoint = weak.lock()) {
+					endpoint->drain();
+				}
+			} catch (const std::exception &error) {
+				if (failure->empty()) {
+					*failure = error.what();
+				}
+				if (const auto endpoint = weak.lock()) {
+					endpoint->close();
+				}
+				native::stop();
+			} catch (...) {
+				if (failure->empty()) {
+					*failure = "Unknown queued signal-write failure";
+				}
+				if (const auto endpoint = weak.lock()) {
+					endpoint->close();
+				}
+				native::stop();
+			}
+		}
+	);
+	if (!wakeup) {
+		*state_->failure = wakeup.error();
+		return;
+	}
+	try {
+		state_->endpoint->activateNative(std::move(wakeup->notify), std::move(wakeup->close));
+	} catch (...) {
+		state_->endpoint->close();
+		throw;
+	}
+}
+
+NativeExecutorSession::~NativeExecutorSession() {
+	if (state_ && state_->endpoint) {
+		state_->endpoint->close();
+	}
+}
+
+auto NativeExecutorSession::complete(int code) const -> int {
+	if (state_ && state_->failure && !state_->failure->empty()) {
+		std::cerr << "Stana application failed: " << *state_->failure << '\n';
+		return 1;
+	}
+	return code;
+}
+
 void installNativeTaskDispatcher() {
 	TaskScheduler::current().dispatcher = [](std::chrono::milliseconds delay,
 											  std::function<void()> callback) -> void {
