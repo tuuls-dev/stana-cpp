@@ -205,19 +205,21 @@ auto main(int argc, char **) -> int {
 						})},
 						stana::ui::Button{
 							.text = "Update charts",
-							.onClick =
-								[updates, gpu, current = std::move(initial)]() mutable -> void {
-								const auto value = updates.get() + 1;
-								const float strength =
-									value % 2 == 0 ? 1.0F : static_cast<float>(peak);
-								current = checked(
-									current.updatingResources({{"level", uniform(strength)}})
-								);
-								gpu.set(graphics(current));
-								updates.set(value);
-							},
 							.accessibility =
-								{.label = "Update both charts and advance the GPU history"}
+								{.label = "Update both charts and advance the GPU history"},
+							.events = {stana::ui::on(
+								stana::ui::Event::click,
+								[updates, gpu, current = std::move(initial)]() mutable -> void {
+									const auto value = updates.get() + 1;
+									const float strength =
+										value % 2 == 0 ? 1.0F : static_cast<float>(peak);
+									current = checked(
+										current.updatingResources({{"level", uniform(strength)}})
+									);
+									gpu.set(graphics(current));
+									updates.set(value);
+								}
+							)}
 						}
 					)
 				}

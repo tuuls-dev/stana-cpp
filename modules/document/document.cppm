@@ -13,6 +13,7 @@ module;
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 export module stana:document;
@@ -72,18 +73,125 @@ class NodeHandle {
 	NodeId identity_{};
 };
 
-/// @brief Pointer-down dispatch context shared by capture and bubble handlers.
+/// @brief Where a registration runs relative to the event target.
+enum class Phase : std::uint8_t {
+	bubble, ///< Target first, then each ancestor toward the root. This is the default.
+	capture ///< Root toward the target, before any bubble registration on the route.
+};
+
+/// @brief Routed input events. ui::on selects one of these for a registration.
+enum class EventKind : std::uint8_t {
+	click,		  ///< Control activation from a pointer release, key, or NodeHandle.
+	pointerDown,  ///< Primary pointer press on the hit target.
+	pointerUp,	  ///< Primary pointer release on the hit target.
+	pointerMove,  ///< Pointer motion over the hit target.
+	pointerEnter, ///< Pointer crossed into this occurrence. Does not visit ancestors.
+	pointerLeave, ///< Pointer crossed out of this occurrence. Does not visit ancestors.
+	keyDown,	  ///< Key press aimed at the focused control, or the root when none is eligible.
+	keyUp,		  ///< Key release. There is no built-in default.
+	focus,		  ///< Notification after this occurrence has become the focused control.
+	blur,		  ///< Notification after focus has left this occurrence for another control.
+	scroll		  ///< Scroll gesture over the hit target, before the offset change.
+};
+
+/// @brief Keys the document handles. Native adapters map them from the physical keyboard.
+enum class Key : std::uint8_t {
+	tab,   ///< Tab. KeyEvent::backwards selects the reverse focus order.
+	space, ///< Space. The default activates the focused control.
+	enter  ///< Return. The default activates the focused control.
+};
+
+/// @brief Mutable click dispatch. preventDefault() suppresses a toggle's built-in flip.
 ///
-/// InteractionProperties callbacks receive this mutable event. Call
-/// preventDefault() to prevent Stana's default press/focus behavior while allowing
-/// handlers already on the dispatch route to run. position uses document-relative,
-/// top-left logical points, not physical pixels or screen coordinates.
-struct PointerEvent {
-	Point position;				   ///< Document-relative pointer position in logical points.
-	bool defaultPrevented = false; ///< Set by preventDefault(); disables default press/focus
-								   ///< behavior for this dispatch.
+/// Button click handlers are the action, so preventing the default does not undo a
+/// handler that already ran. target is the activated control. current is the
+/// occurrence whose registrations are running. position is not included: keyboard
+/// and NodeHandle activation have no pointer location.
+struct ClickEvent {
+	Phase phase = Phase::bubble;   ///< Capture while walking toward the target, then bubble.
+	NodeId target{};			   ///< Activated control that started this dispatch.
+	NodeId current{};			   ///< Occurrence whose registrations are running.
+	bool defaultPrevented = false; ///< Set by preventDefault().
 
 	void preventDefault() noexcept { defaultPrevented = true; }
+};
+
+/// @brief Pointer dispatch context shared by press, release, motion, enter, and leave.
+///
+/// position uses document-relative, top-left logical points, not physical pixels or
+/// screen coordinates. preventDefault() on a press skips the built-in arm-and-focus
+/// default and still lets later registrations on the route run. Enter and leave do
+/// not walk ancestors; a parent is entered only when the pointer crosses its boundary.
+struct PointerEvent {
+	Point position{};			   ///< Document-relative pointer position in logical points.
+	Phase phase = Phase::bubble;   ///< Capture while walking toward the target, then bubble.
+	NodeId target{};			   ///< Hit target, or the occurrence entered or left.
+	NodeId current{};			   ///< Occurrence whose registrations are running.
+	bool defaultPrevented = false; ///< Set by preventDefault().
+
+	void preventDefault() noexcept { defaultPrevented = true; }
+};
+
+/// @brief Keyboard dispatch aimed at the focused eligible control, or the root.
+///
+/// preventDefault() skips Tab focus movement and Space/Return activation. It does
+/// not stop later registrations. Release events carry the same key and have no default.
+struct KeyEvent {
+	Key key = Key::enter;		   ///< Key that changed state.
+	bool backwards = false;		   ///< True when Shift modifies Tab.
+	Phase phase = Phase::bubble;   ///< Capture while walking toward the target, then bubble.
+	NodeId target{};			   ///< Focused control, or the root when none is eligible.
+	NodeId current{};			   ///< Occurrence whose registrations are running.
+	bool defaultPrevented = false; ///< Set by preventDefault().
+
+	void preventDefault() noexcept { defaultPrevented = true; }
+};
+
+/// @brief Notification that keyboard focus moved. The change is already published.
+///
+/// preventDefault() does not restore the previous focus. Disposal of the focused
+/// occurrence clears focus without a blur event, because the occurrence is already gone.
+struct FocusEvent {
+	Phase phase = Phase::bubble;   ///< Capture while walking toward the target, then bubble.
+	NodeId target{};			   ///< Occurrence that gained or lost focus.
+	NodeId current{};			   ///< Occurrence whose registrations are running.
+	bool defaultPrevented = false; ///< Set by preventDefault(); focus has already changed.
+
+	void preventDefault() noexcept { defaultPrevented = true; }
+};
+
+/// @brief Scroll gesture. preventDefault() skips the nearest scroll offset change.
+///
+/// delta follows Document::scroll: it is added to the retained vertical offset.
+/// A zero delta still dispatches and does not move content.
+struct ScrollEvent {
+	Point position{};			   ///< Document-relative pointer position in logical points.
+	double delta = 0;			   ///< Logical vertical delta passed to scroll().
+	Phase phase = Phase::bubble;   ///< Capture while walking toward the target, then bubble.
+	NodeId target{};			   ///< Hit target under the gesture.
+	NodeId current{};			   ///< Occurrence whose registrations are running.
+	bool defaultPrevented = false; ///< Set by preventDefault().
+
+	void preventDefault() noexcept { defaultPrevented = true; }
+};
+
+/// @brief Type-erased callable stored by one registration. ui::on selects the alternative.
+using EventHandler = std::variant<
+	std::function<void(ClickEvent &)>,
+	std::function<void(PointerEvent &)>,
+	std::function<void(KeyEvent &)>,
+	std::function<void(FocusEvent &)>,
+	std::function<void(ScrollEvent &)>>;
+
+/// @brief One handler copied onto a mounted occurrence.
+///
+/// Registrations keep their relative order. Copies are independent of the component
+/// description. The occurrence releases them when it is disposed. An empty callable
+/// is ignored.
+struct EventRegistration {
+	EventKind kind{};			 ///< Event this handler observes.
+	Phase phase = Phase::bubble; ///< Route phase. Bubble is the default.
+	EventHandler handler{};		 ///< Payload callable selected by kind.
 };
 
 /// @brief A read-only description of one visible node from the document's last commit.
@@ -355,9 +463,10 @@ struct Node {
 	std::function<void(const ::stana::rendering::GPUDiagnostic &)>
 		onGPUError; ///< Local-coordinate CPUCanvas commands copied at mount.
 	std::optional<SymbolState> symbol{};
-	std::function<void()> onClick;
-	std::function<void(PointerEvent &)> onPointerDown;
-	std::function<void(PointerEvent &)> onPointerDownCapture;
+	/// @brief Mount-time registrations, in registration order. Released with the occurrence.
+	std::vector<EventRegistration> events{};
+	/// @brief Built-in click action. Runs after click dispatch when default is not prevented.
+	std::function<void()> defaultActivate{};
 };
 
 /// @brief Owns one window's retained nodes, layout state and published projections.
@@ -420,9 +529,15 @@ class Document : public std::enable_shared_from_this<Document> {
 	void tab(bool backwards = false);
 	void pointerDown(Point point);
 	void pointerUp(Point point);
+	void pointerMove(Point point);
+	void pointerLeave();
 	void cancelPointer();
 	void scroll(Point point, double delta);
 	void keyActivate();
+	/// @brief Routes a key press, then runs Tab, Space, or Return defaults unless prevented.
+	void keyDown(Key key, bool backwards = false);
+	/// @brief Routes a key release. Release has no built-in default.
+	void keyUp(Key key, bool backwards = false);
 	void setTextMeasure(std::function<Size(const std::string &, Font, double)> measure);
 	void setOnPublish(std::function<void()> callback);
 	/// @brief Uses last-confirmed immutable geometry for coordinate-driven input.
@@ -553,6 +668,9 @@ class Document : public std::enable_shared_from_this<Document> {
 	bool isClosed_ = false;
 	std::optional<NodeId> focused_;
 	std::optional<NodeId> pressed_;
+	std::optional<NodeId> hovered_; ///< Deepest occurrence under the pointer, if any.
+	Point pointerPosition_{};		///< Last routed pointer position, used when the pointer leaves.
+	bool updatingHover_ = false;	///< Prevents re-entrant enter/leave routing.
 	std::function<Size(const std::string &, Font, double)> measureText_;
 	std::function<void()> onPublish_;
 	bool usesPresentationGeometry_ = false; ///< Selects acknowledged geometry for location input.
@@ -615,6 +733,14 @@ class Document : public std::enable_shared_from_this<Document> {
 	void acceptPresentation(::stana::rendering::PresentationAttempt);
 	[[nodiscard]] auto isEligible(NodeId identity) const -> bool;
 	[[nodiscard]] auto hitTestNode(NodeId identity, Point point) const -> std::optional<NodeId>;
+	[[nodiscard]] auto ancestorRoute(NodeId identity) const -> std::vector<NodeId>;
+	[[nodiscard]] auto keyboardTarget() const -> NodeId;
+
+	template <typename Payload>
+	[[nodiscard]] auto dispatch(NodeId target, EventKind kind, Payload event, bool includeAncestors)
+		-> Payload;
+
+	void updateHover(std::optional<NodeId> next, Point point);
 };
 } // namespace detail
 } // namespace stana::document

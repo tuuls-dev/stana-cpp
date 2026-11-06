@@ -168,6 +168,9 @@ void Document::remove(NodeId identity) {
 		if (pressed_ == id) {
 			pressed_.reset();
 		}
+		if (hovered_ == id) {
+			hovered_.reset();
+		}
 	}
 	for (const auto &[serial, record] : nodes_) {
 		static_cast<void>(serial);

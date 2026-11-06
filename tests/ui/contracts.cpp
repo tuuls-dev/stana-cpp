@@ -49,12 +49,12 @@ void counterRetainsIdentity() {
 				},
 				stana::ui::Button{
 					.text = "Increment",
-					.onClick = [count] -> void {
-						++count;
-					},
 					.lifecycle = {.onMount = [&](stana::document::NodeHandle handle) -> void {
 						button = std::move(handle);
-					}}
+					}},
+					.events = {stana::ui::on(stana::ui::Event::click, [count] -> void {
+						++count;
+					})}
 				}
 			)
 		}
@@ -102,9 +102,9 @@ struct LocalCounter {
 			.text = state.map([](int value) -> std::string {
 				return std::to_string(value);
 			}),
-			.onClick = [state] -> void {
+			.events = {stana::ui::on(stana::ui::Event::click, [state] -> void {
 				++state;
-			}
+			})}
 		};
 	}
 };
@@ -216,7 +216,10 @@ void themeDefaultsFollowEnvironment() {
 			.children = stana::ui::children(
 				stana::ui::Text{.text = "Count"},
 				stana::ui::Text{.text = "Marked", .textStyle = {.foreground = marked}},
-				stana::ui::Button{.text = "Increment", .onClick = [] -> void {}}
+				stana::ui::Button{
+					.text = "Increment",
+					.events = {stana::ui::on(stana::ui::Event::click, [] -> void {})}
+				}
 			)
 		}
 	);

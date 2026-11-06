@@ -255,6 +255,20 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 						}
 						document->pointerUp({.x = x, .y = y});
 					},
+					.pointerMove = [weakDocument](double x, double y) -> void {
+						const auto document = weakDocument.lock();
+						if (!document) {
+							return;
+						}
+						document->pointerMove({.x = x, .y = y});
+					},
+					.pointerLeave = [weakDocument]() -> void {
+						const auto document = weakDocument.lock();
+						if (!document) {
+							return;
+						}
+						document->pointerLeave();
+					},
 					.scroll = [weakDocument](double x, double y, double delta) -> void {
 						const auto document = weakDocument.lock();
 						if (!document) {
@@ -262,20 +276,46 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 						}
 						document->scroll({.x = x, .y = y}, delta);
 					},
-					.key = [weakDocument](stana::platform::detail::KeyAction action) -> void {
+					.key = [weakDocument](
+							   stana::platform::detail::KeyAction action,
+							   stana::platform::detail::KeyPhase phase
+						   ) -> void {
 						const auto document = weakDocument.lock();
 						if (!document) {
 							return;
 						}
+						using stana::document::Key;
+						using stana::platform::detail::KeyAction;
+						using stana::platform::detail::KeyPhase;
+						const bool released = phase == KeyPhase::up;
 						switch (action) {
-						case stana::platform::detail::KeyAction::tabForward:
-							document->tab();
+						case KeyAction::tabForward:
+							if (released) {
+								document->keyUp(Key::tab);
+							} else {
+								document->keyDown(Key::tab);
+							}
 							break;
-						case stana::platform::detail::KeyAction::tabBackward:
-							document->tab(true);
+						case KeyAction::tabBackward:
+							if (released) {
+								document->keyUp(Key::tab, true);
+							} else {
+								document->keyDown(Key::tab, true);
+							}
 							break;
-						case stana::platform::detail::KeyAction::activate:
-							document->keyActivate();
+						case KeyAction::space:
+							if (released) {
+								document->keyUp(Key::space);
+							} else {
+								document->keyDown(Key::space);
+							}
+							break;
+						case KeyAction::enter:
+							if (released) {
+								document->keyUp(Key::enter);
+							} else {
+								document->keyDown(Key::enter);
+							}
 							break;
 						}
 					},

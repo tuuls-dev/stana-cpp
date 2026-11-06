@@ -287,7 +287,14 @@ struct RenderingWork {
 enum class KeyAction : std::uint8_t {
 	tabForward,	 ///< Move focus to the next eligible occurrence.
 	tabBackward, ///< Move focus to the previous eligible occurrence.
-	activate	 ///< Invoke the currently focused control.
+	space,		 ///< Space. The document activates the focused control unless prevented.
+	enter		 ///< Return. The document activates the focused control unless prevented.
+};
+
+/// @brief Whether a native key callback is a press or a release.
+enum class KeyPhase : std::uint8_t {
+	down, ///< Key changed to pressed.
+	up	  ///< Key changed to released.
 };
 
 /// @brief Module-free copy of an exact portable presentation identity, never a scene ID alone.
@@ -312,8 +319,10 @@ struct Window {
 		appearance{}; ///< Reports whether the current system appearance is dark.
 	std::function<void(double, double)> pointerDown{}; ///< Dispatches a logical-coordinate press.
 	std::function<void(double, double)> pointerUp{};   ///< Dispatches logical-coordinate release.
+	std::function<void(double, double)> pointerMove{}; ///< Dispatches logical-coordinate motion.
+	std::function<void()> pointerLeave{}; ///< Clears hover when the pointer exits the view.
 	std::function<void(double, double, double)> scroll{}; ///< Dispatches vertical scrolling.
-	std::function<void(KeyAction)> key{}; ///< Invokes portable focus/activation behavior.
+	std::function<void(KeyAction, KeyPhase)> key{}; ///< Dispatches a portable key press or release.
 	std::function<std::expected<FrameIdentity, std::string>(const PresentationRequest &)>
 		beginPresentation{}; ///< Registers exact evidence identity before GPU submission.
 	std::function<bool(FrameIdentity, bool)>

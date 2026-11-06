@@ -248,7 +248,25 @@ class TestHost {
 	void keyActivate() { document_->keyActivate(); }
 
 	/// @brief Applies a logical vertical delta to the nearest eligible scroll ancestor.
+	/// A scroll handler may prevent that default. The event still runs first.
 	void scroll(Point point, double delta) { document_->scroll(point, delta); }
+
+	/// @brief Moves the pointer and reports enter, leave, and move against hit testing.
+	void pointerMove(Point point) { document_->pointerMove(point); }
+
+	/// @brief Leaves the window. Entered occurrences receive pointer leave.
+	void pointerLeave() { document_->pointerLeave(); }
+
+	/// @brief Delivers a key press to the focused control, or the root when none is eligible.
+	/// Tab, Space, and Return keep their default unless a handler prevents it.
+	void keyDown(::stana::document::Key key, bool backwards = false) {
+		document_->keyDown(key, backwards);
+	}
+
+	/// @brief Delivers a key release. Release has no built-in default.
+	void keyUp(::stana::document::Key key, bool backwards = false) {
+		document_->keyUp(key, backwards);
+	}
 
 	/// @brief Delivers one explicit frame, then publishes the resulting paint.
 	void tickFrames(::stana::ui::FrameTime frame) {

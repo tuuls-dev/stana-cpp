@@ -241,8 +241,10 @@ void applyInteraction(
 	);
 	auto *node = context.document->find(identity);
 	node->inert = properties.inert;
-	node->onPointerDown = properties.onPointerDown;
-	node->onPointerDownCapture = properties.onPointerDownCapture;
+}
+
+void applyEvents(const Events &events, NodeId identity, MountContext &context) {
+	context.document->find(identity)->events = events.registrations;
 }
 
 void applyAccessibility(
@@ -319,7 +321,6 @@ auto mount(const Button &description, MountContext &context) -> stana::document:
 			);
 		}
 	);
-	context.document->find(identity)->onClick = description.onClick;
 	return context.document->handle(identity);
 }
 
@@ -356,7 +357,7 @@ auto mount(const Toggle &description, MountContext &context) -> stana::document:
 			);
 		}
 	);
-	context.document->find(identity)->onClick = [value] -> void {
+	context.document->find(identity)->defaultActivate = [value] -> void {
 		value.set(!value.get());
 	};
 	return context.document->handle(identity);
