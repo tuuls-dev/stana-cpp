@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <functional>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <stdexcept>
 #include <utility>
 
@@ -465,14 +467,46 @@ void render(const std::shared_ptr<WindowState> &state) {
 			return;
 		}
 	} else {
+		struct SymbolResultKey {
+			std::uint64_t document = 0;
+			std::uint64_t serial = 0;
+			std::uint64_t generation = 0;
+			auto operator<=>(const SymbolResultKey &) const = default;
+		};
+
+		std::map<SymbolResultKey, SymbolFailure> symbolResults;
+		const std::function<void(SymbolFailure)> collectSymbol =
+			[&](SymbolFailure failure) -> void {
+			const SymbolResultKey key{
+				.document = failure.instance.document,
+				.serial = failure.instance.serial,
+				.generation = failure.generation
+			};
+			const auto found = symbolResults.find(key);
+			if (found == symbolResults.end() || !found->second.code.has_value()) {
+				symbolResults.insert_or_assign(key, failure);
+			}
+		};
 		for (const auto &layout : state->grid.tiles) {
 			if (!rasterDirty.test(layout.ordinal)) {
 				continue;
 			}
-			rasterScene(state->tiles.at(layout.ordinal)->bitmapContext, *target, layout.pixels);
+			rasterScene(
+				state->tiles.at(layout.ordinal)->bitmapContext,
+				*target,
+				layout.pixels,
+				true,
+				state->presentationEpoch,
+				collectSymbol
+			);
 			state->tiles.at(layout.ordinal)->cpuDirty = true;
 			++state->work.rasterizedTiles;
 			state->work.rasterizedPixels += layout.pixels.width * layout.pixels.height;
+		}
+		if (target->source->symbolError) {
+			for (const auto &entry : symbolResults) {
+				target->source->symbolError(entry.second);
+			}
 		}
 	}
 	state->rasterBaseline = target;

@@ -4,6 +4,7 @@
 #import <CoreGraphics/CoreGraphics.h>
 #import <CoreText/CoreText.h>
 #import <Metal/Metal.h>
+#import <QuartzCore/CADisplayLink.h>
 #import <QuartzCore/CAMetalLayer.h>
 #import <QuartzCore/CATransaction.h>
 
@@ -77,10 +78,160 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
   @public
 	std::shared_ptr<stana::platform::detail::WindowState>
 		state_; ///< Engine callbacks and renderer resources.
+	CADisplayLink *frameLink_;
+	NSScreen *frameScreen_;
+	NSMutableArray *visibilityObservers_;
+	bool reportedHostVisible_;
+	bool visibilityArmed_;
+	bool frameLinkRetired_;
 }
+- (instancetype)initWithFrame:(NSRect)frameRect;
+- (void)installFrameLink;
+- (void)stopFrameLink;
+- (void)setFrameDemand:(BOOL)demand;
+- (void)publishCurrentVisibility;
+- (void)retargetFrameLink;
+- (void)tickFrameLink:(CADisplayLink *)link;
 @end
 
 @implementation STANAView
+
+- (instancetype)initWithFrame:(NSRect)frameRect {
+	self = [super initWithFrame:frameRect];
+	if (self != nil) {
+		reportedHostVisible_ = true;
+	}
+	return self;
+}
+
+- (void)installFrameLink {
+	if (state_ == nullptr || frameLinkRetired_) {
+		return;
+	}
+	reportedHostVisible_ = true;
+	visibilityArmed_ = true;
+	if (state_->callbacks.animation) {
+		const auto weak = std::weak_ptr{state_};
+		state_->callbacks.animation->apply = [weak](bool demand) -> void {
+			const auto owner = weak.lock();
+			if (!owner || owner->isClosed || owner->view == nil) {
+				return;
+			}
+			[static_cast<STANAView *>(owner->view) setFrameDemand:demand];
+		};
+	}
+	if (visibilityObservers_ == nil) {
+		visibilityObservers_ = [NSMutableArray array];
+		__weak STANAView *const weakView = self;
+		NSArray<NSNotificationName> *const names =
+			@[ NSApplicationDidHideNotification, NSApplicationDidUnhideNotification ];
+		for (NSUInteger index = 0; index < names.count; ++index) {
+			NSNotificationName const name = [names objectAtIndex:index];
+			id const token = [NSNotificationCenter.defaultCenter
+				addObserverForName:name
+							object:nil
+							 queue:NSOperationQueue.mainQueue
+						usingBlock:^(NSNotification *notification) {
+						  static_cast<void>(notification);
+						  [weakView publishCurrentVisibility];
+						}];
+			if (token != nil) {
+				[visibilityObservers_ addObject:token];
+			}
+		}
+	}
+	[self retargetFrameLink];
+	[self publishCurrentVisibility];
+}
+
+- (void)stopFrameLink {
+	frameLinkRetired_ = true;
+	visibilityArmed_ = false;
+	for (NSUInteger index = 0; index < visibilityObservers_.count; ++index) {
+		[NSNotificationCenter.defaultCenter
+			removeObserver:[visibilityObservers_ objectAtIndex:index]];
+	}
+	visibilityObservers_ = nil;
+	if (frameLink_ != nil) {
+		[frameLink_ invalidate];
+		frameLink_ = nil;
+	}
+	frameScreen_ = nil;
+	if (state_ != nullptr && state_->callbacks.animation) {
+		state_->callbacks.animation->apply = nullptr;
+	}
+}
+
+- (void)setFrameDemand:(BOOL)demand {
+	if (frameLinkRetired_ || state_ == nullptr) {
+		return;
+	}
+	if (frameLink_ == nil && demand) {
+		[self retargetFrameLink];
+	}
+	if (frameLink_ != nil) {
+		frameLink_.paused = !demand;
+	}
+}
+
+- (void)publishCurrentVisibility {
+	if (!visibilityArmed_ || frameLinkRetired_ || state_ == nullptr || state_->isClosed) {
+		return;
+	}
+	NSWindow *const window = self.window;
+	const bool applicationHidden = NSApp != nil && NSApp.isHidden;
+	const bool shown = window != nil && window.isVisible && !window.isMiniaturized &&
+		!self.isHiddenOrHasHiddenAncestor && !applicationHidden;
+	if (shown == reportedHostVisible_) {
+		return;
+	}
+	reportedHostVisible_ = shown;
+	if (state_->callbacks.hostVisible) {
+		state_->callbacks.hostVisible(shown);
+	}
+}
+
+- (void)retargetFrameLink {
+	if (frameLinkRetired_ || state_ == nullptr) {
+		return;
+	}
+	NSScreen *screen = self.window != nil ? self.window.screen : nil;
+	if (screen == nil) {
+		screen = NSScreen.mainScreen;
+	}
+	if (screen == nil || screen == frameScreen_) {
+		return;
+	}
+	if (frameLink_ != nil) {
+		[frameLink_ invalidate];
+		frameLink_ = nil;
+	}
+	CADisplayLink *const link = [screen displayLinkWithTarget:self
+													 selector:@selector(tickFrameLink:)];
+	if (link == nil) {
+		frameScreen_ = nil;
+		return;
+	}
+	const bool demanded = state_->callbacks.animation && state_->callbacks.animation->demanded();
+	link.paused = YES;
+	[link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+	frameLink_ = link;
+	frameScreen_ = screen;
+	frameLink_.paused = demanded ? NO : YES;
+}
+
+- (void)tickFrameLink:(CADisplayLink *)link {
+	if (frameLinkRetired_ || link == nil || state_ == nullptr || state_->isClosed) {
+		return;
+	}
+	[self publishCurrentVisibility];
+	if (!reportedHostVisible_ || !state_->callbacks.frame) {
+		return;
+	}
+	const double timestamp = link.timestamp;
+	const double deadline = link.targetTimestamp;
+	state_->callbacks.frame(timestamp, deadline);
+}
 
 - (BOOL)isFlipped {
 	return YES;
@@ -118,9 +269,21 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 - (void)viewDidMoveToWindow {
 	[super viewDidMoveToWindow];
 	if (state_ && !state_->isClosed) {
+		[self publishCurrentVisibility];
+		[self retargetFrameLink];
 		stana::platform::detail::installSurface(state_);
 		stana::platform::detail::requestFrame(state_);
 	}
+}
+
+- (void)viewDidHide {
+	[super viewDidHide];
+	[self publishCurrentVisibility];
+}
+
+- (void)viewDidUnhide {
+	[super viewDidUnhide];
+	[self publishCurrentVisibility];
 }
 
 - (void)viewDidChangeBackingProperties {
@@ -220,9 +383,26 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 - (void)windowDidChangeScreen:(NSNotification *)notification {
 	static_cast<void>(notification);
 	if (state_ && !state_->isClosed) {
+		if (state_->view != nil) {
+			[static_cast<STANAView *>(state_->view) retargetFrameLink];
+		}
 		// Backing-scale changes replace the surface separately. A display/headroom
 		// change only remaps the cached linear packet; it must not step state.
 		stana::platform::detail::requestFrame(state_);
+	}
+}
+
+- (void)windowDidMiniaturize:(NSNotification *)notification {
+	static_cast<void>(notification);
+	if (state_ && !state_->isClosed && state_->view != nil) {
+		[static_cast<STANAView *>(state_->view) publishCurrentVisibility];
+	}
+}
+
+- (void)windowDidDeminiaturize:(NSNotification *)notification {
+	static_cast<void>(notification);
+	if (state_ && !state_->isClosed && state_->view != nil) {
+		[static_cast<STANAView *>(state_->view) publishCurrentVisibility];
 	}
 }
 
@@ -236,12 +416,18 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 - (void)windowDidChangeOcclusionState:(NSNotification *)notification {
 	static_cast<void>(notification);
 	if (state_ && !state_->isClosed) {
+		if (state_->view != nil) {
+			[static_cast<STANAView *>(state_->view) publishCurrentVisibility];
+		}
 		stana::platform::detail::requestFrame(state_);
 	}
 }
 
 - (void)windowWillClose:(NSNotification *)notification {
 	[NSNotificationCenter.defaultCenter removeObserver:self];
+	if (state_ && state_->view != nil) {
+		[static_cast<STANAView *>(state_->view) stopFrameLink];
+	}
 	NSWindow *const closingWindow = notification.object;
 	if (state_ && !std::exchange(state_->isClosed, true)) {
 		stana::platform::detail::closeRenderer(state_);
@@ -522,6 +708,7 @@ auto run(std::vector<Window> windows) -> std::expected<int, std::string> {
 			[window makeKeyAndOrderFront:nil];
 			[window makeFirstResponder:view];
 			installSurface(state);
+			[view installFrameLink];
 			requestFrame(state);
 		}
 		if (windows.empty()) {

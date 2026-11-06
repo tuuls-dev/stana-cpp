@@ -2,6 +2,7 @@ module;
 
 #include <algorithm>
 #include <cmath>
+#include <compare>
 #include <cstdint>
 #include <exception>
 #include <expected>
@@ -21,6 +22,7 @@ import :document;
 import :primitives;
 import :reactive;
 import :rendering;
+import :symbol_geometry;
 
 namespace stana::rendering::detail {
 namespace {
@@ -56,6 +58,8 @@ constexpr double focusBorderWidth = 2;
 		return "cpuCanvas";
 	case gpuCanvas:
 		return "gpuCanvas";
+	case symbol:
+		return "symbol";
 	}
 	throw std::logic_error("Unknown Stana node kind");
 }
@@ -134,6 +138,28 @@ void eraseGeometry(
 } // namespace stana::rendering::detail
 
 namespace stana::document::detail {
+namespace {
+[[nodiscard]] auto symbolRectEmpty(Rect rect) -> bool {
+	return std::is_eq(rect.size.width <=> 0.0) || std::is_eq(rect.size.height <=> 0.0);
+}
+
+[[nodiscard]] auto uniteSymbol(Rect left, Rect right) -> Rect {
+	if (symbolRectEmpty(left)) {
+		return right;
+	}
+	if (symbolRectEmpty(right)) {
+		return left;
+	}
+	const double x = std::min(left.origin.x, right.origin.x);
+	const double y = std::min(left.origin.y, right.origin.y);
+	const double rightEdge =
+		std::max(left.origin.x + left.size.width, right.origin.x + right.size.width);
+	const double bottomEdge =
+		std::max(left.origin.y + left.size.height, right.origin.y + right.size.height);
+	return {.origin = {.x = x, .y = y}, .size = {.width = rightEdge - x, .height = bottomEdge - y}};
+}
+} // namespace
+
 auto Document::project(
 	NodeId identity,
 	stana::rendering::detail::ProjectionContext incoming,
@@ -252,6 +278,38 @@ auto Document::project(
 				.environment = environment_,
 				.opacity = opacity
 			};
+		}
+		if (node->kind == NodeKind::symbol && node->symbol) {
+			const auto &symbol = *node->symbol;
+			const auto fitted = stana::symbol::square(symbol.size, content);
+			auto presentation = stana::symbol::presentationFor(
+				symbol.asset,
+				symbol.size,
+				content,
+				environment_.direction,
+				symbol.effect,
+				symbol.color.resolved(environment_.theme, environment_.highContrast),
+				symbol.strokeWidth,
+				symbol.generation,
+				symbol.available,
+				symbol.ink
+			);
+			if (presentation) {
+				const Rect viewport{.size = viewport_};
+				Rect overflow = node->bounds;
+				std::optional<Rect> mapped;
+				if (!presentation->preparationLimited && symbol.ink) {
+					mapped = stana::symbol::enclosing(presentation->transform, *symbol.ink);
+				}
+				overflow = uniteSymbol(overflow, mapped.value_or(viewport));
+				paint->symbol = stana::rendering::detail::SymbolLeaf{
+					.instance = identity,
+					.bounds = fitted,
+					.ink = overflow,
+					.presentation = std::move(*presentation),
+					.opacity = opacity
+				};
+			}
 		}
 		paint->prefix = std::move(scene.commands);
 		if (node->clip) {
@@ -386,6 +444,7 @@ void Document::commit() {
 			try {
 				static_cast<void>(measure(root_, viewport_));
 				arrange(root_, {.size = viewport_});
+				reconcileSymbols();
 			} catch (...) {
 				// Defer to the existing runtime before any publication or effects.
 				if (!runtime.pending.empty()) {
@@ -467,5 +526,69 @@ void Document::commit() {
 		}
 		throw;
 	}
+}
+
+void Document::reconcileSymbols() {
+	for (const auto &[serial, node] : nodes_) {
+		static_cast<void>(serial);
+		if (node->kind != NodeKind::symbol || !node->symbol) {
+			continue;
+		}
+		auto &symbol = *node->symbol;
+		const auto effectBefore = symbol.effect;
+		const auto availableBefore = symbol.available;
+		const auto inkBefore = symbol.ink;
+		const auto generationBefore = symbol.generation;
+		bool visible = hostVisible_;
+		for (const Node *ancestor = node.get(); ancestor != nullptr;
+			ancestor = find(ancestor->parent)) {
+			if (ancestor->visibility != Visibility::visible) {
+				visible = false;
+				break;
+			}
+		}
+		const auto content =
+			stana::layout::detail::contentRect(node->bounds, node->padding, environment_.direction);
+		const auto fitted = stana::symbol::square(symbol.size, content);
+		const auto box = symbol.asset.viewBox();
+		const double longest = std::max(box.size.width, box.size.height);
+		const double fitScale =
+			fitted.size.width > 0.0 && longest > 0.0 ? fitted.size.width / longest : 0.0;
+		const std::optional<double> strokeKey =
+			symbol.asset.hasStroke() ? symbol.strokeWidth : std::nullopt;
+		const bool assetChanged = symbol.asset != symbol.previousAsset;
+		const double previousStroke = symbol.previousStroke.value_or(0.0);
+		const double nextStroke = strokeKey.value_or(0.0);
+		const bool strokeChanged = symbol.previousStroke.has_value() != strokeKey.has_value() ||
+			(symbol.previousStroke.has_value() && !std::is_eq(previousStroke <=> nextStroke));
+		const double previousScale = symbol.previousScale.value_or(fitScale);
+		const bool scaleChanged =
+			!symbol.previousScale.has_value() || !std::is_eq(previousScale <=> fitScale);
+		if (assetChanged || strokeChanged || scaleChanged) {
+			symbol.available = true;
+			symbol.failed.clear();
+			symbol.generation = stana::detail::nextIdentity();
+			symbol.ink = stana::symbol::inkBounds(symbol.asset, symbol.strokeWidth);
+		}
+		symbol.playbackState.reconcile(
+			assetChanged,
+			symbol.playback,
+			environment_.reducedMotion,
+			visible,
+			symbol.available
+		);
+		if (symbol.playbackState.resetClock()) {
+			resetFrameTimestamp(symbol.frameRegistration);
+		}
+		symbol.effect = symbol.playbackState.sample();
+		symbol.previousAsset = symbol.asset;
+		symbol.previousStroke = strokeKey;
+		symbol.previousScale = fitScale;
+		if (symbol.effect != effectBefore || symbol.available != availableBefore ||
+			symbol.ink != inkBefore || symbol.generation != generationBefore) {
+			invalidate(node->id, Dirty::paint);
+		}
+	}
+	refreshFrameDemand();
 }
 } // namespace stana::document::detail

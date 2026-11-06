@@ -330,6 +330,7 @@ void Compositor::reset(std::uint64_t epoch) {
 	instances_.clear();
 	changed_.clear();
 	cpuCache_.clear();
+	symbolCache_.clear();
 	lineCache_.clear();
 	cancelCompilation(resources_.device, window_);
 	compilerActive_ = false;
@@ -535,6 +536,157 @@ auto Compositor::cpu(
 	return asset;
 }
 
+auto Compositor::symbolRaster(
+	const SymbolLeaf &symbol,
+	const std::vector<PreparedOperation> &clips,
+	const PreparedScene &scene,
+	const TileGrid &grid,
+	std::uint64_t epoch,
+	id<MTLCommandBuffer> commands,
+	const std::function<void(SymbolFailure)> &report
+) -> Result<std::shared_ptr<CPUAsset>> {
+	std::optional<SymbolFailure> outcome;
+	const auto capture = [&](SymbolFailure failure) -> void {
+		outcome = failure;
+	};
+	const auto deliver = [&]() -> void {
+		if (outcome && report) {
+			report(*outcome);
+		}
+	};
+	if (symbol.preparationLimited) {
+		static_cast<void>(rasterSymbol(nullptr, scene.scale, {}, {}, symbol, epoch, capture));
+		deliver();
+		return std::shared_ptr<CPUAsset>{};
+	}
+	SymbolKey key{
+		.scale = scene.scale,
+		.viewport = {grid.viewport.width, grid.viewport.height},
+		.contentHash = symbol.contentHash
+	};
+	key.clips.reserve(clips.size());
+	for (const auto &clip : clips) {
+		key.clips.push_back(normalized(clip.command));
+	}
+	if (const auto found = symbolCache_.find(key); found != symbolCache_.end()) {
+		if (auto value = found->second.lock()) {
+			return value;
+		}
+	}
+	LogicalRect ink = symbol.ink;
+	ink = intersect(
+		ink,
+		{.size = {
+			 .width = static_cast<double>(grid.viewport.width) / scene.scale,
+			 .height = static_cast<double>(grid.viewport.height) / scene.scale
+		 }}
+	);
+	for (const auto &clip : clips) {
+		ink = intersect(
+			ink,
+			{.origin = {.x = clip.command.x, .y = clip.command.y},
+				.size = {.width = clip.command.width, .height = clip.command.height}}
+		);
+	}
+	if (ink.size.width <= 0 || ink.size.height <= 0 || symbol.opacity <= 0) {
+		return std::shared_ptr<CPUAsset>{};
+	}
+	const auto left =
+		static_cast<std::size_t>(std::max(0.0, std::floor(ink.origin.x * scene.scale)));
+	const auto top =
+		static_cast<std::size_t>(std::max(0.0, std::floor(ink.origin.y * scene.scale)));
+	const auto right = std::min(
+		grid.viewport.width,
+		static_cast<std::size_t>(std::ceil((ink.origin.x + ink.size.width) * scene.scale))
+	);
+	const auto bottom = std::min(
+		grid.viewport.height,
+		static_cast<std::size_t>(std::ceil((ink.origin.y + ink.size.height) * scene.scale))
+	);
+	if (right <= left || bottom <= top) {
+		return std::shared_ptr<CPUAsset>{};
+	}
+	const auto pitch = alignedRasterRow(right - left);
+	if (pitch > maximumRasterBytes / (bottom - top)) {
+		return failed(Diagnostic::Category::capability, "Symbol run exceeds raster budget");
+	}
+	auto asset = std::make_shared<CPUAsset>();
+	asset->raster = std::make_shared<RasterTile>(
+		TileLayout{
+			.pixels = {.x = left, .y = top, .width = right - left, .height = bottom - top},
+			.bytesPerRow = pitch,
+			.allocationBytes = pitch * (bottom - top)
+		},
+		resources_.device->device,
+		rasterAccounting_
+	);
+	asset->bounds = {
+		.origin =
+			{.x = static_cast<double>(left) / scene.scale,
+				.y = static_cast<double>(top) / scene.scale},
+		.size = {
+			.width = static_cast<double>(right - left) / scene.scale,
+			.height = static_cast<double>(bottom - top) / scene.scale
+		}
+	};
+	const bool painted = rasterSymbol(
+		asset->raster->bitmapContext,
+		scene.scale,
+		asset->raster->layout.pixels,
+		clips,
+		symbol,
+		epoch,
+		capture
+	);
+	if (!painted) {
+		deliver();
+		return std::shared_ptr<CPUAsset>{};
+	}
+	auto texture = resources_.texture(
+		static_cast<std::uint32_t>(right - left),
+		static_cast<std::uint32_t>(bottom - top),
+		Format::bgra8,
+		MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget
+	);
+	if (!texture) {
+		outcome = SymbolFailure{
+			.code = SymbolFailureCode::renderingFailed,
+			.instance = symbol.instance,
+			.generation = symbol.generation,
+			.epoch = epoch
+		};
+		deliver();
+		return std::unexpected(texture.error());
+	}
+	asset->texture = std::move(*texture);
+	id<MTLBlitCommandEncoder> const copy = [commands blitCommandEncoder];
+	if (copy == nil) {
+		outcome = SymbolFailure{
+			.code = SymbolFailureCode::renderingFailed,
+			.instance = symbol.instance,
+			.generation = symbol.generation,
+			.epoch = epoch
+		};
+		deliver();
+		return failed(Diagnostic::Category::execution, "Cannot encode a symbol texture");
+	}
+	encodeTile(copy, *asset->raster, asset->texture->texture);
+	[copy endEncoding];
+	work_.cpuRasterPixels += (right - left) * (bottom - top);
+	constexpr std::size_t metadataLimit = 4096;
+	if (symbolCache_.size() >= metadataLimit) {
+		std::erase_if(symbolCache_, [](const auto &entry) -> bool {
+			return entry.second.expired();
+		});
+	}
+	if (symbolCache_.size() >= metadataLimit) {
+		symbolCache_.erase(symbolCache_.begin());
+	}
+	symbolCache_.insert_or_assign(std::move(key), asset);
+	deliver();
+	return asset;
+}
+
 auto Compositor::prepare(
 	std::shared_ptr<const PreparedScene> scene,
 	const TileGrid &grid,
@@ -615,6 +767,35 @@ auto Compositor::prepare(
 			return {};
 		}
 		const auto asset = cpu(operation, clips, *packet->scene, grid, commands);
+		if (!asset) {
+			return std::unexpected(asset.error());
+		}
+		if (!*asset) {
+			return {};
+		}
+		packet->cpuAssets.push_back(*asset);
+		Quad quad;
+		quad.bounds = floats((*asset)->bounds);
+		quad.options = {0, 1, 0, 1};
+		quad.flags.at(2) = static_cast<std::uint32_t>(linear);
+		items.push_back(
+			{.kind = DrawItem::Kind::image,
+				.quad = quad,
+				.bounds = (*asset)->bounds,
+				.texture = (*asset)->texture}
+		);
+		return {};
+	};
+	const auto appendSymbol = [&](const SymbolLeaf &symbol) -> Result<void> {
+		const auto asset = symbolRaster(
+			symbol,
+			clips,
+			*packet->scene,
+			grid,
+			packet->epoch,
+			commands,
+			packet->scene->source->symbolError
+		);
 		if (!asset) {
 			return std::unexpected(asset.error());
 		}
@@ -853,6 +1034,12 @@ auto Compositor::prepare(
 		}
 		for (const auto &operation : branch->paint->prefix) {
 			const auto appended = appendCPU(operation);
+			if (!appended) {
+				return appended;
+			}
+		}
+		if (branch->source->paint->symbol) {
+			const auto appended = appendSymbol(*branch->source->paint->symbol);
 			if (!appended) {
 				return appended;
 			}

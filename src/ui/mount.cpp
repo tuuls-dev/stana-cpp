@@ -1,8 +1,10 @@
 module;
 
 #include <cmath>
+#include <compare>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -416,3 +418,132 @@ auto mount(const GPUCanvas &description, MountContext &context) -> stana::docume
 	return context.document->handle(identity);
 }
 } // namespace stana::ui
+
+namespace stana::symbol {
+namespace {
+[[nodiscard]] auto
+sameOptional(const std::optional<double> &left, const std::optional<double> &right) -> bool {
+	if (left.has_value() != right.has_value()) {
+		return false;
+	}
+	return !left || std::is_eq(*left <=> *right);
+}
+} // namespace
+
+auto mount(const Symbol &description, stana::ui::MountContext &context)
+	-> stana::document::NodeHandle {
+	if (!description.asset.get().valid()) {
+		throw std::invalid_argument("Stana: cannot mount an empty symbol asset");
+	}
+	const auto identity = stana::ui::detail::createConfigured(
+		description,
+		stana::document::detail::NodeKind::symbol,
+		context
+	);
+	auto *node = context.document->find(identity);
+	node->clip = description.appearance.clip.value_or(false);
+	node->symbol = stana::document::detail::SymbolState{};
+	node->symbol->onError = description.onError;
+	context.document->bind(
+		identity,
+		description.asset,
+		[](stana::document::detail::Node &record,
+			const Asset &value) -> stana::document::detail::Dirty {
+			if (!value.valid()) {
+				throw std::invalid_argument("Stana: cannot mount an empty symbol asset");
+			}
+			if (!record.symbol || record.symbol->asset == value) {
+				return stana::document::detail::Dirty::none;
+			}
+			record.symbol->asset = value;
+			return stana::document::detail::Dirty::paint;
+		}
+	);
+	context.document->bind(
+		identity,
+		description.size,
+		[](stana::document::detail::Node &record, double value) -> stana::document::detail::Dirty {
+			stana::detail::requireNonnegative(value);
+			if (!record.symbol || std::is_eq(record.symbol->size <=> value)) {
+				return stana::document::detail::Dirty::none;
+			}
+			record.symbol->size = value;
+			return stana::document::detail::Dirty::measure |
+				stana::document::detail::Dirty::arrange | stana::document::detail::Dirty::paint |
+				stana::document::detail::Dirty::snapshot;
+		}
+	);
+	context.document->bind(
+		identity,
+		description.color,
+		[](stana::document::detail::Node &record,
+			const Color &value) -> stana::document::detail::Dirty {
+			if (!record.symbol || record.symbol->color == value) {
+				return stana::document::detail::Dirty::none;
+			}
+			record.symbol->color = value;
+			return stana::document::detail::Dirty::paint;
+		}
+	);
+	context.document->bind(
+		identity,
+		description.strokeWidth,
+		[](stana::document::detail::Node &record,
+			const std::optional<double> &value) -> stana::document::detail::Dirty {
+			if (value) {
+				stana::detail::requireNonnegative(*value);
+			}
+			if (!record.symbol || sameOptional(record.symbol->strokeWidth, value)) {
+				return stana::document::detail::Dirty::none;
+			}
+			record.symbol->strokeWidth = value;
+			return stana::document::detail::Dirty::paint;
+		}
+	);
+	context.document->bind(
+		identity,
+		description.animation,
+		[](stana::document::detail::Node &record,
+			const Playback &value) -> stana::document::detail::Dirty {
+			if (!record.symbol || record.symbol->playback == value) {
+				return stana::document::detail::Dirty::none;
+			}
+			record.symbol->playback = value;
+			return stana::document::detail::Dirty::paint;
+		}
+	);
+	const auto weak = context.document->weak_from_this();
+	node->symbol->frameRegistration = context.document->addFrameRegistration(
+		[weak, identity]() -> bool {
+			const auto document = weak.lock();
+			const auto *live = document ? document->find(identity) : nullptr;
+			return live != nullptr && live->scope.alive() && live->symbol &&
+				live->symbol->playbackState.needsFrame();
+		},
+		[weak, identity](stana::document::detail::Document::FrameStamp, double elapsed) -> void {
+			const auto document = weak.lock();
+			auto *live = document ? document->find(identity) : nullptr;
+			if (live == nullptr || !live->symbol) {
+				return;
+			}
+			const auto before = live->symbol->effect;
+			live->symbol->playbackState.advance(elapsed);
+			live->symbol->effect = live->symbol->playbackState.sample();
+			if (live->symbol->effect != before) {
+				document->invalidate(identity, stana::document::detail::Dirty::paint);
+			}
+			document->refreshFrameDemand();
+		}
+	);
+	static_cast<void>(node->scope.own([weak, identity]() -> void {
+		const auto document = weak.lock();
+		if (!document) {
+			return;
+		}
+		if (const auto *live = document->find(identity); live != nullptr && live->symbol) {
+			document->cancelFrameRegistration(live->symbol->frameRegistration);
+		}
+	}));
+	return context.document->handle(identity);
+}
+} // namespace stana::symbol

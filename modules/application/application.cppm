@@ -131,7 +131,8 @@ class Application {
 		auto document = ::stana::document::detail::Document::create(window.size);
 		::stana::reactive::Transaction::perform([&] -> void {
 			::stana::ui::MountContext context{.document = document, .parent = document->root()};
-			static_cast<void>(::stana::ui::mount(window.content, context));
+			using ::stana::ui::mount;
+			static_cast<void>(mount(window.content, context));
 		});
 		return {
 			.title = window.title,

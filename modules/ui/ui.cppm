@@ -21,6 +21,8 @@ export import :tasks;
 export import :rendering;
 import :document;
 export import :layout;
+export import :symbol_asset;
+export import :symbol_playback;
 
 export namespace stana::ui {
 
@@ -108,13 +110,25 @@ struct MountContext {
 	NodeId parent;
 };
 
+/// @brief One display-link sample delivered to ComponentContext::onFrame.
+struct FrameTime {
+	double timestamp = 0;		///< Host time of this sample, in seconds.
+	double targetTimestamp = 0; ///< Expected time of the next sample, in seconds.
+	double elapsed = 0; ///< Seconds since the previous delivered sample. Zero after a reset.
+};
+
 /// @brief Mount-local state and external resources live as long as this occurrence, not
 /// as long as its temporary component description.
 class ComponentContext {
   public:
-	ComponentContext(::stana::reactive::Scope scope, Environment environment)
+	ComponentContext(
+		::stana::reactive::Scope scope,
+		Environment environment,
+		std::weak_ptr<::stana::document::detail::Document> document = {}
+	)
 		: scope_(std::move(scope)),
-		  environment_(environment) {}
+		  environment_(environment),
+		  document_(std::move(document)) {}
 
 	template <typename T>
 	[[nodiscard]] auto state(T initial) const -> ::stana::reactive::Signal<T> {
@@ -146,9 +160,58 @@ class ComponentContext {
 
 	[[nodiscard]] auto environment() const noexcept -> Environment { return environment_; }
 
+	/// @brief Registers a display-link callback owned by this occurrence.
+	/// The scope keeps the registration alive when the returned subscription is discarded.
+	/// The first elapsed sample after mount or after isActive becomes true is zero.
+	template <typename F>
+	[[nodiscard]] auto onFrame(F onSample, ::stana::reactive::Property<bool> isActive = true) const
+		-> ::stana::reactive::Subscription {
+		const auto document = document_.lock();
+		if (!document) {
+			return {};
+		}
+		const auto active = std::make_shared<bool>(isActive.get());
+		const auto registration = std::make_shared<std::uint64_t>(0);
+		const std::weak_ptr<::stana::document::detail::Document> weak = document_;
+		*registration = document->addFrameRegistration(
+			[weak, active, scope = scope_]() -> bool {
+				return weak.lock() && scope.alive() && *active;
+			},
+			[notify = std::move(
+				 onSample
+			 )](::stana::document::detail::Document::FrameStamp stamp, double elapsed) -> void {
+				notify(
+					FrameTime{
+						.timestamp = stamp.timestamp,
+						.targetTimestamp = stamp.targetTimestamp,
+						.elapsed = elapsed
+					}
+				);
+			}
+		);
+		auto observed = ::stana::reactive::observe(
+			std::move(isActive),
+			[active, weak, registration](bool value) -> void {
+				*active = value;
+				if (const auto owner = weak.lock()) {
+					owner->resetFrameTimestamp(*registration);
+					owner->refreshFrameDemand();
+				}
+			}
+		);
+		static_cast<void>(scope_.own(std::move(observed)));
+		static_cast<void>(scope_.own([weak, registration]() -> void {
+			if (const auto owner = weak.lock()) {
+				owner->cancelFrameRegistration(*registration);
+			}
+		}));
+		return {};
+	}
+
   private:
 	::stana::reactive::Scope scope_;
 	Environment environment_;
+	std::weak_ptr<::stana::document::detail::Document> document_{};
 };
 
 /// @brief A component with no visible content, useful as an If branch default.
@@ -516,7 +579,11 @@ template <typename T>
 	const auto identity =
 		context.document->createNode(::stana::document::detail::NodeKind::group, context.parent);
 	auto *node = context.document->find(identity);
-	ComponentContext componentContext{node->scope, context.document->environment()};
+	ComponentContext componentContext{
+		node->scope,
+		context.document->environment(),
+		context.document
+	};
 	auto content = description.render(componentContext);
 	MountContext childContext{.document = context.document, .parent = identity};
 	static_cast<void>(mount(content, childContext));
@@ -759,3 +826,27 @@ template <Component... Children> [[nodiscard]] constexpr auto children(Children 
 	return std::tuple<std::decay_t<Children>...>{std::forward<Children>(descriptions)...};
 }
 } // namespace stana::ui
+
+export namespace stana::symbol {
+inline constexpr double defaultSize = 24;
+
+/// @brief Retained vector artwork. The field is asset so it does not collide with this type.
+/// Default size is 24. Themed text is currentColor. Clipping is off unless appearance sets it.
+/// Symbols are not buttons. textScale does not change measurement.
+struct Symbol {
+	::stana::reactive::Property<Asset> asset{};
+	::stana::reactive::Property<double> size = defaultSize;
+	::stana::reactive::Property<Color> color = Color::text();
+	::stana::reactive::Property<Playback> animation = Playback::none();
+	::stana::reactive::Property<std::optional<double>> strokeWidth{};
+	::stana::layout::LayoutProperties layout{};
+	::stana::ui::AppearanceProperties appearance{};
+	::stana::ui::InteractionProperties interaction{};
+	::stana::ui::AccessibilityProperties accessibility{};
+	::stana::ui::LifecycleProperties lifecycle{};
+	std::function<void(const Diagnostic &)> onError{};
+};
+
+[[nodiscard]] auto mount(const Symbol &description, ::stana::ui::MountContext &context)
+	-> ::stana::document::NodeHandle;
+} // namespace stana::symbol

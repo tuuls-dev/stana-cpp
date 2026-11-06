@@ -349,6 +349,23 @@ void Document::resetPresentation(std::uint64_t epoch) {
 	presentation_.reset(epoch);
 	presentationEpoch_ = epoch;
 	pinnedGeometry_.clear();
+	bool adopted = false;
+	for (const auto &[serial, node] : nodes_) {
+		static_cast<void>(serial);
+		if (node->kind != NodeKind::symbol || !node->symbol || node->symbol->epoch == epoch) {
+			continue;
+		}
+		auto &symbol = *node->symbol;
+		symbol.epoch = epoch;
+		symbol.available = true;
+		symbol.failed.clear();
+		symbol.generation = stana::detail::nextIdentity();
+		invalidate(node->id, Dirty::paint);
+		adopted = true;
+	}
+	if (adopted && !isCommitting_) {
+		commit();
+	}
 }
 
 void Document::rememberGeometry() {

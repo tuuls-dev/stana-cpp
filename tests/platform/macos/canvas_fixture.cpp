@@ -1,9 +1,12 @@
 #include "canvas_fixture.hpp"
 #include "../../../src/gpu/limits.hpp"
 #include <array>
+#include <bit>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <tuple>
