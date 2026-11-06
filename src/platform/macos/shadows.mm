@@ -148,6 +148,17 @@ auto Shadows::prepare(
 			);
 		}
 	}
+	for (const auto *contour : {&shadow.clip, &shadow.caster}) {
+		for (const double value : contour->bounds) {
+			if (!std::isfinite(value) ||
+				std::abs(value) > static_cast<double>(std::numeric_limits<float>::max()) / 4) {
+				return failure(
+					Diagnostic::Category::capability,
+					"Shadow contour exceeds GPU coordinate range"
+				);
+			}
+		}
+	}
 	auto localCaster = shadow.caster;
 	localCaster.bounds.at(0) = 0;
 	localCaster.bounds.at(1) = 0;

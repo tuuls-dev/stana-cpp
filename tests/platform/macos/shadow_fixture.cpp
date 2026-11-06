@@ -18,6 +18,15 @@ import stana;
 #include "../../../src/application/scene_conversion.hpp"
 
 namespace stana::testing::fixtures::platform::macos {
+constexpr double shadowOpacity = 0.5;
+constexpr double editedOffsetMagnitude = 5;
+constexpr double editedBlur = 18;
+constexpr double insetOpacity = 0.8;
+constexpr double changedTop = 10;
+constexpr double changedLeading = 260;
+constexpr double changedWidth = 125;
+constexpr double changedHeight = 85;
+
 auto shadowScenes(bool explicitDrawing)
 	-> std::vector<std::shared_ptr<const stana::platform::detail::Scene>> {
 	using Shadows = std::vector<stana::rendering::BoxShadow>;
@@ -35,9 +44,9 @@ auto shadowScenes(bool explicitDrawing)
 	const stana::BorderWidths edges{.top = 3, .leading = 7, .bottom = 9, .trailing = 2};
 	const Shadows outer{
 		{.offset = {.x = 8, .y = 6},
-			.blurRadius = 10,
+			.blurRadius = changedTop,
 			.spreadRadius = 2,
-			.color = stana::Color::rgb(0, 0, 0, 0.5)}
+			.color = stana::Color::rgb(0, 0, 0, shadowOpacity)}
 	};
 	const stana::reactive::Signal shadows{outer};
 	const stana::reactive::Signal padding{stana::Insets{.top = insetY, .leading = insetX}};
@@ -67,7 +76,11 @@ auto shadowScenes(bool explicitDrawing)
 				stana::ui::GPUCanvas{
 					.drawing = drawing,
 					.layout =
-						{.frame = {.width = stana::Length::fill(), .height = stana::Length::fill()}}
+						{.frame =
+								stana::Frame{
+									.width = stana::Length::fill(),
+									.height = stana::Length::fill()
+								}}
 				},
 				context
 			));
@@ -75,7 +88,8 @@ auto shadowScenes(bool explicitDrawing)
 			static_cast<void>(stana::ui::mount(
 				stana::ui::Box{
 					.layout = {.padding = padding},
-					.appearance = {.cornerRadii = stana::CornerRadii::all(18), .clip = true},
+					.appearance =
+						{.cornerRadii = stana::CornerRadii::all(editedBlur), .clip = true},
 					.children = stana::ui::children(
 						stana::ui::Box{
 							.layout = {.frame = width},
@@ -99,31 +113,34 @@ auto shadowScenes(bool explicitDrawing)
 		document->commit();
 		scenes.push_back(conversion.convert(document->renderSnapshot()));
 	};
-	const auto set = [&](Shadows list) -> void {
+	const auto set = [&](const Shadows &list) -> void {
 		shadows.set(list);
 		drawing.set(drawingFor(list));
 		capture();
 	};
 	capture();
 	auto tinted = outer;
-	tinted.front().color = stana::Color::rgb(1, 0, 0, 0.5);
+	tinted.front().color = stana::Color::rgb(1, 0, 0, shadowOpacity);
 	set(tinted);
-	tinted.front().offset.x = -5;
+	tinted.front().offset.x = -editedOffsetMagnitude;
 	set(tinted);
-	tinted.front().blurRadius = 18;
+	tinted.front().blurRadius = editedBlur;
 	set(tinted);
 	tinted.push_back(
 		{.offset = {.x = -1, .y = 2},
 			.blurRadius = 3,
 			.spreadRadius = -2,
-			.color = stana::Color::rgb(0, 1, 0, 0.8),
+			.color = stana::Color::rgb(0, 1, 0, insetOpacity),
 			.isInset = true}
 	);
 	set(tinted);
 	set({tinted.back(), outer.front(), tinted.front()});
-	padding.set({.top = 10, .leading = 260});
+	padding.set({.top = changedTop, .leading = changedLeading});
 	capture();
-	width.set({.width = stana::Length::points(125), .height = stana::Length::points(85)});
+	width.set(
+		{.width = stana::Length::points(changedWidth),
+			.height = stana::Length::points(changedHeight)}
+	);
 	capture();
 	set({});
 	set(outer);

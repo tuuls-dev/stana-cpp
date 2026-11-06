@@ -44,6 +44,16 @@ auto main() -> int {
 		return 1;
 	}
 	stana::rendering::GPUDrawing graphics{*program};
+	const std::vector<stana::rendering::BoxShadow> shadows{
+		{.offset = {.x = 0, .y = 6}, .blurRadius = 16, .color = stana::Color::rgb(0, 0, 0, 0.2)}
+	};
+	const auto interpolated = stana::rendering::interpolateBoxShadows({}, shadows, 0.5);
+	graphics.drawBoxShadows(
+		{.size = {.width = 120, .height = 60}},
+		interpolated,
+		stana::CornerRadii::all(12),
+		stana::BorderWidths::all(2)
+	);
 	const stana::reactive::Signal gpu{graphics};
 	stana::testing::TestHost host;
 	host.mount(stana::ui::GPUCanvas{.drawing = gpu});

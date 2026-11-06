@@ -128,7 +128,12 @@ struct CornerRadii {
 	}
 
 	[[nodiscard]] static constexpr auto all(Size value) noexcept -> CornerRadii {
-		return {.topLeading = value, .topTrailing = value, .bottomTrailing = value, .bottomLeading = value};
+		return {
+			.topLeading = value,
+			.topTrailing = value,
+			.bottomTrailing = value,
+			.bottomLeading = value
+		};
 	}
 
 	auto operator<=>(const CornerRadii &) const = default;

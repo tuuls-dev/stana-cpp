@@ -234,11 +234,11 @@ void applyAppearance(
 			[](stana::document::detail::Node &node,
 				std::vector<stana::rendering::BoxShadow> value) -> stana::document::detail::Dirty {
 				stana::rendering::detail::validateBoxShadows(value);
-				return assignRetained(
-					node.boxShadows,
-					std::move(value),
-					stana::document::detail::Dirty::paint
-				);
+				if (node.boxShadows == value) {
+					return stana::document::detail::Dirty::none;
+				}
+				node.boxShadows = std::move(value);
+				return stana::document::detail::Dirty::paint;
 			}
 		);
 	}

@@ -73,17 +73,6 @@ if(PROJECT_IS_TOP_LEVEL)
 	endif()
 	target_link_libraries(stana-counter PRIVATE stana::stana)
 	stana_apply_safety(stana-counter)
-	add_executable(stana-shadows-example examples/shadows/main.cpp)
-	target_link_libraries(stana-shadows-example PRIVATE stana::stana)
-	stana_apply_safety(stana-shadows-example)
-	if(APPLE)
-		set_target_properties(stana-shadows-example PROPERTIES MACOSX_BUNDLE YES
-			MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/cmake/AppInfo.plist.in"
-			MACOSX_BUNDLE_GUI_IDENTIFIER "dev.stana.shadows"
-			MACOSX_BUNDLE_BUNDLE_NAME "Stana Box Shadows"
-			MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
-			MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
-	endif()
 	add_executable(stana-symbols examples/symbols/main.cpp)
 	if(APPLE)
 		set_target_properties(stana-symbols PROPERTIES MACOSX_BUNDLE YES
@@ -117,7 +106,6 @@ if(PROJECT_IS_TOP_LEVEL)
 	enable_testing()
 	add_subdirectory(tests)
 	add_test(NAME stana.canvas-example COMMAND stana-canvas --validate)
-	add_test(NAME stana.shadows-example COMMAND stana-shadows-example --validate)
 	file(GLOB_RECURSE stana_format_sources CONFIGURE_DEPENDS
 		"${CMAKE_CURRENT_SOURCE_DIR}/modules/*.cppm"
 		"${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/*.hpp"

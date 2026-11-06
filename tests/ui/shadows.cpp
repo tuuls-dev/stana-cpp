@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <compare>
 #include <exception>
 #include <iostream>
 #include <stdexcept>
@@ -7,6 +8,18 @@
 import stana;
 
 namespace {
+constexpr double hostExtent = 100;
+constexpr double smallHostExtent = 50;
+constexpr double controlWidth = 60;
+constexpr double controlHeight = 30;
+constexpr double scalarOverride = 99;
+constexpr double horizontalRadius = 20;
+constexpr double verticalRadius = 10;
+constexpr double paddingWidth = 48;
+constexpr double halfOpacity = 0.5;
+constexpr double outsideX = 70;
+constexpr double outsideY = 15;
+
 void require(bool value, const std::string &message) {
 	if (!value) {
 		throw std::runtime_error(message);
@@ -39,33 +52,42 @@ void retained() {
 		{.offset = {.x = 8, .y = 6}, .blurRadius = 12},
 		{.offset = {.x = -2, .y = 1}, .color = Color::accent(), .isInset = true}
 	}};
+	const auto computedShadows = shadows.map([](const Shadows &value) -> Shadows {
+		return value;
+	});
 	const reactive::Signal foreground{Color::rgb(1, 0, 0)};
-	const reactive::Signal radii{CornerRadii{.topLeading = {.width = 20, .height = 10}}};
+	const reactive::Signal radii{
+		CornerRadii{.topLeading = {.width = horizontalRadius, .height = verticalRadius}}
+	};
 	const reactive::Signal widths{BorderWidths{.leading = 4, .trailing = 8}};
 	const reactive::Signal opacity{1.0};
 	const reactive::Signal visibility{Visibility::visible};
 	int clicks = 0;
-	testing::TestHost host{{.width = 100, .height = 100}};
-	host.mount(
-		ui::Button{
-			.text = "shadow",
-			.onClick = [&] -> void {
-				++clicks;
-			},
-			.layout = {.frame = {.width = Length::points(60), .height = Length::points(30)}},
-			.textStyle = {.foreground = foreground},
-			.appearance = {
-				.opacity = opacity,
-				.borderWidth = 99,
-				.cornerRadius = 99,
-				.cornerRadii = radii,
-				.borderWidths = widths,
-				.boxShadows = shadows,
-				.visibility = visibility,
-				.clip = true
-			}
+	testing::TestHost host{{.width = hostExtent, .height = hostExtent}};
+	const auto button = ui::Button{
+		.text = "shadow",
+		.onClick = [&] -> void {
+			++clicks;
+		},
+		.layout =
+			{.frame =
+					stana::Frame{
+						.width = Length::points(controlWidth),
+						.height = Length::points(controlHeight)
+					}},
+		.textStyle = {.foreground = foreground},
+		.appearance = {
+			.opacity = opacity,
+			.borderWidth = scalarOverride,
+			.cornerRadius = scalarOverride,
+			.cornerRadii = radii,
+			.borderWidths = widths,
+			.boxShadows = computedShadows,
+			.visibility = visibility,
+			.clip = true
 		}
-	);
+	};
+	host.mount(ui::VStack{.children = ui::children(button)});
 	const auto nodes = host.nodes();
 	const auto before = host.metrics();
 	const auto initial = host.scene();
@@ -86,8 +108,9 @@ void retained() {
 		});
 	require(
 		background != initial->commands.end() && background->boxGeometry &&
-			background->boxGeometry->outer.radii.front() == Size{.width = 20, .height = 10} &&
-			background->boxGeometry->padding.bounds.size.width == 48,
+			background->boxGeometry->outer.radii.front() ==
+				Size{.width = horizontalRadius, .height = verticalRadius} &&
+			std::is_eq(background->boxGeometry->padding.bounds.size.width <=> paddingWidth),
 		"rich geometry takes precedence"
 	);
 	shadows.set(shadows.get());
@@ -100,9 +123,9 @@ void retained() {
 		shadow(shadowCommands(host).front()).color == Color::rgb(0, 1, 0),
 		"foreground invalidates shadows"
 	);
-	opacity.set(0.5);
+	opacity.set(halfOpacity);
 	require(
-		shadow(shadowCommands(host).front()).color.alpha <= 0.5,
+		shadow(shadowCommands(host).front()).color.alpha <= halfOpacity,
 		"opacity multiplies shadow alpha"
 	);
 	const auto current = host.metrics();
@@ -113,13 +136,14 @@ void retained() {
 			host.nodes().back().bounds == nodes.back().bounds,
 		"shadow/foreground/opacity updates do not remount or relayout"
 	);
+	host.click({.x = outsideX, .y = outsideY});
+	require(clicks == 0, "overflow shadow does not expand hit area");
 	host.setEnvironment({.theme = Theme::dark, .direction = Direction::rightToLeft});
 	require(
-		shadow(shadowCommands(host).front()).clip.radii.at(1) == Size{.width = 20, .height = 10},
+		shadow(shadowCommands(host).front()).clip.radii.at(1) ==
+			Size{.width = horizontalRadius, .height = verticalRadius},
 		"direction resolves rich corners"
 	);
-	host.click({.x = 70, .y = 15});
-	require(clicks == 0, "overflow shadow does not expand hit area");
 	visibility.set(Visibility::hidden);
 	require(shadowCommands(host).empty(), "hidden ancestor/node does not paint shadows");
 	visibility.set(Visibility::visible);
@@ -136,11 +160,17 @@ void retained() {
 
 void theme() {
 	using namespace stana;
-	testing::TestHost host{{.width = 50, .height = 50}};
+	testing::TestHost host{{.width = smallHostExtent, .height = smallHostExtent}};
 	host.mount(
 		ui::Box{
-			.layout = {.frame = {.width = Length::points(20), .height = Length::points(20)}},
-			.appearance = {.boxShadows = std::vector<rendering::BoxShadow>{{}}}
+			.layout =
+				{.frame =
+						stana::Frame{
+							.width = Length::points(horizontalRadius),
+							.height = Length::points(horizontalRadius)
+						}},
+			.appearance = {.boxShadows = std::vector<rendering::BoxShadow>{{}}},
+			.children = ui::children()
 		}
 	);
 	require(

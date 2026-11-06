@@ -2,6 +2,7 @@
 #include <iostream>
 #include <string>
 #include <tuple>
+#include <vector>
 
 import stana;
 
@@ -33,6 +34,10 @@ constexpr double labelSize = 12;
 constexpr double footerSize = 11;
 constexpr double cornerRadius = 14;
 constexpr double borderWidth = 1;
+constexpr double shadowOffset = 5;
+constexpr double shadowBlur = 16;
+constexpr double shadowOpacity = 0.32;
+constexpr double insetHighlightOpacity = 0.045;
 // System-font weights: NSFontWeightMedium and NSFontWeightSemibold. Zero is regular.
 constexpr double mediumWeight = 0.23;
 constexpr double semiboldWeight = 0.3;
@@ -163,7 +168,16 @@ auto reportSymbol(const stana::symbol::Diagnostic &diagnostic) -> void {
 			{.background = cardColor,
 				.borderColor = cardBorder,
 				.borderWidth = borderWidth,
-				.cornerRadius = cornerRadius},
+				.cornerRadius = cornerRadius,
+				.boxShadows =
+					std::vector<stana::rendering::BoxShadow>{
+						{.offset = {.x = 0, .y = shadowOffset},
+							.blurRadius = shadowBlur,
+							.color = stana::Color::rgb(0, 0, 0, shadowOpacity)},
+						{.offset = {.x = 0, .y = 1},
+							.color = stana::Color::rgb(1, 1, 1, insetHighlightOpacity),
+							.isInset = true}
+					}},
 		.children = stana::ui::children(
 			stana::symbol::Symbol{
 				.asset = asset,

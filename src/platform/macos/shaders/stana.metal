@@ -123,6 +123,15 @@ float contourDistance(float2 p, Contour c) {
     }
     return max(max(-local.x, local.x - c.bounds.z), max(-local.y, local.y - c.bounds.w));
 }
+float contourCoverage(float2 point, Contour contour, float scale) {
+    if (contour.bounds.z <= 0 || contour.bounds.w <= 0) return 0;
+    float value = 0;
+    for (uint y = 0; y < 4; ++y) for (uint x = 0; x < 4; ++x) {
+        float2 p = point + ((float2(x,y) + 0.5f) / 4 - 0.5f) / scale;
+        value += contourDistance(p, contour) < 0 ? 1.0f / 16 : 0;
+    }
+    return value;
+}
 kernel void stana_shadow_mask(constant ShadowUniform &s [[buffer(0)]],
     texture2d<half, access::write> out [[texture(1)]], uint2 id [[thread_position_in_grid]]) {
     if (id.x >= out.get_width() || id.y >= out.get_height()) return;
@@ -159,7 +168,8 @@ fragment float4 stana_shadow(Varying in [[stage_in]], constant Quad &quad [[buff
     constexpr sampler sample(coord::normalized, address::clamp_to_edge, filter::linear);
     float value = s.options.z;
     if (all(uv >= 0) && all(uv <= 1)) value = mask.sample(sample, uv).r;
-    float box = (s.clip.bounds.z <= 0 || s.clip.bounds.w <= 0) ? 0 : coverage(contourDistance(in.point, s.clip));
+    // Area coverage avoids derivative discontinuities at sharp knockout corners.
+    float box = contourCoverage(in.point, s.clip, s.options.x);
     float clip = s.options.z != 0 ? box : 1 - box;
     return quad.color * (value * clip * quad.options.y * clipping(in.point, quad, clips));
 }

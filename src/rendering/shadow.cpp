@@ -249,13 +249,23 @@ auto interpolateBoxShadows(
 			if (alpha <= 0) {
 				return 0;
 			}
-			return stana::gpu::detail::encodeSRGB(
-				std::lerp(
-					stana::gpu::detail::decodeSRGB(first) * a.alpha,
-					stana::gpu::detail::decodeSRGB(second) * b.alpha,
-					progress
-				) /
-				alpha
+			if (std::is_eq(first <=> second) || std::is_eq(progress <=> 0.0)) {
+				return first;
+			}
+			if (std::is_eq(progress <=> 1.0)) {
+				return second;
+			}
+			return std::clamp(
+				stana::gpu::detail::encodeSRGB(
+					std::lerp(
+						stana::gpu::detail::decodeSRGB(first) * a.alpha,
+						stana::gpu::detail::decodeSRGB(second) * b.alpha,
+						progress
+					) /
+					alpha
+				),
+				0.0,
+				1.0
 			);
 		};
 		result.push_back(

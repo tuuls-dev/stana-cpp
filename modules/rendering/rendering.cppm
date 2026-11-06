@@ -34,6 +34,8 @@ enum class PaintKind : std::uint8_t {
 ///
 /// @note Fields are interpreted according to kind. Text/font are used only by text
 /// commands; cornerRadius applies to rectangles/clips; popClip ignores geometry.
+/// Rich box geometry and shadow payloads are projection-only; Drawing::validate rejects
+/// authored payloads. CPUCanvas has no shadow-authoring API; use GPUDrawing instead.
 /// The value layout is not a persistent serialization format or stable plugin ABI.
 struct PaintCommand {
 	PaintKind kind = PaintKind::fillRect; ///< Operation the scene renderer must execute.

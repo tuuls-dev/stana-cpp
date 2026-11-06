@@ -204,7 +204,7 @@ auto Document::project(
 
 		const auto radii = node->cornerRadii.value_or(CornerRadii::all(node->cornerRadius));
 		const auto widths = node->borderWidths.value_or(BorderWidths::all(node->borderWidth));
-		const auto geometry = stana::rendering::detail::boxGeometry(
+		const auto contours = stana::rendering::detail::boxGeometry(
 			node->bounds,
 			radii,
 			widths,
@@ -226,7 +226,7 @@ auto Document::project(
 					scene.commands.push_back(
 						{.kind = stana::rendering::PaintKind::boxShadow,
 							.bounds = shadow.ink,
-							.shadow = std::move(shadow)}
+							.shadow = shadow}
 					);
 				}
 			}
@@ -241,7 +241,7 @@ auto Document::project(
 						opacity
 					),
 					.cornerRadius = node->cornerRadius,
-					.boxGeometry = rich ? std::optional{geometry} : std::nullopt}
+					.boxGeometry = rich ? std::optional{contours} : std::nullopt}
 			);
 		}
 		appendShadows(true);
@@ -250,7 +250,7 @@ auto Document::project(
 				{.kind = stana::rendering::PaintKind::pushClip,
 					.bounds = node->bounds,
 					.cornerRadius = node->cornerRadius,
-					.boxGeometry = rich ? std::optional{geometry} : std::nullopt}
+					.boxGeometry = rich ? std::optional{contours} : std::nullopt}
 			);
 		}
 		if (node->kind == NodeKind::text || node->kind == NodeKind::button ||
@@ -353,6 +353,14 @@ auto Document::project(
 			paint->suffix.push_back({.kind = stana::rendering::PaintKind::popClip});
 		}
 		if (node->borderWidth > 0 || node->borderWidths || focused_ == identity) {
+			const auto borderContours = rich && focused_ == identity
+				? stana::rendering::detail::boxGeometry(
+					  node->bounds,
+					  radii,
+					  BorderWidths::all(stana::rendering::detail::focusBorderWidth),
+					  environment_.direction
+				  )
+				: contours;
 			paint->suffix.push_back(
 				{.kind = stana::rendering::PaintKind::strokeRect,
 					.bounds = node->bounds,
@@ -364,8 +372,7 @@ auto Document::project(
 					.cornerRadius = node->cornerRadius,
 					.lineWidth = focused_ == identity ? stana::rendering::detail::focusBorderWidth
 													  : node->borderWidth,
-					.boxGeometry =
-						rich && focused_ != identity ? std::optional{geometry} : std::nullopt}
+					.boxGeometry = rich ? std::optional{borderContours} : std::nullopt}
 			);
 		}
 		branch->paint = std::move(paint);

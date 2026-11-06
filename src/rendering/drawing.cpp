@@ -14,6 +14,11 @@ namespace stana::rendering {
 namespace {
 void validateCommand(const PaintCommand &command) {
 	using enum PaintKind;
+	if (command.boxGeometry || command.shadow) {
+		throw std::invalid_argument(
+			"CPUCanvas cannot author projection-only geometry/shadow payloads"
+		);
+	}
 	if (command.kind == popClip) {
 		return;
 	}

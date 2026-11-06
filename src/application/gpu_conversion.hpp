@@ -320,7 +320,7 @@ struct GPUConversion {
 						} else if constexpr (std::is_same_v<
 												 T,
 												 stana::rendering::detail::GPUBoxShadows>) {
-							stana::gpu::detail::BoxShadows result;
+							stana::gpu::detail::BoxShadows shadowList;
 							for (const auto &shadow : stana::rendering::detail::prepareBoxShadows(
 									 input.bounds,
 									 input.shadows,
@@ -329,9 +329,9 @@ struct GPUConversion {
 									 Color::text(),
 									 environment
 								 )) {
-								result.shadows.push_back(convertShadow(shadow));
+								shadowList.shadows.push_back(convertShadow(shadow));
 							}
-							return result;
+							return shadowList;
 						} else if constexpr (std::is_same_v<T, stana::rendering::GPUMesh>) {
 							return mesh(input);
 						} else if constexpr (std::is_same_v<T, stana::rendering::GPUProgram>) {

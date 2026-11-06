@@ -13,6 +13,7 @@
 #include <iostream>
 #include <iterator>
 #include <memory>
+#include <mutex>
 #include <numbers>
 #include <stdexcept>
 #include <string>
@@ -154,10 +155,12 @@ void incremental(const std::shared_ptr<gpu::DeviceResources> &device) {
 			);
 			const auto ledger = renderer->resources().budget;
 			renderer->close();
-			require(
-				ledger->bytes == 0 && ledger->peak <= ledger->limit,
-				"retired shadow ownership/budget leaked"
-			);
+			pump([&] -> bool {
+				const std::scoped_lock lock{ledger->mutex};
+				return ledger->bytes == 0;
+			});
+			const std::scoped_lock lock{ledger->mutex};
+			require(ledger->peak <= ledger->limit, "retired shadow ownership/budget leaked");
 		}
 	}
 }
@@ -221,6 +224,10 @@ void gaussian(const std::shared_ptr<gpu::DeviceResources> &device) {
 					static_cast<double>(
 						std::to_integer<unsigned>(pixels.bytes.at((y * pixels.width + x) * 4))
 					) / 255;
+				if (std::abs(actual - expected) > blurTolerance) {
+					std::cerr << "inset=" << inset << " x=" << x << " y=" << y
+							  << " actual=" << actual << " expected=" << expected << '\n';
+				}
 				require(
 					std::abs(actual - expected) <= blurTolerance,
 					"shadow pixel exceeds Gaussian 5% tolerance / knockout contract"
