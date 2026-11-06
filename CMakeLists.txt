@@ -73,6 +73,17 @@ if(PROJECT_IS_TOP_LEVEL)
 	endif()
 	target_link_libraries(stana-counter PRIVATE stana::stana)
 	stana_apply_safety(stana-counter)
+	add_executable(stana-symbols examples/symbols/main.cpp)
+	if(APPLE)
+		set_target_properties(stana-symbols PROPERTIES MACOSX_BUNDLE YES
+			MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/cmake/AppInfo.plist.in"
+			MACOSX_BUNDLE_GUI_IDENTIFIER "dev.stana.symbols"
+			MACOSX_BUNDLE_BUNDLE_NAME "Stana Symbols"
+			MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+			MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}")
+	endif()
+	target_link_libraries(stana-symbols PRIVATE stana::stana)
+	stana_apply_safety(stana-symbols)
 	file(READ "${CMAKE_CURRENT_SOURCE_DIR}/examples/canvas/field.wgsl" stana_canvas_wgsl)
 	set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS examples/canvas/field.wgsl)
 	configure_file(examples/canvas/resource.hpp.in generated/canvas_resource.hpp @ONLY)
