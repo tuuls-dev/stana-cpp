@@ -93,9 +93,25 @@ void render(
 void incremental(const std::shared_ptr<gpu::DeviceResources> &device) {
 	constexpr double fractionalScale = 1.25;
 	constexpr double doubleScale = 2;
-	for (const bool explicitDrawing : {false, true}) {
-		const auto sources =
-			stana::testing::fixtures::platform::macos::shadowScenes(explicitDrawing);
+	using stana::testing::fixtures::platform::macos::ShadowSceneKind;
+	for (const auto kind :
+		{ShadowSceneKind::retained, ShadowSceneKind::explicitDrawing, ShadowSceneKind::mixed}) {
+		const auto sources = stana::testing::fixtures::platform::macos::shadowScenes(kind);
+		if (kind == ShadowSceneKind::retained) {
+			const auto containsGPU =
+				[&](const auto &self,
+					const std::shared_ptr<const native::SceneBranch> &branch) -> bool {
+				return branch &&
+					(branch->paint->gpu ||
+						std::ranges::any_of(branch->children, [&](const auto &child) -> bool {
+							return self(self, child);
+						}));
+			};
+			require(
+				!containsGPU(containsGPU, sources.front()->root),
+				"ordinary shadows must not mount a GPUCanvas"
+			);
+		}
 		for (const double scale : {1.0, fractionalScale, doubleScale}) {
 			const auto grid = native::makeTileGrid(sources.front()->size, scale);
 			const auto renderer = compositor(device);

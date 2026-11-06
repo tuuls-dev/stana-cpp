@@ -35,14 +35,16 @@ add_test(NAME stana.policy
 	COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/policy_test.py"
 		--root "${PROJECT_SOURCE_DIR}" --build "${PROJECT_BINARY_DIR}"
 		--tidy "${STANA_CLANG_TIDY}" --compiler "${CMAKE_CXX_COMPILER}")
-set_tests_properties(stana.policy PROPERTIES TIMEOUT 180)
+# Analysis imports the complete public module; leave room for expanded partitions on local hosts.
+set_tests_properties(stana.policy PROPERTIES TIMEOUT 360)
 
 if(STANA_SANITIZER STREQUAL "")
 	add_test(NAME stana.consumer
 		COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/consumer_test.py"
 			--root "${PROJECT_SOURCE_DIR}" --build "${PROJECT_BINARY_DIR}"
 			--compiler "${CMAKE_CXX_COMPILER}" --config "${CMAKE_BUILD_TYPE}")
-	set_tests_properties(stana.consumer PROPERTIES TIMEOUT 360)
+	# This gate builds both relocated-install and source consumers with mandatory analysis enabled.
+	set_tests_properties(stana.consumer PROPERTIES TIMEOUT 900)
 endif()
 
 add_executable(stana-reactive reactive/contracts.cpp)

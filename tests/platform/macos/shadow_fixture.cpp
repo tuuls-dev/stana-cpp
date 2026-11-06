@@ -26,8 +26,10 @@ constexpr double changedTop = 10;
 constexpr double changedLeading = 260;
 constexpr double changedWidth = 125;
 constexpr double changedHeight = 85;
+constexpr double markingX = 70;
+constexpr double markingWidth = 20;
 
-auto shadowScenes(bool explicitDrawing)
+auto shadowScenes(ShadowSceneKind kind)
 	-> std::vector<std::shared_ptr<const stana::platform::detail::Scene>> {
 	using Shadows = std::vector<stana::rendering::BoxShadow>;
 	constexpr double viewportWidth = 600;
@@ -68,10 +70,16 @@ auto shadowScenes(bool explicitDrawing)
 		);
 		return drawing;
 	};
+	const stana::CornerRadii ancestorCorners{.topLeading = {.width = 400, .height = 150}};
+	stana::rendering::GPUDrawing markings;
+	markings.fillRect(
+		{.origin = {.x = markingX, .y = 0}, .size = {.width = markingWidth, .height = boxHeight}},
+		stana::Color::rgb(0, 0, 1, shadowOpacity)
+	);
 	const stana::reactive::Signal drawing{drawingFor(outer)};
 	stana::reactive::Transaction::perform([&] -> void {
 		stana::ui::MountContext context{.document = document, .parent = document->root()};
-		if (explicitDrawing) {
+		if (kind == ShadowSceneKind::explicitDrawing) {
 			static_cast<void>(stana::ui::mount(
 				stana::ui::GPUCanvas{
 					.drawing = drawing,
@@ -85,22 +93,33 @@ auto shadowScenes(bool explicitDrawing)
 				context
 			));
 		} else {
+			const auto gpuChild = stana::ui::If{
+				.condition = kind == ShadowSceneKind::mixed,
+				.thenContent = stana::ui::GPUCanvas{
+					.drawing = markings,
+					.layout = {
+						.frame = stana::Frame{
+							.width = stana::Length::points(boxWidth),
+							.height = stana::Length::points(boxHeight)
+						}
+					}
+				}
+			};
+			const auto card = stana::ui::Box{
+				.layout = {.frame = width},
+				.appearance =
+					{.borderColor = stana::Color::rgb(0, 0, 1),
+						.cornerRadii = corners,
+						.borderWidths = edges,
+						.boxShadows = shadows,
+						.clip = true},
+				.children = stana::ui::children(stana::ui::Text{.text = "CPU text"}, gpuChild)
+			};
 			static_cast<void>(stana::ui::mount(
 				stana::ui::Box{
 					.layout = {.padding = padding},
-					.appearance =
-						{.cornerRadii = stana::CornerRadii::all(editedBlur), .clip = true},
-					.children = stana::ui::children(
-						stana::ui::Box{
-							.layout = {.frame = width},
-							.appearance =
-								{.borderColor = stana::Color::rgb(0, 0, 1),
-									.cornerRadii = corners,
-									.borderWidths = edges,
-									.boxShadows = shadows},
-							.children = stana::ui::children(stana::ui::Text{.text = "CPU text"})
-						}
-					)
+					.appearance = {.cornerRadii = ancestorCorners, .clip = true},
+					.children = stana::ui::children(card)
 				},
 				context
 			));
