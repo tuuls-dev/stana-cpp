@@ -114,6 +114,54 @@ struct Insets {
 	}
 };
 
+/// @brief Independent elliptical logical-point radii, resolved against Environment::direction.
+/// Finite nonnegative axes are normalized together when adjacent corners overlap.
+/// A zero axis makes that corner square. These values do not affect layout.
+struct CornerRadii {
+	Size topLeading{};	   ///< Horizontal/vertical radii at the top leading corner.
+	Size topTrailing{};	   ///< Horizontal/vertical radii at the top trailing corner.
+	Size bottomTrailing{}; ///< Horizontal/vertical radii at the bottom trailing corner.
+	Size bottomLeading{};  ///< Horizontal/vertical radii at the bottom leading corner.
+
+	[[nodiscard]] static constexpr auto all(double value) noexcept -> CornerRadii {
+		return all(Size{.width = value, .height = value});
+	}
+
+	[[nodiscard]] static constexpr auto all(Size value) noexcept -> CornerRadii {
+		return {
+			.topLeading = value,
+			.topTrailing = value,
+			.bottomTrailing = value,
+			.bottomLeading = value
+		};
+	}
+
+	auto operator<=>(const CornerRadii &) const = default;
+
+	[[nodiscard]] auto operator==(const CornerRadii &other) const -> bool {
+		return std::is_eq(*this <=> other);
+	}
+};
+
+/// @brief Finite nonnegative border widths extending inward from the outer border contour.
+/// Leading/trailing resolve with the environment; unlike content Insets, these are paint-only.
+struct BorderWidths {
+	double top = 0;		 ///< Top edge width.
+	double leading = 0;	 ///< Direction-dependent leading edge width.
+	double bottom = 0;	 ///< Bottom edge width.
+	double trailing = 0; ///< Direction-dependent trailing edge width.
+
+	[[nodiscard]] static constexpr auto all(double value) noexcept -> BorderWidths {
+		return {.top = value, .leading = value, .bottom = value, .trailing = value};
+	}
+
+	auto operator<=>(const BorderWidths &) const = default;
+
+	[[nodiscard]] auto operator==(const BorderWidths &other) const -> bool {
+		return std::is_eq(*this <=> other);
+	}
+};
+
 /// @brief Logical reading direction used to resolve leading/trailing layout and row order.
 /// This does not override Core Text shaping direction inferred from the actual text.
 enum class Direction : std::uint8_t {

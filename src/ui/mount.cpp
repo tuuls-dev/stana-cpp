@@ -197,6 +197,51 @@ void applyAppearance(
 			}
 		);
 	}
+	if (properties.cornerRadii) {
+		context.document->bind(
+			identity,
+			*properties.cornerRadii,
+			[](stana::document::detail::Node &node,
+				CornerRadii value) -> stana::document::detail::Dirty {
+				stana::rendering::detail::validateCornerRadii(value);
+				return assignRetained(
+					node.cornerRadii,
+					std::optional{value},
+					stana::document::detail::Dirty::paint
+				);
+			}
+		);
+	}
+	if (properties.borderWidths) {
+		context.document->bind(
+			identity,
+			*properties.borderWidths,
+			[](stana::document::detail::Node &node,
+				BorderWidths value) -> stana::document::detail::Dirty {
+				stana::rendering::detail::validateBorderWidths(value);
+				return assignRetained(
+					node.borderWidths,
+					std::optional{value},
+					stana::document::detail::Dirty::paint
+				);
+			}
+		);
+	}
+	if (properties.boxShadows) {
+		context.document->bind(
+			identity,
+			*properties.boxShadows,
+			[](stana::document::detail::Node &node,
+				std::vector<stana::rendering::BoxShadow> value) -> stana::document::detail::Dirty {
+				stana::rendering::detail::validateBoxShadows(value);
+				if (node.boxShadows == value) {
+					return stana::document::detail::Dirty::none;
+				}
+				node.boxShadows = std::move(value);
+				return stana::document::detail::Dirty::paint;
+			}
+		);
+	}
 	if (properties.visibility) {
 		context.document->bind(
 			identity,

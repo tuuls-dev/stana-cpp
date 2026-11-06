@@ -21,8 +21,8 @@ add_library(stana STATIC)
 add_library(stana::stana ALIAS stana)
 target_sources(stana
 	PUBLIC FILE_SET modules TYPE CXX_MODULES BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/modules"
-		FILES modules/stana.cppm modules/primitives/primitives.cppm modules/symbol/symbol.cppm modules/symbol/asset.cppm modules/symbol/playback.cppm modules/symbol/geometry.cppm modules/symbol/compiler_detail.cppm modules/symbol/compiler.cppm modules/reactive/reactive.cppm modules/tasks/tasks.cppm modules/rendering/rendering.cppm modules/rendering/presentation.cppm modules/rendering/program.cppm modules/rendering/gpu.cppm modules/document/document.cppm modules/layout/layout.cppm modules/rendering/diagnostics.cppm modules/ui/ui.cppm modules/testing/testing.cppm modules/application/application.cppm modules/text/text.cppm
-	PRIVATE src/gpu/shader/compiler.cpp src/rendering/drawing.cpp src/rendering/gpu.cpp src/rendering/gpu_program.cpp src/version.cpp src/document/document.cpp src/document/input.cpp src/layout/layout.cpp src/rendering/scene/scene.cpp src/rendering/scene/geometry.cpp src/platform/tiles.cpp src/platform/scheduler.cpp src/ui/mount.cpp src/application/application.cpp src/text/text.cpp src/reactive/executor.cpp src/symbol/playback.cpp)
+		FILES modules/stana.cppm modules/primitives/primitives.cppm modules/symbol/symbol.cppm modules/symbol/asset.cppm modules/symbol/playback.cppm modules/symbol/geometry.cppm modules/symbol/compiler_detail.cppm modules/symbol/compiler.cppm modules/reactive/reactive.cppm modules/tasks/tasks.cppm modules/rendering/shadow.cppm modules/rendering/rendering.cppm modules/rendering/presentation.cppm modules/rendering/program.cppm modules/rendering/gpu.cppm modules/document/document.cppm modules/layout/layout.cppm modules/rendering/diagnostics.cppm modules/ui/ui.cppm modules/testing/testing.cppm modules/application/application.cppm modules/text/text.cppm
+	PRIVATE src/rendering/shadow.cpp src/gpu/shader/compiler.cpp src/rendering/drawing.cpp src/rendering/gpu.cpp src/rendering/gpu_program.cpp src/version.cpp src/document/document.cpp src/document/input.cpp src/layout/layout.cpp src/rendering/scene/scene.cpp src/rendering/scene/geometry.cpp src/platform/tiles.cpp src/platform/scheduler.cpp src/ui/mount.cpp src/application/application.cpp src/text/text.cpp src/reactive/executor.cpp src/symbol/playback.cpp)
 target_compile_features(stana PUBLIC cxx_std_23)
 target_link_libraries(stana PUBLIC Threads::Threads PRIVATE ICU::uc ICU::i18n ICU::data stana::tint)
 if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
@@ -53,7 +53,7 @@ if(APPLE)
         DEPENDS tools/embed_shader.py src/platform/macos/shaders/stana.metal VERBATIM)
     set_property(SOURCE src/platform/macos/gpu_resources.mm APPEND PROPERTY INCLUDE_DIRECTORIES "${CMAKE_CURRENT_BINARY_DIR}/generated")
     target_sources(stana PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated/stana_shader.hpp"
-        src/platform/macos/shader_compiler.cpp src/platform/macos/compositor.mm src/platform/macos/gpu_resources.mm src/platform/macos/gpu_programs.mm src/platform/macos/native_host.mm src/platform/macos/renderer.mm src/platform/macos/presentation.mm src/platform/macos/symbol_paths.mm)
+        src/platform/macos/shadows.mm src/platform/macos/shader_compiler.cpp src/platform/macos/compositor.mm src/platform/macos/gpu_resources.mm src/platform/macos/gpu_programs.mm src/platform/macos/native_host.mm src/platform/macos/renderer.mm src/platform/macos/presentation.mm src/platform/macos/symbol_paths.mm)
 	target_compile_options(stana PRIVATE "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>")
 	target_link_libraries(stana PRIVATE "-framework AppKit" "-framework CoreGraphics"
 		"-framework CoreText" "-framework Metal" "-framework QuartzCore")

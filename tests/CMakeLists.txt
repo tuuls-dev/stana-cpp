@@ -35,14 +35,16 @@ add_test(NAME stana.policy
 	COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/policy_test.py"
 		--root "${PROJECT_SOURCE_DIR}" --build "${PROJECT_BINARY_DIR}"
 		--tidy "${STANA_CLANG_TIDY}" --compiler "${CMAKE_CXX_COMPILER}")
-set_tests_properties(stana.policy PROPERTIES TIMEOUT 180)
+# Analysis imports the complete public module; leave room for expanded partitions on local hosts.
+set_tests_properties(stana.policy PROPERTIES TIMEOUT 360)
 
 if(STANA_SANITIZER STREQUAL "")
 	add_test(NAME stana.consumer
 		COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/consumer_test.py"
 			--root "${PROJECT_SOURCE_DIR}" --build "${PROJECT_BINARY_DIR}"
 			--compiler "${CMAKE_CXX_COMPILER}" --config "${CMAKE_BUILD_TYPE}")
-	set_tests_properties(stana.consumer PROPERTIES TIMEOUT 360)
+	# This gate builds both relocated-install and source consumers with mandatory analysis enabled.
+	set_tests_properties(stana.consumer PROPERTIES TIMEOUT 900)
 endif()
 
 add_executable(stana-reactive reactive/contracts.cpp)
@@ -197,3 +199,23 @@ add_executable(stana-gpu-validation rendering/gpu_validation.cpp)
 target_link_libraries(stana-gpu-validation PRIVATE stana::stana)
 stana_apply_safety(stana-gpu-validation)
 add_test(NAME stana.gpu-validation COMMAND stana-gpu-validation)
+
+add_executable(stana-shadows rendering/shadows.cpp)
+target_link_libraries(stana-shadows PRIVATE stana::stana)
+stana_apply_safety(stana-shadows)
+add_test(NAME stana.shadows COMMAND stana-shadows)
+
+add_executable(stana-ui-shadows ui/shadows.cpp)
+target_link_libraries(stana-ui-shadows PRIVATE stana::stana)
+stana_apply_safety(stana-ui-shadows)
+add_test(NAME stana.ui.shadows COMMAND stana-ui-shadows)
+
+if(APPLE AND (STANA_NATIVE_TESTS OR STANA_NATIVE_OFFSCREEN_TESTS))
+	add_executable(stana-native-shadows platform/macos/shadows.mm platform/macos/shadow_fixture.cpp)
+	target_link_libraries(stana-native-shadows PRIVATE stana::stana "-framework Metal" "-framework Foundation")
+	target_compile_options(stana-native-shadows PRIVATE "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>")
+	stana_apply_safety(stana-native-shadows)
+	add_test(NAME stana.native.shadows COMMAND stana-native-shadows)
+	set_tests_properties(stana.native.shadows PROPERTIES TIMEOUT 120 LABELS "native;offscreen" RUN_SERIAL TRUE
+		ENVIRONMENT "MTL_DEBUG_LAYER=1;MTL_SHADER_VALIDATION=1")
+endif()

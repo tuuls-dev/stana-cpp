@@ -2,6 +2,7 @@
 #define STANA_MACOS_COMPOSITOR_HPP
 #include "gpu_programs.hpp"
 #include "renderer.hpp"
+#include "shadows.hpp"
 #include <array>
 #include <compare>
 #include <cstddef>
@@ -59,6 +60,7 @@ struct CompositePacket {
 	std::vector<std::shared_ptr<TextureOwner>> multisample;
 	std::uint32_t samples = 1;
 	std::vector<std::shared_ptr<CPUAsset>> cpuAssets;
+	std::vector<PreparedShadow> shadows;
 	std::vector<std::shared_ptr<MeshUpload>> meshes;
 	std::vector<std::shared_ptr<BufferOwner>> buffers;
 	std::vector<ProgramCandidate> candidates;
@@ -78,6 +80,7 @@ struct CompositorWork {
 	std::uint64_t cpuRasterPixels = 0;
 	std::uint64_t gpuLeafDraws = 0;
 	std::uint64_t compositedTiles = 0;
+	ShadowWork shadows{};
 };
 
 /// @brief UI-confined preparation and atomic offscreen completion, separate from presentation.
@@ -131,6 +134,7 @@ class Compositor : public std::enable_shared_from_this<Compositor> {
 
   private:
 	Resources resources_;
+	Shadows shadows_;
 	CompositorWork work_;
 	std::function<void()> wake_;
 	std::function<void(Diagnostic)> diagnostic_;
@@ -144,6 +148,7 @@ class Compositor : public std::enable_shared_from_this<Compositor> {
 	std::map<SymbolKey, std::weak_ptr<CPUAsset>> symbolCache_;
 	std::map<std::pair<std::uint64_t, std::size_t>, std::weak_ptr<BufferOwner>> lineCache_;
 	std::array<id<MTLRenderPipelineState>, 4> shape_{};
+	std::array<id<MTLRenderPipelineState>, 4> shadow_{};
 	std::array<id<MTLRenderPipelineState>, 4> texture_{};
 	std::array<id<MTLRenderPipelineState>, 4> mesh_{};
 	std::array<id<MTLRenderPipelineState>, 2> display_{};

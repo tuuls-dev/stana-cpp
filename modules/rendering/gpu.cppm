@@ -9,6 +9,7 @@ module;
 #include <vector>
 export module stana:rendering_gpu;
 export import :rendering_program;
+export import :rendering_shadow;
 import :primitives;
 
 export namespace stana::rendering {
@@ -76,7 +77,15 @@ struct GPUPolyline {
 	bool closed;
 };
 
-using GPUCommand = std::variant<GPURect, GPUEllipse, GPUMesh, GPUPolyline, GPUProgram>;
+struct GPUBoxShadows {
+	Rect bounds{};
+	std::vector<BoxShadow> shadows{};
+	CornerRadii cornerRadii{};
+	BorderWidths borderWidths{};
+};
+
+using GPUCommand =
+	std::variant<GPURect, GPUEllipse, GPUMesh, GPUPolyline, GPUProgram, GPUBoxShadows>;
 struct GPUAccess;
 } // namespace detail
 
@@ -94,6 +103,16 @@ class GPUDrawing {
 	void fillRect(Rect, ExtendedColor, double cornerRadius = 0);
 	void fillEllipse(Rect, Color);
 	void fillEllipse(Rect, ExtendedColor);
+	/// @brief Records owning shadow data at this painter position; no caller span is retained.
+	/// Outer shadows precede fills, inset shadows follow fills, and foreground follows inset
+	/// shadows. Mixed lists paint together at this position. Drawing remains clipped to GPUCanvas
+	/// output. Throws invalid_argument on nonfinite geometry/colors or negative blur/radii/widths.
+	void drawBoxShadows(
+		Rect bounds,
+		std::span<const BoxShadow> shadows,
+		CornerRadii cornerRadii = {},
+		BorderWidths borderWidths = {}
+	);
 	void drawMesh(GPUMesh);
 	void strokePolyline(std::span<const Point>, Color, double width = 1, bool closed = false);
 	void

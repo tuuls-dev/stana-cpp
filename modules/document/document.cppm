@@ -437,8 +437,12 @@ struct Node {
 	Color borderColor = Color::clear(); ///< Resolved outline color when borderWidth is positive.
 	double borderWidth = 0;				///< Nonnegative outline width in logical points.
 	double cornerRadius = 0; ///< Rounding radius shared by fill, outline and clip projection.
-	double opacity = 1;		 ///< Local alpha multiplied into descendant paint opacity.
-	double spacing = 0;		 ///< Gap used by sequential child layout.
+	std::optional<CornerRadii>
+		cornerRadii{}; ///< Opt-in outer contour; scalar fallback is preserved.
+	std::optional<BorderWidths> borderWidths{}; ///< Opt-in inward edges; never layout insets.
+	std::vector<::stana::rendering::BoxShadow> boxShadows{}; ///< Local, non-inherited paint layers.
+	double opacity = 1; ///< Local alpha multiplied into descendant paint opacity.
+	double spacing = 0; ///< Gap used by sequential child layout.
 	double scrollOffset =
 		0; ///< Retained vertical viewport displacement, clamped during arrangement.
 	Alignment alignment =

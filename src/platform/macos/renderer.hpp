@@ -64,6 +64,7 @@ struct PreparedPaint {
 	std::vector<PreparedOperation> suffix;
 	std::optional<LogicalRect> childClipBounds;
 	double childClipRadius = 0;
+	std::optional<stana::gpu::detail::BoxGeometry> childClipGeometry{};
 	Ink prefixInk;
 	Ink suffixInk;
 };

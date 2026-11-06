@@ -2,6 +2,7 @@
 #define STANA_GPU_CONTRACTS_HPP
 #include "limits.hpp"
 #include "shader/compiler.hpp"
+#include "shadows.hpp"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -144,8 +145,16 @@ struct Polyline {
 	bool closed;
 };
 
-using Command =
-	std::variant<Shape, std::shared_ptr<const Mesh>, Polyline, std::shared_ptr<const Program>>;
+struct BoxShadows {
+	std::vector<Shadow> shadows{};
+};
+
+using Command = std::variant<
+	Shape,
+	std::shared_ptr<const Mesh>,
+	Polyline,
+	std::shared_ptr<const Program>,
+	BoxShadows>;
 
 struct Drawing {
 	std::uint64_t version = 0;

@@ -24,11 +24,14 @@ namespace stana::application::detail {
 	case stana::rendering::PaintKind::pushClip:
 		operation = stana::platform::detail::PaintOperation::pushClip;
 		break;
+	case stana::rendering::PaintKind::boxShadow:
+		operation = stana::platform::detail::PaintOperation::shadow;
+		break;
 	case stana::rendering::PaintKind::popClip:
 		operation = stana::platform::detail::PaintOperation::popClip;
 		break;
 	}
-	return {
+	stana::platform::detail::Command result{
 		.operation = operation,
 		.x = command.bounds.origin.x,
 		.y = command.bounds.origin.y,
@@ -44,6 +47,16 @@ namespace stana::application::detail {
 		.fontSize = command.font.size,
 		.fontWeight = command.font.weight
 	};
+	if (command.boxGeometry) {
+		result.boxGeometry = stana::gpu::detail::BoxGeometry{
+			.outer = convertContour(command.boxGeometry->outer),
+			.padding = convertContour(command.boxGeometry->padding)
+		};
+	}
+	if (command.shadow) {
+		result.shadow = convertShadow(*command.shadow);
+	}
+	return result;
 }
 
 [[nodiscard]] inline auto convertRect(Rect rect) -> stana::platform::detail::LogicalRect {
