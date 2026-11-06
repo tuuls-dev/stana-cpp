@@ -53,3 +53,7 @@ Native window/Metal gates require `-DSTANA_NATIVE_TESTS=ON` and a graphical macO
 Prefer [Conventional Commits format](https://www.conventionalcommits.org/en/v1.0.0/).
 Keep PRs focused; describe behavior changes, linked issues, and verification commands.
 Include screenshots for visible UI changes and migration notes for breaking APIs.
+
+DO NOT add any new examples.
+
+DO NOT edit README or any other markdown file.

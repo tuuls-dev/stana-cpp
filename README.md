@@ -17,10 +17,10 @@ Stana is under development at version **0.1.0**. Treat the API as evolving.
 Native desktop support is currently macOS-only; portable engine support does not
 mean a native window backend exists on every platform.
 
-| Platform | Current scope | Platform prerequisites |
-| --- | --- | --- |
-| macOS 26+ | Native windows, input, text, and Metal rendering; portable engine and tests | Xcode / Command Line Tools with a macOS 26+ SDK; SDK libc++ |
-| Linux | Portable engine and headless tests; no native windows or native text measurement | GCC 14+ libstdc++ development files; Unix build tools including Make |
+| Platform    | Current scope                                                                    | Platform prerequisites                                                          |
+| ----------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| macOS 26+   | Native windows, input, text, and Metal rendering; portable engine and tests      | Xcode / Command Line Tools with a macOS 26+ SDK; SDK libc++                     |
+| Linux       | Portable engine and headless tests; no native windows or native text measurement | GCC 14+ libstdc++ development files; Unix build tools including Make            |
 | Windows x64 | Portable engine and headless tests; no native windows or native text measurement | Visual Studio C++ Build Tools, Windows SDK, and MSVC STL; use a developer shell |
 
 Controls are drawn by Stana, not wrappers around native controls.
@@ -104,14 +104,14 @@ for module, namespace, and ownership rules.
 
 ### 1. Install the build prerequisites
 
-| Tool / dependency | Required version |
-| --- | --- |
+| Tool / dependency                                               | Required version         |
+| --------------------------------------------------------------- | ------------------------ |
 | Upstream LLVM: Clang, clang-tidy, clang-format, clang-scan-deps | **22.1.8**, all matching |
-| ICU4C (`uc`, `i18n`, `data`) | **78.3**, exact |
-| CMake | **4.4+** |
-| Ninja | **1.11+** |
-| Python | **3.11+** |
-| Just | Optional command runner |
+| ICU4C (`uc`, `i18n`, `data`)                                    | **78.3**, exact          |
+| CMake                                                           | **4.4+**                 |
+| Ninja                                                           | **1.11+**                |
+| Python                                                          | **3.11+**                |
+| Just                                                            | Optional command runner  |
 
 Use the platform prerequisites above as well. Apple Clang is not a substitute for
 the pinned upstream LLVM toolchain. Exceptions and RTTI must remain enabled.
@@ -244,14 +244,14 @@ See the [consumer fixture](tests/consumer/CMakeLists.txt) and
 
 ## Development
 
-| Command | Purpose |
-| --- | --- |
-| `just build` | Configure and build Debug with mandatory analysis |
-| `just test` | Build Debug and run CTest |
-| `just test release` | Build and test Release |
-| `just format` | Format first-party C++ sources |
-| `just format-check` | Check formatting without modifying files |
-| `just test asan` | Build and test with AddressSanitizer |
+| Command                | Purpose                                                     |
+| ---------------------- | ----------------------------------------------------------- |
+| `just build`           | Configure and build Debug with mandatory analysis           |
+| `just test`            | Build Debug and run CTest                                   |
+| `just test release`    | Build and test Release                                      |
+| `just format`          | Format first-party C++ sources                              |
+| `just format-check`    | Check formatting without modifying files                    |
+| `just test asan`       | Build and test with AddressSanitizer                        |
 | `just test asan-ubsan` | Build and test with AddressSanitizer + UBSan on Linux/macOS |
 
 Before using a sanitizer preset, provision a matching Tint build. For example:
@@ -277,16 +277,16 @@ For Metal canvas offscreen tests without a window server, enable
 
 ### Repository map
 
-| Path | Contents |
-| --- | --- |
-| [`modules/`](modules/) | Public module and subsystem interface partitions |
-| [`src/`](src/) | Mirrored subsystem implementations |
-| [`src/platform/`](src/platform/) | Native adapters and platform integration |
-| [`examples/`](examples/) | Counter and canvas applications |
-| [`tests/`](tests/) | Contracts, policy checks, and consumer integration |
-| [`cmake/`](cmake/) | Toolchain, safety policy, dependencies, and packaging |
-| [`tools/`](tools/) | Bootstrap, formatting, policy, and developer scripts |
-| [`readme/`](readme/) | Documentation conventions |
+| Path                             | Contents                                              |
+| -------------------------------- | ----------------------------------------------------- |
+| [`modules/`](modules/)           | Public module and subsystem interface partitions      |
+| [`src/`](src/)                   | Mirrored subsystem implementations                    |
+| [`src/platform/`](src/platform/) | Native adapters and platform integration              |
+| [`examples/`](examples/)         | Counter and canvas applications                       |
+| [`tests/`](tests/)               | Contracts, policy checks, and consumer integration    |
+| [`cmake/`](cmake/)               | Toolchain, safety policy, dependencies, and packaging |
+| [`tools/`](tools/)               | Bootstrap, formatting, policy, and developer scripts  |
+| [`readme/`](readme/)             | Documentation conventions                             |
 
 ### Contributing and help
 
