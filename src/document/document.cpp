@@ -288,7 +288,8 @@ void Document::setEnvironment(Environment environment) {
 			domains = domains | Dirty::arrange | Dirty::snapshot;
 			if (node->kind == NodeKind::cpuCanvas || node->kind == NodeKind::gpuCanvas ||
 				node->kind == NodeKind::symbol || node->kind == NodeKind::text ||
-				node->kind == NodeKind::button || node->kind == NodeKind::toggle) {
+				node->kind == NodeKind::button || node->kind == NodeKind::toggle ||
+				node->cornerRadii || node->borderWidths || !node->boxShadows.empty()) {
 				domains = domains | Dirty::paint;
 			}
 		}
@@ -304,7 +305,7 @@ void Document::setEnvironment(Environment environment) {
 				domains = domains | Dirty::paint;
 			}
 		}
-		if (colorChanged && node->gpuDrawing) {
+		if (colorChanged && (node->gpuDrawing || !node->boxShadows.empty())) {
 			domains = domains | Dirty::paint;
 		}
 		if (colorChanged) {

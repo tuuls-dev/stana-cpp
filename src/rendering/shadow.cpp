@@ -6,6 +6,7 @@ module;
 #include <cmath>
 #include <compare>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <stdexcept>
 #include <vector>
@@ -161,8 +162,7 @@ auto prepareBoxShadows(
 	std::vector<ShadowPaint> result;
 	result.reserve(shadows.size());
 	// Reverse within the authored list, including mixed groups in an explicit GPU command.
-	for (auto iterator = shadows.rbegin(); iterator != shadows.rend(); ++iterator) {
-		const auto &shadow = *iterator;
+	for (const auto &shadow : std::views::reverse(shadows)) {
 		const auto color =
 			shadow.color.value_or(foreground).resolved(environment.theme, environment.highContrast);
 		if (color.alpha <= 0 || bounds.size.width <= 0 || bounds.size.height <= 0) {
@@ -237,12 +237,13 @@ auto interpolateBoxShadows(
 	std::vector<BoxShadow> result;
 	result.reserve(std::max(from.size(), to.size()));
 	for (std::size_t index = 0; index < std::max(from.size(), to.size()); ++index) {
-		const bool inset = index < from.size() ? from.subspan(index, 1).front().isInset : to.subspan(index, 1).front().isInset;
+		const bool inset = index < from.size() ? from.subspan(index, 1).front().isInset
+											   : to.subspan(index, 1).front().isInset;
 		const BoxShadow zero{.color = Color::clear(), .isInset = inset};
 		const auto start = resolve(index < from.size() ? from.subspan(index, 1).front() : zero);
 		const auto end = resolve(index < to.size() ? to.subspan(index, 1).front() : zero);
-		const auto a = *start.color;
-		const auto b = *end.color;
+		const auto a = start.color.value_or(Color::clear());
+		const auto b = end.color.value_or(Color::clear());
 		const double alpha = std::lerp(a.alpha, b.alpha, progress);
 		const auto channel = [&](double first, double second) -> double {
 			if (alpha <= 0) {

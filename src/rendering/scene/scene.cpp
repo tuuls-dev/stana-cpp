@@ -202,6 +202,36 @@ auto Document::project(
 		stana::rendering::SceneSnapshot scene;
 		const double opacity = context.opacity;
 
+		const auto radii = node->cornerRadii.value_or(CornerRadii::all(node->cornerRadius));
+		const auto widths = node->borderWidths.value_or(BorderWidths::all(node->borderWidth));
+		const auto geometry = stana::rendering::detail::boxGeometry(
+			node->bounds,
+			radii,
+			widths,
+			environment_.direction
+		);
+		const bool rich = node->cornerRadii.has_value() || node->borderWidths.has_value();
+		const auto shadows = stana::rendering::detail::prepareBoxShadows(
+			node->bounds,
+			node->boxShadows,
+			radii,
+			widths,
+			node->isForegroundExplicit ? node->foreground : Color::text(),
+			environment_
+		);
+		const auto appendShadows = [&](bool inset) -> void {
+			for (auto shadow : shadows) {
+				if (shadow.isInset == inset) {
+					shadow.color.alpha *= opacity;
+					scene.commands.push_back(
+						{.kind = stana::rendering::PaintKind::boxShadow,
+							.bounds = shadow.ink,
+							.shadow = std::move(shadow)}
+					);
+				}
+			}
+		};
+		appendShadows(false);
 		if (node->background.alpha > 0) {
 			scene.commands.push_back(
 				{.kind = stana::rendering::PaintKind::fillRect,
@@ -210,14 +240,17 @@ auto Document::project(
 						node->background.resolved(environment_.theme, environment_.highContrast),
 						opacity
 					),
-					.cornerRadius = node->cornerRadius}
+					.cornerRadius = node->cornerRadius,
+					.boxGeometry = rich ? std::optional{geometry} : std::nullopt}
 			);
 		}
+		appendShadows(true);
 		if (node->clip) {
 			scene.commands.push_back(
 				{.kind = stana::rendering::PaintKind::pushClip,
 					.bounds = node->bounds,
-					.cornerRadius = node->cornerRadius}
+					.cornerRadius = node->cornerRadius,
+					.boxGeometry = rich ? std::optional{geometry} : std::nullopt}
 			);
 		}
 		if (node->kind == NodeKind::text || node->kind == NodeKind::button ||
@@ -319,7 +352,7 @@ auto Document::project(
 		if (node->clip) {
 			paint->suffix.push_back({.kind = stana::rendering::PaintKind::popClip});
 		}
-		if (node->borderWidth > 0 || focused_ == identity) {
+		if (node->borderWidth > 0 || node->borderWidths || focused_ == identity) {
 			paint->suffix.push_back(
 				{.kind = stana::rendering::PaintKind::strokeRect,
 					.bounds = node->bounds,
@@ -330,7 +363,9 @@ auto Document::project(
 					),
 					.cornerRadius = node->cornerRadius,
 					.lineWidth = focused_ == identity ? stana::rendering::detail::focusBorderWidth
-													  : node->borderWidth}
+													  : node->borderWidth,
+					.boxGeometry =
+						rich && focused_ != identity ? std::optional{geometry} : std::nullopt}
 			);
 		}
 		branch->paint = std::move(paint);

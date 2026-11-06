@@ -2,6 +2,7 @@ module;
 #include <algorithm>
 #include <cmath>
 #include <compare>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -45,6 +46,8 @@ void validateCommand(const PaintCommand &command) {
 		}
 		break;
 	}
+	case boxShadow:
+		throw std::invalid_argument("CPUCanvas does not author box shadows");
 	case fillRect:
 	case text:
 	case pushClip:
@@ -74,8 +77,16 @@ auto PaintCommand::operator==(const PaintCommand &other) const -> bool {
 	if (kind != other.kind) {
 		return false;
 	}
+	if (boxGeometry.has_value() != other.boxGeometry.has_value() ||
+		(boxGeometry &&
+			(boxGeometry->outer != other.boxGeometry->outer ||
+				boxGeometry->padding != other.boxGeometry->padding))) {
+		return false;
+	}
 	using enum PaintKind;
 	switch (kind) {
+	case boxShadow:
+		return shadow == other.shadow;
 	case popClip:
 		return true;
 	case pushClip:

@@ -3,6 +3,7 @@
 #include <exception>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -46,13 +47,13 @@ void values() {
 	const auto middle = interpolateBoxShadows(start, end, 0.5);
 	near(middle.front().offset.x, 0);
 	near(middle.front().blurRadius, 4);
-	near(middle.front().color->red, 1);
-	near(middle.front().color->blue, 0);
-	near(middle.front().color->alpha, 0.5);
+	near(middle.front().color.value_or(Color::clear()).red, 1);
+	near(middle.front().color.value_or(Color::clear()).blue, 0);
+	near(middle.front().color.value_or(Color::clear()).alpha, 0.5);
 	require(interpolateBoxShadows({}, {}, 0.5).empty(), "empty interpolation");
 	const auto padded = interpolateBoxShadows({}, start, 0.5);
 	near(padded.front().offset.x, -4);
-	near(padded.front().color->alpha, 0.5);
+	near(padded.front().color.value_or(Color::clear()).alpha, 0.5);
 	const std::array inset{BoxShadow{.color = Color::surface(), .isInset = true}};
 	require(
 		!interpolateBoxShadows(start, inset, 0.49).front().isInset &&

@@ -55,6 +55,15 @@ struct AppearanceProperties {
 	std::optional<::stana::reactive::Property<double>> borderWidth{};
 	/// @brief Optional reactive rounding radius used by background and clip geometry.
 	std::optional<::stana::reactive::Property<double>> cornerRadius{};
+	/// @brief Independent elliptical radii; when supplied, take precedence over cornerRadius.
+	std::optional<::stana::reactive::Property<CornerRadii>> cornerRadii{};
+	/// @brief Inward per-edge widths; when supplied, take precedence over borderWidth.
+	/// Rich geometry uses an outer border contour and an inner padding contour for all paint.
+	std::optional<::stana::reactive::Property<BorderWidths>> borderWidths{};
+	/// @brief Paint-only ordered outer/inset shadows; an empty list removes all shadows.
+	/// Missing colors follow this node's effective foreground. Shadows are not inherited.
+	std::optional<::stana::reactive::Property<std::vector<::stana::rendering::BoxShadow>>>
+		boxShadows{};
 	/// @brief Optional reactive layout/paint participation; does not remove mounted resources.
 	std::optional<::stana::reactive::Property<Visibility>> visibility{};
 	/// @brief Whether this node clips descendant paint to its rounded outer bounds.
