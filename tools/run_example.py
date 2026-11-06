@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def main() -> None:
 	"""Validate the example name before constructing build targets or executable paths."""
 	parser = argparse.ArgumentParser(description=__doc__)
-	parser.add_argument("name", choices=("counter", "symbols"))
+	parser.add_argument("name", choices=("counter", "symbols", "canvas"))
 	parser.add_argument("--trace", action=argparse.BooleanOptionalAction, default=True,
 		help="Enable native rendering traces (on by default)")
 	args = parser.parse_args()

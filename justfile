@@ -26,7 +26,8 @@ build preset="debug": (configure preset)
 test preset="debug": (build preset)
     ctest --preset {{quote(preset)}}
 
-# Build and run an example: just example counter, or just example symbols.
+# Build and run an example:
+# eg. just example symbols.
 # Native rendering traces are on by default; pass --no-trace to disable.
 example name *args:
     {{python}} tools/run_example.py {{quote(name)}} {{args}}
