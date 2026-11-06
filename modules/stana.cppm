@@ -5,6 +5,7 @@ module;
 export module stana;
 
 export import :primitives;
+export import :symbol;
 export import :reactive;
 export import :tasks;
 export import :rendering;

@@ -1,6 +1,7 @@
 module;
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -83,8 +84,11 @@ class Application {
 	template <::stana::ui::Component Content>
 	[[nodiscard]] static auto run(const Window<Content> &window) -> int {
 		const ::stana::application::detail::NativeExecutorSession session;
-		std::vector<::stana::application::detail::WindowSession> sessions;
-		sessions.push_back(prepare(window));
+		// Clang 22 restores the end cursor captured by vector::emplace_back, so
+		// push_back constructs the session and then drops it. Assign into a sized
+		// vector instead. Same constraint as symbol path compilation.
+		std::vector<::stana::application::detail::WindowSession> sessions(1);
+		sessions.at(0) = prepare(window);
 		return session.complete(::stana::application::detail::runWindows(sessions));
 	}
 
@@ -95,10 +99,12 @@ class Application {
 	template <typename... Windows>
 	[[nodiscard]] static auto run(const std::tuple<Windows...> &windows) -> int {
 		const ::stana::application::detail::NativeExecutorSession session;
-		std::vector<::stana::application::detail::WindowSession> sessions;
+		// Same Clang 22 emplace_back constraint as the single-window overload.
+		std::vector<::stana::application::detail::WindowSession> sessions(sizeof...(Windows));
+		std::size_t index = 0;
 		std::apply(
 			[&](const auto &...window) -> void {
-				(sessions.push_back(prepare(window)), ...);
+				((sessions.at(index++) = prepare(window)), ...);
 			},
 			windows
 		);
@@ -131,7 +137,8 @@ class Application {
 		auto document = ::stana::document::detail::Document::create(window.size);
 		::stana::reactive::Transaction::perform([&] -> void {
 			::stana::ui::MountContext context{.document = document, .parent = document->root()};
-			static_cast<void>(::stana::ui::mount(window.content, context));
+			using ::stana::ui::mount;
+			static_cast<void>(mount(window.content, context));
 		});
 		return {
 			.title = window.title,

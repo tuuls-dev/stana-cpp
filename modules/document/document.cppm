@@ -20,6 +20,9 @@ import :primitives;
 import :reactive;
 import :rendering;
 import :layout;
+export import :symbol_asset;
+export import :symbol_playback;
+export import :symbol_geometry;
 
 export namespace stana::document {
 namespace detail {
@@ -37,7 +40,8 @@ enum class NodeKind : std::uint8_t {
 	toggle,
 	scroll,
 	cpuCanvas,
-	gpuCanvas
+	gpuCanvas,
+	symbol
 };
 } // namespace detail
 
@@ -140,6 +144,15 @@ inline constexpr Dirty fullWork =
 } // namespace stana::document
 
 export namespace stana::rendering::detail {
+/// @brief One fitted symbol ready for native preparation. Omitted when nothing is painted.
+struct SymbolLeaf {
+	NodeId instance;
+	Rect bounds{};
+	Rect ink{};
+	::stana::symbol::Presentation presentation{};
+	double opacity = 1;
+};
+
 struct GPUCanvasLeaf {
 	NodeId instance;
 	Rect bounds;
@@ -154,6 +167,7 @@ struct PaintSegments {
 	std::vector<PaintCommand> prefix;
 	std::vector<PaintCommand> suffix;
 	std::optional<GPUCanvasLeaf> gpu;
+	std::optional<SymbolLeaf> symbol;
 	std::optional<Rect> childClipBounds;
 };
 
@@ -263,6 +277,30 @@ struct Metrics {
 };
 
 namespace detail {
+inline constexpr double defaultSymbolSize = 24;
+
+/// @brief Retained symbol occurrence. Layout reads size; paint reads the effect sample.
+struct SymbolState {
+	::stana::symbol::Asset asset{};
+	double size = defaultSymbolSize;
+	Color color = Color::text();
+	std::optional<double> strokeWidth{};
+	::stana::symbol::Playback playback = ::stana::symbol::Playback::none();
+	::stana::symbol::PlaybackState playbackState{};
+	::stana::symbol::EffectSample effect{};
+	std::uint64_t generation = 0;
+	bool available = true;
+	std::optional<Rect> ink{};
+	double baseline = 0;
+	::stana::symbol::Asset previousAsset{};
+	std::optional<double> previousStroke{};
+	std::optional<double> previousScale{};
+	std::uint64_t epoch = 0;
+	std::set<::stana::symbol::Diagnostic::Code> failed{};
+	std::uint64_t frameRegistration = 0;
+	std::function<void(const ::stana::symbol::Diagnostic &)> onError{};
+};
+
 /// @brief Internal mutable storage for one mounted component occurrence.
 ///
 /// Document owns these records; mounting installs property bindings into scope,
@@ -316,6 +354,7 @@ struct Node {
 	std::optional<::stana::rendering::GPUDrawing> gpuDrawing;
 	std::function<void(const ::stana::rendering::GPUDiagnostic &)>
 		onGPUError; ///< Local-coordinate CPUCanvas commands copied at mount.
+	std::optional<SymbolState> symbol{};
 	std::function<void()> onClick;
 	std::function<void(PointerEvent &)> onPointerDown;
 	std::function<void(PointerEvent &)> onPointerDownCapture;
@@ -402,6 +441,8 @@ class Document : public std::enable_shared_from_this<Document> {
 	/// @brief Expires one submission, gating its changed geometry and freeing history admission.
 	void abandonPresentation(::stana::rendering::PresentationAttempt attempt);
 	/// @brief Invalidates submission identities after surface/attachment replacement.
+	/// A new epoch retries every symbol: failures clear, generation advances, and loops
+	/// that were stopped by a failure restart at rest on the next commit.
 	void resetPresentation(std::uint64_t epoch);
 	void holdPreparedGeometry(std::uint64_t revision);
 	void queueGPUDiagnostic(
@@ -409,6 +450,45 @@ class Document : public std::enable_shared_from_this<Document> {
 		std::uint64_t drawingVersion,
 		std::uint64_t epoch
 	);
+
+	/// @brief One display-link sample. The first sample after a reset reports zero elapsed.
+	struct FrameStamp {
+		double timestamp = 0;
+		double targetTimestamp = 0;
+	};
+
+	[[nodiscard]] auto addFrameRegistration(
+		std::function<bool()> active,
+		std::function<void(FrameStamp, double elapsed)> callback
+	) -> std::uint64_t;
+	void cancelFrameRegistration(std::uint64_t registration);
+	void resetFrameTimestamp(std::uint64_t registration);
+	void tickFrames(FrameStamp stamp);
+	void setFrameDemandHandler(std::function<void(bool)> handler);
+	void refreshFrameDemand();
+	[[nodiscard]] auto frameDemand() const -> bool;
+	void setHostVisible(bool visible);
+
+	[[nodiscard]] auto hostVisible() const noexcept -> bool { return hostVisible_; }
+
+	/// @brief Which symbol preparation a native failure belongs to.
+	/// Generation and epoch travel together so a stale raster result cannot
+	/// attach to a newer asset or a newer renderer epoch.
+	struct SymbolPreparation {
+		NodeId instance{};
+		std::uint64_t generation = 0;
+		std::uint64_t epoch = 0;
+	};
+
+	/// @brief Applies one raster outcome after the matching generation and epoch checks.
+	/// An empty diagnostic is success and restores a leaf that had been omitted.
+	/// @return True when retained state changed and a commit effect was scheduled.
+	[[nodiscard]] auto queueSymbolResult(
+		std::optional<::stana::symbol::Diagnostic> diagnostic,
+		SymbolPreparation preparation
+	) -> bool;
+	void
+	queueSymbolDiagnostic(::stana::symbol::Diagnostic diagnostic, SymbolPreparation preparation);
 	[[nodiscard]] auto hitTest(Point point) const -> std::optional<NodeId>;
 
 	[[nodiscard]] auto beginPresentation(
@@ -502,6 +582,23 @@ class Document : public std::enable_shared_from_this<Document> {
 		std::uint64_t,
 		::stana::rendering::GPUDiagnostic::Category>;
 	std::set<GPUFailureKey> gpuFailures_;
+
+	struct FrameRegistration {
+		std::uint64_t id = 0;
+		std::function<bool()> active;
+		std::function<void(FrameStamp, double elapsed)> callback;
+		std::optional<double> lastTimestamp;
+		bool cancelled = false;
+	};
+
+	std::vector<FrameRegistration> frames_{};
+	std::function<void(bool)> frameDemandHandler_{};
+	bool lastFrameDemand_ = false;
+	bool hostVisible_ = true;
+
+	void reconcileSymbols();
+	[[nodiscard]] auto frameById(std::uint64_t registration) -> FrameRegistration *;
+	[[nodiscard]] auto frameById(std::uint64_t registration) const -> const FrameRegistration *;
 
 	[[nodiscard]] auto interactionBounds(NodeId identity) const -> std::optional<Rect>;
 	void rememberGeometry();

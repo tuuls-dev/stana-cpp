@@ -20,6 +20,7 @@ import :document;
 import :primitives;
 import :reactive;
 import :rendering;
+import :symbol_geometry;
 
 namespace stana::layout::detail {
 namespace {
@@ -126,6 +127,9 @@ auto Document::measure(NodeId identity, Size available) -> Size {
 				.height = font.size * stana::layout::detail::lineHeightMultiplier
 			};
 		}
+	} else if (node->kind == NodeKind::symbol) {
+		const double side = node->symbol ? node->symbol->size : 0.0;
+		intrinsic = {.width = side, .height = side};
 	} else {
 		bool firstChild = true;
 		for (const auto child : node->children) {
@@ -176,6 +180,13 @@ auto Document::measure(NodeId identity, Size available) -> Size {
 	};
 	stana::detail::requireNonnegative(node->measured.width);
 	stana::detail::requireNonnegative(node->measured.height);
+	if (node->kind == NodeKind::symbol && node->symbol) {
+		const Rect local{.size = node->measured};
+		const auto content =
+			stana::layout::detail::contentRect(local, padding, environment_.direction);
+		const auto fitted = stana::symbol::square(node->symbol->size, content);
+		node->symbol->baseline = fitted.origin.y + fitted.size.height;
+	}
 	node->work.measuredAt = key;
 	node->work.measureChildren.clear();
 	node->work.local = without(node->work.local, Dirty::measure);

@@ -2,6 +2,7 @@ module;
 
 #include <algorithm>
 #include <cmath>
+#include <compare>
 #include <cstdint>
 #include <exception>
 #include <expected>
@@ -69,6 +70,9 @@ void Document::close() {
 	}
 	stana::reactive::detail::ReactiveRuntime::current().commits.erase(identity_);
 	onPublish_ = {};
+	frames_.clear();
+	frameDemandHandler_ = {};
+	lastFrameDemand_ = false;
 	remove(root_);
 	snapshots_.clear();
 	scene_.reset();
@@ -269,6 +273,7 @@ void Document::setEnvironment(Environment environment) {
 	const bool directionChanged = environment.direction != environment_.direction;
 	const bool themeChanged = environment.theme != environment_.theme;
 	const bool colorChanged = themeChanged || environment.highContrast != environment_.highContrast;
+	const bool motionChanged = environment.reducedMotion != environment_.reducedMotion;
 	if (environment == environment_) {
 		return;
 	}
@@ -282,10 +287,13 @@ void Document::setEnvironment(Environment environment) {
 		if (directionChanged) {
 			domains = domains | Dirty::arrange | Dirty::snapshot;
 			if (node->kind == NodeKind::cpuCanvas || node->kind == NodeKind::gpuCanvas ||
-				node->kind == NodeKind::text || node->kind == NodeKind::button ||
-				node->kind == NodeKind::toggle) {
+				node->kind == NodeKind::symbol || node->kind == NodeKind::text ||
+				node->kind == NodeKind::button || node->kind == NodeKind::toggle) {
 				domains = domains | Dirty::paint;
 			}
+		}
+		if (node->kind == NodeKind::symbol && (colorChanged || motionChanged)) {
+			domains = domains | Dirty::paint;
 		}
 		if (node->kind == NodeKind::text || node->kind == NodeKind::button ||
 			node->kind == NodeKind::toggle) {
@@ -410,6 +418,215 @@ void Document::queueGPUDiagnostic(
 			}
 		}
 	);
+}
+
+auto Document::frameById(std::uint64_t registration) -> FrameRegistration * {
+	for (auto &frame : frames_) {
+		if (frame.id == registration && !frame.cancelled) {
+			return &frame;
+		}
+	}
+	return nullptr;
+}
+
+auto Document::frameById(std::uint64_t registration) const -> const FrameRegistration * {
+	for (const auto &frame : frames_) {
+		if (frame.id == registration && !frame.cancelled) {
+			return &frame;
+		}
+	}
+	return nullptr;
+}
+
+auto Document::addFrameRegistration(
+	std::function<bool()> active,
+	std::function<void(FrameStamp, double elapsed)> callback
+) -> std::uint64_t {
+	const auto id = stana::detail::nextIdentity();
+	frames_.push_back(
+		{.id = id,
+			.active = std::move(active),
+			.callback = std::move(callback),
+			.lastTimestamp = std::nullopt,
+			.cancelled = false}
+	);
+	refreshFrameDemand();
+	return id;
+}
+
+void Document::cancelFrameRegistration(std::uint64_t registration) {
+	if (auto *frame = frameById(registration)) {
+		frame->cancelled = true;
+		frame->active = {};
+		frame->callback = {};
+	}
+	refreshFrameDemand();
+}
+
+void Document::resetFrameTimestamp(std::uint64_t registration) {
+	if (auto *frame = frameById(registration)) {
+		frame->lastTimestamp.reset();
+	}
+}
+
+void Document::tickFrames(FrameStamp stamp) {
+	if (isClosed_) {
+		return;
+	}
+	std::vector<std::uint64_t> identifiers;
+	identifiers.reserve(frames_.size());
+	for (const auto &frame : frames_) {
+		if (!frame.cancelled) {
+			identifiers.push_back(frame.id);
+		}
+	}
+	for (const auto registration : identifiers) {
+		auto *frame = frameById(registration);
+		if (frame == nullptr) {
+			continue;
+		}
+		bool active = false;
+		if (frame->active) {
+			active = frame->active();
+		}
+		if (!active) {
+			frame->lastTimestamp.reset();
+			continue;
+		}
+		const double elapsed =
+			frame->lastTimestamp ? std::max(0.0, stamp.timestamp - *frame->lastTimestamp) : 0.0;
+		frame->lastTimestamp = stamp.timestamp;
+		const auto callback = frame->callback;
+		if (callback) {
+			callback(stamp, elapsed);
+		}
+	}
+	refreshFrameDemand();
+}
+
+void Document::setFrameDemandHandler(std::function<void(bool)> handler) {
+	frameDemandHandler_ = std::move(handler);
+	lastFrameDemand_ = false;
+	refreshFrameDemand();
+}
+
+void Document::refreshFrameDemand() {
+	const bool demand = frameDemand();
+	if (demand == lastFrameDemand_ || !frameDemandHandler_) {
+		lastFrameDemand_ = demand;
+		return;
+	}
+	lastFrameDemand_ = demand;
+	frameDemandHandler_(demand);
+}
+
+auto Document::frameDemand() const -> bool {
+	for (const auto &frame : frames_) {
+		if (!frame.cancelled && frame.active && frame.active()) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void Document::setHostVisible(bool visible) {
+	if (hostVisible_ == visible) {
+		return;
+	}
+	hostVisible_ = visible;
+	for (const auto &[serial, node] : nodes_) {
+		static_cast<void>(serial);
+		if (node->kind == NodeKind::symbol) {
+			invalidate(node->id, Dirty::paint);
+		}
+	}
+	refreshFrameDemand();
+}
+
+auto Document::queueSymbolResult(
+	std::optional<::stana::symbol::Diagnostic> diagnostic,
+	SymbolPreparation preparation
+) -> bool {
+	auto *node = find(preparation.instance);
+	if (isClosed_ || node == nullptr || !node->symbol ||
+		node->symbol->generation != preparation.generation) {
+		return false;
+	}
+	auto &symbol = *node->symbol;
+	if (symbol.epoch != 0 && symbol.epoch != preparation.epoch) {
+		return false;
+	}
+	if (symbol.epoch != preparation.epoch) {
+		symbol.failed.clear();
+		symbol.epoch = preparation.epoch;
+	}
+	if (!diagnostic) {
+		symbol.failed.clear();
+		if (symbol.available) {
+			return false;
+		}
+		symbol.available = true;
+		invalidate(preparation.instance, Dirty::paint);
+		const auto weak = weak_from_this();
+		stana::reactive::detail::ReactiveRuntime::current().effects.emplace_back(
+			[weak, preparation] -> void {
+				const auto owner = weak.lock();
+				if (!owner || owner->isClosed_) {
+					return;
+				}
+				const auto *current = owner->find(preparation.instance);
+				if (current == nullptr || !current->symbol ||
+					current->symbol->generation != preparation.generation) {
+					return;
+				}
+				if (current->symbol->epoch != 0 && current->symbol->epoch != preparation.epoch) {
+					return;
+				}
+				owner->commit();
+			}
+		);
+		return true;
+	}
+	if (!symbol.failed.insert(diagnostic->code).second) {
+		return false;
+	}
+	symbol.available = false;
+	invalidate(preparation.instance, Dirty::paint);
+	const auto weak = weak_from_this();
+	stana::reactive::detail::ReactiveRuntime::current().effects.emplace_back(
+		[weak, queued = std::move(*diagnostic), preparation] -> void {
+			const auto owner = weak.lock();
+			if (!owner || owner->isClosed_) {
+				return;
+			}
+			const auto *current = owner->find(preparation.instance);
+			if (current == nullptr || !current->symbol ||
+				current->symbol->generation != preparation.generation) {
+				return;
+			}
+			if (current->symbol->epoch != 0 && current->symbol->epoch != preparation.epoch) {
+				return;
+			}
+			owner->commit();
+			try {
+				if (current->symbol->onError) {
+					current->symbol->onError(queued);
+				} else {
+					owner->report(Error::nativeFailure);
+				}
+			} catch (...) {
+				owner->report(Error::nativeFailure);
+			}
+		}
+	);
+	return true;
+}
+
+void Document::queueSymbolDiagnostic(
+	::stana::symbol::Diagnostic diagnostic,
+	SymbolPreparation preparation
+) {
+	static_cast<void>(queueSymbolResult(std::move(diagnostic), preparation));
 }
 
 void Document::report(Error error) {

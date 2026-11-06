@@ -28,6 +28,15 @@ struct CPUKey {
 	auto operator<=>(const CPUKey &) const = default;
 };
 
+/// @brief CPU-raster identity for one fitted symbol, including clips that change pixels.
+struct SymbolKey {
+	double scale = 1;
+	std::array<std::size_t, 2> viewport{};
+	std::uint64_t contentHash = 0;
+	std::vector<stana::platform::detail::Command> clips{};
+	auto operator<=>(const SymbolKey &) const = default;
+};
+
 struct ProgramInstance {
 	std::shared_ptr<const Program> desired;
 	std::shared_ptr<const Pipeline> pipeline;
@@ -132,6 +141,7 @@ class Compositor : public std::enable_shared_from_this<Compositor> {
 	std::shared_ptr<const Scene> desired_;
 	std::map<ProgramInstanceKey, ProgramInstance> instances_;
 	std::map<CPUKey, std::weak_ptr<CPUAsset>> cpuCache_;
+	std::map<SymbolKey, std::weak_ptr<CPUAsset>> symbolCache_;
 	std::map<std::pair<std::uint64_t, std::size_t>, std::weak_ptr<BufferOwner>> lineCache_;
 	std::array<id<MTLRenderPipelineState>, 4> shape_{};
 	std::array<id<MTLRenderPipelineState>, 4> texture_{};
@@ -154,6 +164,15 @@ class Compositor : public std::enable_shared_from_this<Compositor> {
 		const PreparedScene &,
 		const TileGrid &,
 		id<MTLCommandBuffer>) -> Result<std::shared_ptr<CPUAsset>>;
+	[[nodiscard]] auto symbolRaster(
+		const SymbolLeaf &,
+		const std::vector<PreparedOperation> &,
+		const PreparedScene &,
+		const TileGrid &,
+		std::uint64_t epoch,
+		id<MTLCommandBuffer>,
+		const std::function<void(SymbolFailure)> &
+	) -> Result<std::shared_ptr<CPUAsset>>;
 };
 
 struct Capture {

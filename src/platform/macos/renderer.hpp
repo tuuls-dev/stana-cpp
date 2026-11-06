@@ -6,6 +6,7 @@
 #import <CoreText/CoreText.h>
 #import <Metal/Metal.h>
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -100,8 +101,27 @@ struct PreparationTrace {
 ) -> TileMask;
 /// @brief Full-scene reference and production tile replay share typography and state setup.
 /// CPU fixtures supply ordinary bitmap contexts; production supplies shared Metal memory.
-void rasterScene(CGContextRef, const PreparedScene &, PixelRect, bool cullBranches = true);
+/// An empty symbolReport uses the scene callback. symbolEpoch is stamped on each outcome.
+void rasterScene(
+	CGContextRef,
+	const PreparedScene &,
+	PixelRect,
+	bool cullBranches = true,
+	std::uint64_t symbolEpoch = 0,
+	const std::function<void(SymbolFailure)> &symbolReport = {}
+);
 void rasterRun(CGContextRef, double scale, PixelRect, const std::vector<PreparedOperation> &);
+/// @brief Rasters one symbol into a bitmap whose origin is pixels, after applying clip saves.
+/// A null context only reports the preparation failure.
+[[nodiscard]] auto rasterSymbol(
+	CGContextRef,
+	double scale,
+	PixelRect,
+	const std::vector<PreparedOperation> &clips,
+	const SymbolLeaf &,
+	std::uint64_t epoch,
+	const std::function<void(SymbolFailure)> &report
+) -> bool;
 
 /// @brief Independent atomic accounting survives off-main GPU resource cleanup.
 struct RasterAccounting {

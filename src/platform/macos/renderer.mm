@@ -1,4 +1,5 @@
 #include "renderer.hpp"
+#include "symbol_paths.hpp"
 #import <AppKit/AppKit.h>
 #include <algorithm>
 #include <cmath>
@@ -239,6 +240,9 @@ void prepareOperations(
 		if (source->paint->gpu) {
 			paint->prefixInk = unite(paint->prefixInk, Ink{.bounds = source->paint->gpu->bounds});
 		}
+		if (source->paint->symbol) {
+			paint->prefixInk = unite(paint->prefixInk, Ink{.bounds = source->paint->symbol->ink});
+		}
 		result->paint = std::move(paint);
 	}
 	std::map<NodeIdentity, std::shared_ptr<const PreparedBranch>> pairs;
@@ -295,12 +299,90 @@ gpuEquivalent(const std::optional<GPUCanvasLeaf> &left, const std::optional<GPUC
 		std::is_eq(left->bounds <=> right->bounds);
 }
 
+[[nodiscard]] auto
+sameOptionalDouble(const std::optional<double> &left, const std::optional<double> &right) -> bool {
+	if (left.has_value() != right.has_value()) {
+		return false;
+	}
+	return !left.has_value() || std::is_eq(*left <=> *right);
+}
+
+[[nodiscard]] auto
+sameColor(const std::optional<SceneColor> &left, const std::optional<SceneColor> &right) -> bool {
+	if (left.has_value() != right.has_value()) {
+		return false;
+	}
+	return !left.has_value() || std::is_eq(*left <=> *right);
+}
+
+[[nodiscard]] auto
+symbolNodesEquivalent(const std::vector<SymbolNode> &left, const std::vector<SymbolNode> &right)
+	-> bool;
+
+[[nodiscard]] auto symbolNodeEquivalent(const SymbolNode &left, const SymbolNode &right) -> bool {
+	const auto *leftGroup = std::get_if<SymbolNode::Group>(&left.value);
+	const auto *rightGroup = std::get_if<SymbolNode::Group>(&right.value);
+	if ((leftGroup == nullptr) != (rightGroup == nullptr)) {
+		return false;
+	}
+	if (leftGroup != nullptr && rightGroup != nullptr) {
+		return std::is_eq(leftGroup->transform <=> rightGroup->transform) &&
+			std::is_eq(leftGroup->opacity <=> rightGroup->opacity) &&
+			symbolNodesEquivalent(leftGroup->children, rightGroup->children);
+	}
+	const auto &leftPath = std::get<SymbolNode::Path>(left.value);
+	const auto &rightPath = std::get<SymbolNode::Path>(right.value);
+	return std::is_eq(leftPath.transform <=> rightPath.transform) &&
+		std::is_eq(leftPath.opacity <=> rightPath.opacity) &&
+		std::is_eq(leftPath.fillOpacity <=> rightPath.fillOpacity) &&
+		std::is_eq(leftPath.strokeOpacity <=> rightPath.strokeOpacity) &&
+		leftPath.fillRule == rightPath.fillRule && sameColor(leftPath.fill, rightPath.fill) &&
+		sameColor(leftPath.stroke, rightPath.stroke);
+}
+
+[[nodiscard]] auto
+symbolNodesEquivalent(const std::vector<SymbolNode> &left, const std::vector<SymbolNode> &right)
+	-> bool {
+	if (left.size() != right.size()) {
+		return false;
+	}
+	for (std::size_t index = 0; index < left.size(); ++index) {
+		if (!symbolNodeEquivalent(left.at(index), right.at(index))) {
+			return false;
+		}
+	}
+	return true;
+}
+
+/// @brief Animation moves the leaf transform or preparation scale; either one must damage tiles.
+[[nodiscard]] auto
+symbolEquivalent(const std::optional<SymbolLeaf> &left, const std::optional<SymbolLeaf> &right)
+	-> bool {
+	if (!left.has_value() && !right.has_value()) {
+		return true;
+	}
+	if (!left.has_value() || !right.has_value()) {
+		return false;
+	}
+	return left->generation == right->generation && left->commandHash == right->commandHash &&
+		left->strokeHash == right->strokeHash &&
+		std::is_eq(left->preparationScale <=> right->preparationScale) &&
+		sameOptionalDouble(left->strokeWidth, right->strokeWidth) &&
+		std::is_eq(left->transform <=> right->transform) &&
+		std::is_eq(left->opacity <=> right->opacity) &&
+		left->preparationLimited == right->preparationLimited &&
+		symbolNodesEquivalent(left->elements, right->elements);
+}
+
 /// @brief Complete local value comparison handles coalesced A->B->A with fresh paint identities.
+/// Symbol geometry, stroke, placement, opacity, and paint colors participate.
 [[nodiscard]] auto paintEquivalent(
 	const PreparedPaint &left,
 	const PreparedPaint &right,
 	const std::optional<GPUCanvasLeaf> &leftGpu,
-	const std::optional<GPUCanvasLeaf> &rightGpu
+	const std::optional<GPUCanvasLeaf> &rightGpu,
+	const std::optional<SymbolLeaf> &leftSymbol,
+	const std::optional<SymbolLeaf> &rightSymbol
 ) -> bool {
 	if (left.identity == right.identity) {
 		return true;
@@ -308,8 +390,8 @@ gpuEquivalent(const std::optional<GPUCanvasLeaf> &left, const std::optional<GPUC
 	const auto sameOperation = [](const PreparedOperation &a, const PreparedOperation &b) -> bool {
 		return a.command == b.command;
 	};
-	return gpuEquivalent(leftGpu, rightGpu) && left.prefix.size() == right.prefix.size() &&
-		left.suffix.size() == right.suffix.size() &&
+	return gpuEquivalent(leftGpu, rightGpu) && symbolEquivalent(leftSymbol, rightSymbol) &&
+		left.prefix.size() == right.prefix.size() && left.suffix.size() == right.suffix.size() &&
 		std::equal(left.prefix.begin(), left.prefix.end(), right.prefix.begin(), sameOperation) &&
 		std::equal(left.suffix.begin(), left.suffix.end(), right.suffix.begin(), sameOperation);
 }
@@ -345,7 +427,9 @@ void diff(
 			*old->paint,
 			*next->paint,
 			old->source->paint->gpu,
-			next->source->paint->gpu
+			next->source->paint->gpu,
+			old->source->paint->symbol,
+			next->source->paint->symbol
 		)) {
 		addInk(unite(old->paint->prefixInk, old->paint->suffixInk), clip, grid, scale, mask, work);
 		addInk(
@@ -462,7 +546,9 @@ void replayBranch(
 	CGContextRef context,
 	const std::shared_ptr<const PreparedBranch> &branch,
 	LogicalRect tile,
-	bool cull
+	bool cull,
+	const std::function<void(SymbolFailure)> &symbolError,
+	std::uint64_t symbolEpoch
 ) {
 	if (!branch || !branch->source->visible) {
 		return;
@@ -475,8 +561,13 @@ void replayBranch(
 	for (const auto &operation : branch->paint->prefix) {
 		replayOperation(context, operation);
 	}
+	if (branch->source->paint->symbol) {
+		static_cast<void>(
+			drawSymbol(context, *branch->source->paint->symbol, symbolError, symbolEpoch)
+		);
+	}
 	for (const auto &child : branch->children) {
-		replayBranch(context, child, tile, cull);
+		replayBranch(context, child, tile, cull, symbolError, symbolEpoch);
 	}
 	for (const auto &operation : branch->paint->suffix) {
 		replayOperation(context, operation);
@@ -554,7 +645,9 @@ void rasterScene(
 	CGContextRef context,
 	const PreparedScene &scene,
 	PixelRect pixels,
-	bool cullBranches
+	bool cullBranches,
+	std::uint64_t symbolEpoch,
+	const std::function<void(SymbolFailure)> &symbolReport
 ) {
 	if (context == nullptr) {
 		throw std::invalid_argument("Missing raster context");
@@ -582,9 +675,47 @@ void rasterScene(
 			.height = static_cast<double>(pixels.height) / scene.scale
 		}
 	};
-	replayBranch(context, scene.root, tile, cullBranches);
+	const auto &report = symbolReport ? symbolReport : scene.source->symbolError;
+	replayBranch(context, scene.root, tile, cullBranches, report, symbolEpoch);
 	CGContextRestoreGState(context);
 	CGContextFlush(context);
+}
+
+auto rasterSymbol(
+	CGContextRef context,
+	double scale,
+	PixelRect pixels,
+	const std::vector<PreparedOperation> &clips,
+	const SymbolLeaf &symbol,
+	std::uint64_t epoch,
+	const std::function<void(SymbolFailure)> &report
+) -> bool {
+	if (context == nullptr) {
+		return drawSymbol(context, symbol, report, epoch);
+	}
+	CGContextSaveGState(context);
+	CGContextClearRect(
+		context,
+		CGRectMake(0, 0, static_cast<double>(pixels.width), static_cast<double>(pixels.height))
+	);
+	CGContextTranslateCTM(context, 0, static_cast<double>(pixels.height));
+	CGContextScaleCTM(context, scale, -scale);
+	CGContextTranslateCTM(
+		context,
+		-static_cast<double>(pixels.x) / scale,
+		-static_cast<double>(pixels.y) / scale
+	);
+	for (const auto &clip : clips) {
+		replayOperation(context, clip);
+	}
+	const bool painted = drawSymbol(context, symbol, report, epoch);
+	for (std::size_t index = 0; index < clips.size(); ++index) {
+		static_cast<void>(index);
+		CGContextRestoreGState(context);
+	}
+	CGContextRestoreGState(context);
+	CGContextFlush(context);
+	return painted;
 }
 
 void rasterRun(

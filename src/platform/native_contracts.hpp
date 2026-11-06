@@ -4,6 +4,7 @@
 #include "../gpu/contracts.hpp"
 #include <chrono>
 #include <compare>
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <functional>
@@ -11,6 +12,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 /// @brief Private module-free transport shared by C++ engine adapters and native code.
@@ -84,6 +86,101 @@ struct NodeIdentity {
 	auto operator<=>(const NodeIdentity &) const = default;
 };
 
+/// @brief Local affine for one symbol group or path. Coefficients match AffineTransform.
+struct SymbolAffine {
+	double a = 1;
+	double b = 0;
+	double c = 0;
+	double d = 1;
+	double tx = 0;
+	double ty = 0;
+	auto operator<=>(const SymbolAffine &) const = default;
+};
+
+/// @brief Path verb carried across the module boundary. Unused fields stay zero.
+enum class SymbolVerb : std::uint8_t { move, line, quadratic, cubic, arc, close };
+
+enum class SymbolFillRule : std::uint8_t { nonzero, evenodd };
+
+enum class SymbolLineCap : std::uint8_t { butt, round, square };
+
+enum class SymbolLineJoin : std::uint8_t { miter, round, bevel };
+
+struct SymbolVerbData {
+	SymbolVerb kind = SymbolVerb::move;
+	double x = 0;
+	double y = 0;
+	double c1x = 0;
+	double c1y = 0;
+	double c2x = 0;
+	double c2y = 0;
+	double rotation = 0;
+	double sweep = 0;
+};
+
+/// @brief Immutable draw tree. Paths stay in local coordinates; the leaf transform is the root.
+struct SymbolNode {
+	struct Group {
+		SymbolAffine transform{};
+		double opacity = 1;
+		std::vector<SymbolNode> children{};
+	};
+
+	struct Path {
+		std::vector<SymbolVerbData> commands{};
+		SymbolAffine transform{};
+		double localMaximumScale = 1;
+		std::optional<SceneColor> fill{};
+		SymbolFillRule fillRule = SymbolFillRule::nonzero;
+		double fillOpacity = 1;
+		std::optional<SceneColor> stroke{};
+		double strokeOpacity = 1;
+		double strokeWidth = 1;
+		SymbolLineCap lineCap = SymbolLineCap::butt;
+		SymbolLineJoin lineJoin = SymbolLineJoin::miter;
+		double miterLimit = 4;
+		double opacity = 1;
+	};
+
+	std::variant<Group, Path> value;
+};
+
+/// @brief Recoverable symbol raster failure. The application supplies the user-facing message.
+enum class SymbolFailureCode : std::uint8_t {
+	preparationFailed,
+	resourceLimitExceeded,
+	renderingFailed
+};
+
+/// @brief One symbol raster outcome. An empty code is success for that generation and epoch.
+/// A failure code dominates other tiles from the same preparation.
+struct SymbolFailure {
+	std::optional<SymbolFailureCode> code{};
+	NodeIdentity instance{};
+	std::uint64_t generation = 0;
+	std::uint64_t epoch = 0;
+};
+
+/// @brief Fitted symbol flattened for Core Graphics. Cache hashes exclude tint, translation,
+/// rotation, and opacity; contentHash covers every input that can change pixels.
+struct SymbolLeaf {
+	NodeIdentity instance{};
+	LogicalRect bounds{};
+	LogicalRect ink{};
+	SymbolAffine transform{};
+	std::optional<double> strokeWidth{};
+	std::uint64_t generation = 0;
+	bool preparationLimited = false;
+	double preparationScale = 1;
+	double opacity = 1;
+	std::size_t estimatedBytes = 0;
+	bool anyStroke = false;
+	std::uint64_t commandHash = 0;
+	std::uint64_t strokeHash = 0;
+	std::uint64_t contentHash = 0;
+	std::vector<SymbolNode> elements{};
+};
+
 struct GPUCanvasLeaf {
 	NodeIdentity instance;
 	LogicalRect bounds;
@@ -97,6 +194,7 @@ struct PaintSegments {
 	std::vector<Command> prefix;
 	std::vector<Command> suffix;
 	std::optional<GPUCanvasLeaf> gpu;
+	std::optional<SymbolLeaf> symbol;
 	std::optional<LogicalRect> childClipBounds;
 };
 
@@ -115,6 +213,28 @@ struct Scene {
 	SceneColor background{};
 	std::uint64_t textEnvironment = 0;
 	std::shared_ptr<const SceneBranch> root;
+	/// @brief Invoked on the UI thread after a symbol preparation succeeds or fails.
+	/// Empty code restores a failed leaf. One failure dominates other tiles of that generation.
+	std::function<void(SymbolFailure)> symbolError{};
+};
+
+/// @brief Main-thread gate shared by document frame demand and the display link.
+/// set() may run before the host installs apply; the host reads demanded() when the link exists.
+struct AnimationGate {
+	void set(bool demand) {
+		if (demand == demanded_) {
+			return;
+		}
+		demanded_ = demand;
+		if (apply) {
+			apply(demand);
+		}
+	}
+
+	[[nodiscard]] auto demanded() const noexcept -> bool { return demanded_; }
+
+	std::function<void(bool demand)> apply{};
+	bool demanded_ = false;
 };
 
 using SceneResult = std::expected<std::shared_ptr<const Scene>, std::string>;
@@ -211,6 +331,12 @@ struct Window {
 	std::function<void()> close{};		 ///< Disposes the document before native state is released.
 	std::function<void(std::function<void()>)>
 		ready{}; ///< Connects document publication to repaint demand.
+	std::function<void(double timestamp, double targetTimestamp)>
+		frame{}; ///< Display-link sample. Not called while the host is hidden.
+	std::function<void(bool visible)>
+		hostVisible{}; ///< Explicit visibility only; occlusion is not hiding.
+	std::shared_ptr<AnimationGate>
+		animation{}; ///< Document demand writes it; the host wakes the link.
 };
 
 /// @brief Last-known native progress for one active host; no mutable native objects escape.

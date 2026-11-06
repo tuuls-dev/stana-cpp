@@ -14,6 +14,7 @@ module;
 export module stana:testing;
 export import :ui;
 import :document;
+import :symbol;
 
 export namespace stana::testing {
 /// @brief Owning GPU inspection record; this is not a headless GPU execution result.
@@ -25,7 +26,8 @@ struct GPUCanvasPaint {
 	double opacity = 1;
 };
 
-using MixedPaint = std::variant<::stana::rendering::PaintCommand, GPUCanvasPaint>;
+using MixedPaint =
+	std::variant<::stana::rendering::PaintCommand, GPUCanvasPaint, ::stana::symbol::Presentation>;
 
 /// @brief Deterministic consumer host. Uses the production mount/document path without
 /// creating NSApplication, a native window, or a wall-clock-driven scheduler.
@@ -51,7 +53,8 @@ class TestHost {
 		::stana::reactive::Transaction::perform([&] -> void {
 			document_->removeChildren(document_->root());
 			::stana::ui::MountContext context{.document = document_, .parent = document_->root()};
-			static_cast<void>(::stana::ui::mount(description, context));
+			using ::stana::ui::mount;
+			static_cast<void>(mount(description, context));
 		});
 	}
 
@@ -187,6 +190,9 @@ class TestHost {
 					}
 				);
 			}
+			if (const auto &symbol = branch->paint->symbol) {
+				result.emplace_back(symbol->presentation);
+			}
 			for (const auto &child : branch->children) {
 				self(self, child);
 			}
@@ -243,6 +249,72 @@ class TestHost {
 
 	/// @brief Applies a logical vertical delta to the nearest eligible scroll ancestor.
 	void scroll(Point point, double delta) { document_->scroll(point, delta); }
+
+	/// @brief Delivers one explicit frame, then publishes the resulting paint.
+	void tickFrames(::stana::ui::FrameTime frame) {
+		::stana::reactive::Transaction::perform([&] -> void {
+			document_->tickFrames(
+				{.timestamp = frame.timestamp, .targetTimestamp = frame.targetTimestamp}
+			);
+		});
+		flush();
+	}
+
+	/// @brief Pauses symbol playback while a host is hidden, minimized, or detached.
+	void setHostVisible(bool visible) {
+		document_->setHostVisible(visible);
+		flush();
+	}
+
+	[[nodiscard]] auto frameDemand() const -> bool { return document_->frameDemand(); }
+
+	[[nodiscard]] auto symbolBaseline(NodeId identity) const -> std::optional<double> {
+		const auto *node = document_->find(identity);
+		if (node == nullptr || !node->symbol) {
+			return std::nullopt;
+		}
+		return node->symbol->baseline;
+	}
+
+	/// @brief Preparation identity of one mounted symbol, for stale-result checks.
+	[[nodiscard]] auto symbolGeneration(NodeId identity) const -> std::optional<std::uint64_t> {
+		const auto *node = document_->find(identity);
+		if (node == nullptr || !node->symbol) {
+			return std::nullopt;
+		}
+		return node->symbol->generation;
+	}
+
+	/// @brief Renderer epoch last adopted by one mounted symbol. Zero means none yet.
+	[[nodiscard]] auto symbolEpoch(NodeId identity) const -> std::optional<std::uint64_t> {
+		const auto *node = document_->find(identity);
+		if (node == nullptr || !node->symbol) {
+			return std::nullopt;
+		}
+		return node->symbol->epoch;
+	}
+
+	void injectSymbolDiagnostic(
+		::stana::symbol::Diagnostic diagnostic,
+		NodeId instance,
+		std::uint64_t generation,
+		std::uint64_t epoch = 0
+	) {
+		document_->queueSymbolDiagnostic(
+			std::move(diagnostic),
+			{.instance = instance, .generation = generation, .epoch = epoch}
+		);
+		flush();
+	}
+
+	/// @brief Delivers a successful raster for one preparation. Restores an omitted leaf.
+	void injectSymbolSuccess(NodeId instance, std::uint64_t generation, std::uint64_t epoch = 0) {
+		static_cast<void>(document_->queueSymbolResult(
+			std::nullopt,
+			{.instance = instance, .generation = generation, .epoch = epoch}
+		));
+		flush();
+	}
 
 	/// @brief Advances deterministic task wakeups without waiting for wall-clock time.
 	void advanceTime(std::chrono::milliseconds elapsed) {

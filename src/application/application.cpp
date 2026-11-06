@@ -5,6 +5,7 @@ module;
 #include "../gpu/limits.hpp"
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <chrono>
 #include <cstdint>
 #include <exception>
@@ -53,6 +54,31 @@ using stana::application::detail::SceneConversion;
 [[nodiscard]] auto portableAttempt(stana::platform::detail::FrameIdentity frame)
 	-> stana::rendering::PresentationAttempt {
 	return {.epoch = frame.epoch, .sequence = frame.sequence, .sceneRevision = frame.sceneRevision};
+}
+
+[[nodiscard]] auto symbolDiagnostic(stana::platform::detail::SymbolFailureCode code)
+	-> stana::symbol::Diagnostic {
+	using Code = stana::platform::detail::SymbolFailureCode;
+	switch (code) {
+	case Code::preparationFailed:
+		return {
+			.code = stana::symbol::Diagnostic::Code::preparationFailed,
+			.message = "Symbol path preparation failed; replace the asset or change its "
+					   "preparation inputs."
+		};
+	case Code::resourceLimitExceeded:
+		return {
+			.code = stana::symbol::Diagnostic::Code::resourceLimitExceeded,
+			.message = "Symbol preparation exceeded the renderer resource limit; simplify "
+					   "geometry or reduce scale."
+		};
+	case Code::renderingFailed:
+		return {
+			.code = stana::symbol::Diagnostic::Code::renderingFailed,
+			.message = "Symbol raster rendering failed; retry after renderer recovery."
+		};
+	}
+	throw std::logic_error("Unknown symbol diagnostic");
 }
 
 } // namespace
@@ -143,6 +169,29 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 			sessionDocument->commit();
 			const auto weakDocument = std::weak_ptr{sessionDocument};
 			const auto conversion = std::make_shared<SceneConversion>();
+			const auto animation = std::make_shared<stana::platform::detail::AnimationGate>();
+			sessionDocument->setFrameDemandHandler([animation](bool demand) -> void {
+				animation->set(demand);
+			});
+			conversion->symbolError =
+				[weakDocument](stana::platform::detail::SymbolFailure failure) -> void {
+				const auto owner = weakDocument.lock();
+				if (!owner) {
+					return;
+				}
+				const auto preparation = stana::document::detail::Document::SymbolPreparation{
+					.instance =
+						{.document = failure.instance.document, .serial = failure.instance.serial},
+					.generation = failure.generation,
+					.epoch = failure.epoch
+				};
+				const bool changed = failure.code
+					? owner->queueSymbolResult(symbolDiagnostic(*failure.code), preparation)
+					: owner->queueSymbolResult(std::nullopt, preparation);
+				if (changed || failure.code.has_value()) {
+					stana::reactive::detail::ReactiveRuntime::current().flush();
+				}
+			};
 			windows.push_back(
 				{.title = session.title,
 					.width = session.size.width,
@@ -318,7 +367,25 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 							return;
 						}
 						document->setOnPublish(std::move(invalidate));
-					}}
+					},
+					.frame = [weakDocument](double timestamp, double deadline) -> void {
+						const auto document = weakDocument.lock();
+						if (!document) {
+							return;
+						}
+						document->tickFrames({.timestamp = timestamp, .targetTimestamp = deadline});
+						stana::reactive::detail::ReactiveRuntime::current().flush();
+						document->commit();
+					},
+					.hostVisible = [weakDocument](bool visible) -> void {
+						const auto document = weakDocument.lock();
+						if (!document) {
+							return;
+						}
+						document->setHostVisible(visible);
+						document->commit();
+					},
+					.animation = animation}
 			);
 		}
 		const auto result = stana::platform::detail::run(std::move(windows));

@@ -346,6 +346,62 @@ struct AffineTransform {
 	double tx = 0; ///< Horizontal translation in the destination coordinate space.
 	double ty = 0; ///< Vertical translation in the destination coordinate space.
 
+	/// @brief Returns the mapping that leaves every point unchanged.
+	[[nodiscard]] static constexpr auto identity() noexcept -> AffineTransform { return {}; }
+
+	/// @brief Returns a pure translation. x′=x+tx and y′=y+ty.
+	[[nodiscard]] static constexpr auto translation(double x, double y) noexcept
+		-> AffineTransform {
+		return {.tx = x, .ty = y};
+	}
+
+	/// @brief Returns an axis-aligned scale about the origin.
+	[[nodiscard]] static constexpr auto scale(double x, double y) noexcept -> AffineTransform {
+		return {.a = x, .d = y};
+	}
+
+	/// @brief Returns a clockwise rotation about the origin in y-down coordinates.
+	/// The angle is radians. Trigonometry is not a constant expression on this standard library.
+	[[nodiscard]] static auto rotation(double radians) noexcept -> AffineTransform {
+		return {
+			.a = std::cos(radians),
+			.b = std::sin(radians),
+			.c = -std::sin(radians),
+			.d = std::cos(radians)
+		};
+	}
+
+	/// @brief Returns the mapping that applies @p other first and then this transform.
+	[[nodiscard]] constexpr auto concatenating(const AffineTransform &other) const noexcept
+		-> AffineTransform {
+		return {
+			.a = a * other.a + c * other.b,
+			.b = b * other.a + d * other.b,
+			.c = a * other.c + c * other.d,
+			.d = b * other.c + d * other.d,
+			.tx = a * other.tx + c * other.ty + tx,
+			.ty = b * other.tx + d * other.ty + ty
+		};
+	}
+
+	/// @brief Largest singular value of the linear part, or zero when that part is zero.
+	/// Used to choose symbol preparation scale. Nonfinite coefficients yield a nonfinite result.
+	[[nodiscard]] auto maximumScale() const noexcept -> double {
+		const double dominant = std::max({std::abs(a), std::abs(b), std::abs(c), std::abs(d)});
+		if (!(dominant > 0)) {
+			return 0;
+		}
+		const double horizontalX = a / dominant;
+		const double verticalX = b / dominant;
+		const double horizontalY = c / dominant;
+		const double verticalY = d / dominant;
+		const double trace = horizontalX * horizontalX + verticalX * verticalX +
+			horizontalY * horizontalY + verticalY * verticalY;
+		const double determinant = horizontalX * verticalY - verticalX * horizontalY;
+		const double discriminant = trace * trace - 4 * determinant * determinant;
+		return dominant * std::sqrt((trace + std::sqrt(std::max(0.0, discriminant))) / 2);
+	}
+
 	[[nodiscard]] constexpr auto apply(Point point) const noexcept -> Point {
 		return {.x = a * point.x + c * point.y + tx, .y = b * point.x + d * point.y + ty};
 	}

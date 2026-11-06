@@ -1,5 +1,30 @@
 add_test(NAME stana.namespace-policy COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/namespace_policy_test.py")
 
+add_executable(stana-symbol-compiler symbols/compiler.cpp)
+target_link_libraries(stana-symbol-compiler PRIVATE stana::stana)
+stana_apply_safety(stana-symbol-compiler)
+add_test(NAME stana.symbols.compiler COMMAND stana-symbol-compiler)
+add_test(NAME stana.symbols.compiler-fail
+	COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/symbols/compiler_fail.py"
+		--build "${PROJECT_BINARY_DIR}"
+		--root "${PROJECT_SOURCE_DIR}")
+set_tests_properties(stana.symbols.compiler-fail PROPERTIES TIMEOUT 300)
+
+add_executable(stana-symbol-asset symbols/asset.cpp)
+target_link_libraries(stana-symbol-asset PRIVATE stana::stana)
+stana_apply_safety(stana-symbol-asset)
+add_test(NAME stana.symbols.asset COMMAND stana-symbol-asset)
+
+add_executable(stana-symbol-scene symbols/scene.cpp)
+target_link_libraries(stana-symbol-scene PRIVATE stana::stana)
+stana_apply_safety(stana-symbol-scene)
+add_test(NAME stana.symbols.scene COMMAND stana-symbol-scene)
+
+add_executable(stana-ui-frame ui/frame.cpp)
+target_link_libraries(stana-ui-frame PRIVATE stana::stana)
+stana_apply_safety(stana-ui-frame)
+add_test(NAME stana.ui.frame COMMAND stana-ui-frame)
+
 add_executable(stana-smoke smoke.cpp)
 target_link_libraries(stana-smoke PRIVATE stana::stana)
 stana_apply_safety(stana-smoke)
