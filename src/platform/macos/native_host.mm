@@ -81,10 +81,13 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 	CADisplayLink *frameLink_;
 	NSScreen *frameScreen_;
 	NSMutableArray *visibilityObservers_;
+	NSTrackingArea *trackingArea_;
 	bool reportedHostVisible_;
 	bool visibilityArmed_;
 	bool frameLinkRetired_;
 }
+- (void)dispatchPointerMove:(NSEvent *)event;
+- (void)dispatchKey:(NSEvent *)event released:(BOOL)released;
 - (instancetype)initWithFrame:(NSRect)frameRect;
 - (void)installFrameLink;
 - (void)stopFrameLink;
@@ -100,6 +103,7 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 	self = [super initWithFrame:frameRect];
 	if (self != nil) {
 		reportedHostVisible_ = true;
+		trackingArea_ = nil;
 	}
 	return self;
 }
@@ -302,6 +306,58 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 	}
 }
 
+- (void)updateTrackingAreas {
+	[super updateTrackingAreas];
+	if (trackingArea_ != nil) {
+		[self removeTrackingArea:trackingArea_];
+		trackingArea_ = nil;
+	}
+	trackingArea_ = [[NSTrackingArea alloc] initWithRect:self.bounds
+												 options:NSTrackingMouseMoved |
+		NSTrackingMouseEnteredAndExited | NSTrackingActiveInKeyWindow | NSTrackingInVisibleRect
+												   owner:self
+												userInfo:nil];
+	[self addTrackingArea:trackingArea_];
+}
+
+- (void)dispatchPointerMove:(NSEvent *)event {
+	if (state_ == nullptr || state_->isClosed || !state_->allowsPointer() ||
+		!state_->callbacks.pointerMove) {
+		return;
+	}
+	const auto point = [self convertPoint:event.locationInWindow fromView:nil];
+	state_->callbacks.pointerMove(point.x, point.y);
+}
+
+- (void)dispatchKey:(NSEvent *)event released:(BOOL)released {
+	if (state_ == nullptr || state_->isClosed || !state_->callbacks.key) {
+		return;
+	}
+	using stana::platform::detail::KeyAction;
+	using stana::platform::detail::KeyPhase;
+	const auto phase = released ? KeyPhase::up : KeyPhase::down;
+	NSString *const characters = event.charactersIgnoringModifiers;
+	if ([characters isEqualToString:@"\t"]) {
+		state_->callbacks.key(
+			(event.modifierFlags & NSEventModifierFlagShift) != 0 ? KeyAction::tabBackward
+																  : KeyAction::tabForward,
+			phase
+		);
+		return;
+	}
+	if ([characters isEqualToString:@" "]) {
+		state_->callbacks.key(KeyAction::space, phase);
+		return;
+	}
+	if ([characters isEqualToString:@"\r"]) {
+		state_->callbacks.key(KeyAction::enter, phase);
+		return;
+	}
+	if (!released) {
+		[super keyDown:event];
+	}
+}
+
 - (void)mouseDown:(NSEvent *)event {
 	if (state_ && state_->traceRendering) {
 		std::cerr << "Pointer gate=" << state_->allowsPointer()
@@ -332,6 +388,26 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 	}
 }
 
+- (void)mouseMoved:(NSEvent *)event {
+	[self dispatchPointerMove:event];
+}
+
+- (void)mouseDragged:(NSEvent *)event {
+	[self dispatchPointerMove:event];
+}
+
+- (void)mouseEntered:(NSEvent *)event {
+	[self dispatchPointerMove:event];
+}
+
+- (void)mouseExited:(NSEvent *)event {
+	static_cast<void>(event);
+	if (state_ != nullptr && !state_->isClosed && state_->allowsPointer() &&
+		state_->callbacks.pointerLeave) {
+		state_->callbacks.pointerLeave();
+	}
+}
+
 - (void)scrollWheel:(NSEvent *)event {
 	if (state_ && state_->traceRendering) {
 		std::cerr << "Pointer gate=" << state_->allowsPointer()
@@ -345,21 +421,11 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 }
 
 - (void)keyDown:(NSEvent *)event {
-	if (!state_ || state_->isClosed) {
-		return;
-	}
-	using stana::platform::detail::KeyAction;
-	if ([event.charactersIgnoringModifiers isEqualToString:@"\t"]) {
-		state_->callbacks.key(
-			(event.modifierFlags & NSEventModifierFlagShift) != 0 ? KeyAction::tabBackward
-																  : KeyAction::tabForward
-		);
-	} else if ([event.charactersIgnoringModifiers isEqualToString:@" "] ||
-		[event.charactersIgnoringModifiers isEqualToString:@"\r"]) {
-		state_->callbacks.key(KeyAction::activate);
-	} else {
-		[super keyDown:event];
-	}
+	[self dispatchKey:event released:NO];
+}
+
+- (void)keyUp:(NSEvent *)event {
+	[self dispatchKey:event released:YES];
 }
 
 @end

@@ -98,10 +98,13 @@ void retained() {
 								.width = stana::Length::points(width),
 								.height = stana::Length::points(height)
 							}},
-				.interaction = {.onPointerDown = [&](stana::document::PointerEvent &) -> void {
-					++presses;
-				}},
-				.accessibility = {.label = "chart"}
+				.accessibility = {.label = "chart"},
+				.events = {stana::ui::on(
+					stana::ui::Event::pointerDown,
+					[&](stana::document::PointerEvent &) -> void {
+						++presses;
+					}
+				)}
 			}
 		}
 	);

@@ -4,6 +4,7 @@ module;
 #include <cstdint>
 #include <exception>
 #include <functional>
+#include <initializer_list>
 #include <memory>
 #include <optional>
 #include <string>
@@ -61,21 +62,155 @@ struct AppearanceProperties {
 	std::optional<bool> clip{};
 };
 
-/// @brief Shared interaction policy and pointer-down handlers.
+/// @brief Shared enabled and inert policy for a visual subtree.
 ///
-/// Visual components accept .interaction; ancestor disabled/inert state also
-/// blocks descendants. Capture handlers run from root toward the target before
-/// bubble handlers run back outward. Handlers may call event.preventDefault() to
-/// prevent default press/focus behavior. These callbacks run on the UI executor.
+/// Visual components accept .interaction. Ancestor disabled or inert state also
+/// blocks descendants. Pointer, keyboard, focus, and scroll handlers belong on
+/// .events. Those handlers run on the UI executor.
 struct InteractionProperties {
 	/// @brief Reactive local enabled policy; disabled ancestors still block interaction.
 	::stana::reactive::Property<bool> isEnabled = true;
 	/// @brief Blocks this subtree from input and focus without changing its appearance or lifetime.
 	bool inert = false;
-	/// @brief Bubble-phase handler, invoked after targetward capture handlers on the UI executor.
-	std::function<void(::stana::document::PointerEvent &)> onPointerDown{};
-	/// @brief Capture-phase handler, invoked root-to-target before pointer-down bubbling.
-	std::function<void(::stana::document::PointerEvent &)> onPointerDownCapture{};
+};
+
+/// @brief Capture walks from the root toward the target. Bubble is the default.
+using Phase = ::stana::document::Phase;
+
+/// @brief Payload tags for on(). Each name is a value, so the handler is type-checked.
+///
+/// C++23 has no `.click` shorthand. Write `on(Event::click, []{})` or
+/// `on(Event::pointerDown, [](auto &event){}, Phase::capture)`.
+struct Event {
+	/// @brief Click activation. The payload is ClickEvent.
+	struct Click {
+		static constexpr auto kind = ::stana::document::EventKind::click;
+		using Payload = ::stana::document::ClickEvent;
+	};
+
+	/// @brief Primary pointer press. The payload is PointerEvent.
+	struct PointerDown {
+		static constexpr auto kind = ::stana::document::EventKind::pointerDown;
+		using Payload = ::stana::document::PointerEvent;
+	};
+
+	/// @brief Primary pointer release. The payload is PointerEvent.
+	struct PointerUp {
+		static constexpr auto kind = ::stana::document::EventKind::pointerUp;
+		using Payload = ::stana::document::PointerEvent;
+	};
+
+	/// @brief Pointer motion. The payload is PointerEvent.
+	struct PointerMove {
+		static constexpr auto kind = ::stana::document::EventKind::pointerMove;
+		using Payload = ::stana::document::PointerEvent;
+	};
+
+	/// @brief Pointer crossed into this occurrence. The payload is PointerEvent.
+	struct PointerEnter {
+		static constexpr auto kind = ::stana::document::EventKind::pointerEnter;
+		using Payload = ::stana::document::PointerEvent;
+	};
+
+	/// @brief Pointer crossed out of this occurrence. The payload is PointerEvent.
+	struct PointerLeave {
+		static constexpr auto kind = ::stana::document::EventKind::pointerLeave;
+		using Payload = ::stana::document::PointerEvent;
+	};
+
+	/// @brief Key press. The payload is KeyEvent.
+	struct KeyDown {
+		static constexpr auto kind = ::stana::document::EventKind::keyDown;
+		using Payload = ::stana::document::KeyEvent;
+	};
+
+	/// @brief Key release. The payload is KeyEvent.
+	struct KeyUp {
+		static constexpr auto kind = ::stana::document::EventKind::keyUp;
+		using Payload = ::stana::document::KeyEvent;
+	};
+
+	/// @brief Focus gained. The payload is FocusEvent.
+	struct Focus {
+		static constexpr auto kind = ::stana::document::EventKind::focus;
+		using Payload = ::stana::document::FocusEvent;
+	};
+
+	/// @brief Focus lost to another control. The payload is FocusEvent.
+	struct Blur {
+		static constexpr auto kind = ::stana::document::EventKind::blur;
+		using Payload = ::stana::document::FocusEvent;
+	};
+
+	/// @brief Scroll gesture. The payload is ScrollEvent.
+	struct Scroll {
+		static constexpr auto kind = ::stana::document::EventKind::scroll;
+		using Payload = ::stana::document::ScrollEvent;
+	};
+
+	static constexpr Click click{};
+	static constexpr PointerDown pointerDown{};
+	static constexpr PointerUp pointerUp{};
+	static constexpr PointerMove pointerMove{};
+	static constexpr PointerEnter pointerEnter{};
+	static constexpr PointerLeave pointerLeave{};
+	static constexpr KeyDown keyDown{};
+	static constexpr KeyUp keyUp{};
+	static constexpr Focus focus{};
+	static constexpr Blur blur{};
+	static constexpr Scroll scroll{};
+};
+
+/// @brief Builds one registration. The handler takes the payload reference or no arguments.
+///
+/// The mounted occurrence owns a copy and releases it on disposal. Multiple
+/// registrations on the same phase run in the order they are written. phase selects
+/// capture or bubble. A handler that cannot be called either way is rejected.
+template <typename Tag, typename Handler>
+	requires requires {
+		Tag::kind;
+		typename Tag::Payload;
+	}
+[[nodiscard]] auto on(Tag, Handler handler, Phase phase = Phase::bubble)
+	-> ::stana::document::EventRegistration {
+	using Payload = typename Tag::Payload;
+	if constexpr (std::invocable<Handler &, Payload &>) {
+		return {
+			.kind = Tag::kind,
+			.phase = phase,
+			.handler = std::function<void(Payload &)>{std::move(handler)}
+		};
+	} else if constexpr (std::invocable<Handler &>) {
+		return {
+			.kind = Tag::kind,
+			.phase = phase,
+			.handler = std::function<void(Payload &)>{
+				[action = std::move(handler)](Payload &) mutable -> void {
+					std::invoke(action);
+				}
+			}
+		};
+	} else {
+		static_assert(
+			std::invocable<Handler &, Payload &>,
+			"an event handler must accept the event reference or no arguments"
+		);
+		return {};
+	}
+}
+
+/// @brief Ordered registrations copied onto one occurrence at mount.
+///
+/// `.events = {on(Event::click, []{}), on(Event::pointerDown, [](auto &){})}` is the
+/// component form. The list may be empty. Descriptions are values: capture state by
+/// value inside handlers, not references to the temporary description.
+struct Events {
+	std::vector<::stana::document::EventRegistration> registrations{};
+
+	Events() = default;
+
+	Events(std::initializer_list<::stana::document::EventRegistration> items)
+		: registrations(items) {}
 };
 
 /// @brief Application-authored semantic naming for a visual occurrence.
@@ -235,25 +370,26 @@ struct Text {
 	TextProperties textStyle{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
-	/// @brief Shared enabled/inert policy and pointer handlers for this subtree.
+	/// @brief Shared enabled/inert policy for this subtree.
 	InteractionProperties interaction{};
 	/// @brief Explicit semantic naming for this occurrence, independent of diagnostic metadata.
 	AccessibilityProperties accessibility{};
 	/// @brief Mount/disposal callbacks and diagnostics owned by this mounted occurrence.
 	LifecycleProperties lifecycle{};
+	/// @brief Input registrations copied onto this occurrence. Empty when omitted.
+	Events events{};
 };
 
 /// @brief An actionable retained text control using Stana drawing, not NSButton.
 ///
-/// Provide .text and .onClick; capture Signal handles by value in actions. Pointer
-/// release inside the pressed button, keyboard activation and NodeHandle::activate
-/// all use the same document action path. Disabled/inert ancestors block activation.
-/// Shared groups customize layout, typography, appearance, semantics and lifetime.
+/// Register Event::click for the action shared by pointer release, keyboard
+/// activation, and NodeHandle::activate. Capture Signal handles by value.
+/// Disabled or inert ancestors block activation. preventDefault() on click does
+/// not undo handlers that already ran. Shared groups customize layout, typography,
+/// appearance, semantics, and lifetime.
 struct Button {
 	/// @brief Display label supplied as a constant, Signal<string> or Computed<string>.
 	::stana::reactive::Property<std::string> text{};
-	/// @brief Activation action shared by pointer, keyboard and programmatic activation paths.
-	std::function<void()> onClick{};
 	/// @brief Shared box-model overrides applied to this component at mount and on reactive
 	/// updates.
 	::stana::layout::LayoutProperties layout{};
@@ -262,12 +398,14 @@ struct Button {
 	TextProperties textStyle{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
-	/// @brief Shared enabled/inert policy and pointer handlers for this subtree.
+	/// @brief Shared enabled/inert policy for this subtree.
 	InteractionProperties interaction{};
 	/// @brief Explicit semantic naming for this occurrence, independent of diagnostic metadata.
 	AccessibilityProperties accessibility{};
 	/// @brief Mount/disposal callbacks and diagnostics owned by this mounted occurrence.
 	LifecycleProperties lifecycle{};
+	/// @brief Input registrations copied onto this occurrence. Empty when omitted.
+	Events events{};
 };
 
 /// @brief A boolean control that reads and writes an explicit Binding<bool>.
@@ -289,12 +427,14 @@ struct Toggle {
 	TextProperties textStyle{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
-	/// @brief Shared enabled/inert policy and pointer handlers for this subtree.
+	/// @brief Shared enabled/inert policy for this subtree.
 	InteractionProperties interaction{};
 	/// @brief Explicit semantic naming for this occurrence, independent of diagnostic metadata.
 	AccessibilityProperties accessibility{};
 	/// @brief Mount/disposal callbacks and diagnostics owned by this mounted occurrence.
 	LifecycleProperties lifecycle{};
+	/// @brief Input registrations copied onto this occurrence. Empty when omitted.
+	Events events{};
 };
 
 /// @brief An empty layout component whose explicit frame can reserve space.
@@ -326,6 +466,8 @@ struct CPUCanvas {
 	AccessibilityProperties accessibility{};
 	/// @brief Mount/disposal callbacks and diagnostics owned by this mounted occurrence.
 	LifecycleProperties lifecycle{};
+	/// @brief Input registrations copied onto this occurrence. Empty when omitted.
+	Events events{};
 };
 
 /// @brief Reactive ordered GPU drawing, cropped to its padded content output.
@@ -338,6 +480,8 @@ struct GPUCanvas {
 	AccessibilityProperties accessibility{};
 	LifecycleProperties lifecycle{};
 	std::function<void(const ::stana::rendering::GPUDiagnostic &)> onError{};
+	/// @brief Input registrations copied onto this occurrence. Empty when omitted.
+	Events events{};
 };
 
 /// @brief A statically composed column arranged in child order.
@@ -355,12 +499,14 @@ template <typename Children> struct VStack {
 	::stana::layout::LayoutProperties layout{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
-	/// @brief Shared enabled/inert policy and pointer handlers for this subtree.
+	/// @brief Shared enabled/inert policy for this subtree.
 	InteractionProperties interaction{};
 	/// @brief Explicit semantic naming for this occurrence, independent of diagnostic metadata.
 	AccessibilityProperties accessibility{};
 	/// @brief Mount/disposal callbacks and diagnostics owned by this mounted occurrence.
 	LifecycleProperties lifecycle{};
+	/// @brief Input registrations copied onto this occurrence. Empty when omitted.
+	Events events{};
 	/// @brief Statically typed child tuple; construct with children(...) so CTAD infers its type.
 	Children children;
 };
@@ -380,12 +526,14 @@ template <typename Children> struct HStack {
 	::stana::layout::LayoutProperties layout{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
-	/// @brief Shared enabled/inert policy and pointer handlers for this subtree.
+	/// @brief Shared enabled/inert policy for this subtree.
 	InteractionProperties interaction{};
 	/// @brief Explicit semantic naming for this occurrence, independent of diagnostic metadata.
 	AccessibilityProperties accessibility{};
 	/// @brief Mount/disposal callbacks and diagnostics owned by this mounted occurrence.
 	LifecycleProperties lifecycle{};
+	/// @brief Input registrations copied onto this occurrence. Empty when omitted.
+	Events events{};
 	/// @brief Statically typed child tuple; construct with children(...) so CTAD infers its type.
 	Children children;
 };
@@ -403,12 +551,14 @@ template <typename Children> struct ZStack {
 	::stana::layout::LayoutProperties layout{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
-	/// @brief Shared enabled/inert policy and pointer handlers for this subtree.
+	/// @brief Shared enabled/inert policy for this subtree.
 	InteractionProperties interaction{};
 	/// @brief Explicit semantic naming for this occurrence, independent of diagnostic metadata.
 	AccessibilityProperties accessibility{};
 	/// @brief Mount/disposal callbacks and diagnostics owned by this mounted occurrence.
 	LifecycleProperties lifecycle{};
+	/// @brief Input registrations copied onto this occurrence. Empty when omitted.
+	Events events{};
 	/// @brief Statically typed child tuple; construct with children(...) so CTAD infers its type.
 	Children children;
 };
@@ -424,12 +574,14 @@ template <typename Children> struct Box {
 	::stana::layout::LayoutProperties layout{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
-	/// @brief Shared enabled/inert policy and pointer handlers for this subtree.
+	/// @brief Shared enabled/inert policy for this subtree.
 	InteractionProperties interaction{};
 	/// @brief Explicit semantic naming for this occurrence, independent of diagnostic metadata.
 	AccessibilityProperties accessibility{};
 	/// @brief Mount/disposal callbacks and diagnostics owned by this mounted occurrence.
 	LifecycleProperties lifecycle{};
+	/// @brief Input registrations copied onto this occurrence. Empty when omitted.
+	Events events{};
 	/// @brief Statically typed child tuple; construct with children(...) so CTAD infers its type.
 	Children children;
 };
@@ -445,12 +597,14 @@ template <typename Content> struct ScrollView {
 	::stana::layout::LayoutProperties layout{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
-	/// @brief Shared enabled/inert policy and pointer handlers for this subtree.
+	/// @brief Shared enabled/inert policy for this subtree.
 	InteractionProperties interaction{};
 	/// @brief Explicit semantic naming for this occurrence, independent of diagnostic metadata.
 	AccessibilityProperties accessibility{};
 	/// @brief Mount/disposal callbacks and diagnostics owned by this mounted occurrence.
 	LifecycleProperties lifecycle{};
+	/// @brief Input registrations copied onto this occurrence. Empty when omitted.
+	Events events{};
 	/// @brief Content description or row factory, depending on the containing component contract.
 	Content content;
 };
@@ -521,6 +675,7 @@ void applyAccessibility(
 	MountContext &context
 );
 void applyLifecycle(const LifecycleProperties &properties, NodeId identity, MountContext &context);
+void applyEvents(const Events &events, NodeId identity, MountContext &context);
 
 template <typename Description>
 void configure(const Description &description, NodeId identity, MountContext &context) {
@@ -535,6 +690,11 @@ void configure(const Description &description, NodeId identity, MountContext &co
 	}
 	if constexpr (requires { description.interaction; }) {
 		applyInteraction(description.interaction, identity, context);
+	}
+	if constexpr (requires {
+					  { description.events } -> std::convertible_to<Events>;
+				  }) {
+		applyEvents(description.events, identity, context);
 	}
 	if constexpr (requires { description.accessibility; }) {
 		applyAccessibility(description.accessibility, identity, context);
@@ -578,6 +738,13 @@ template <typename T>
 	-> ::stana::document::NodeHandle {
 	const auto identity =
 		context.document->createNode(::stana::document::detail::NodeKind::group, context.parent);
+	// Custom descriptions opt in by storing Events. Those registrations belong to
+	// this occurrence, not to the component returned from render().
+	if constexpr (requires {
+					  { description.events } -> std::convertible_to<Events>;
+				  }) {
+		::stana::ui::detail::applyEvents(description.events, identity, context);
+	}
 	auto *node = context.document->find(identity);
 	ComponentContext componentContext{
 		node->scope,
@@ -845,6 +1012,8 @@ struct Symbol {
 	::stana::ui::AccessibilityProperties accessibility{};
 	::stana::ui::LifecycleProperties lifecycle{};
 	std::function<void(const Diagnostic &)> onError{};
+	/// @brief Input registrations copied onto this occurrence. Empty when omitted.
+	::stana::ui::Events events{};
 };
 
 [[nodiscard]] auto mount(const Symbol &description, ::stana::ui::MountContext &context)

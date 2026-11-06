@@ -31,10 +31,10 @@ auto main() -> int {
 					},
 					stana::ui::Button{
 						.text = "Increment",
-						.onClick = [count] -> void {
+						.accessibility = {.label = "Increment counter"},
+						.events = {stana::ui::on(stana::ui::Event::click, [count] -> void {
 							++count;
-						},
-						.accessibility = {.label = "Increment counter"}
+						})}
 					}
 				)
 			}

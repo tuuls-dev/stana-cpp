@@ -17,6 +17,7 @@ module;
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 module stana;
@@ -41,6 +42,124 @@ auto Document::isEligible(NodeId identity) const -> bool {
 	return false;
 }
 
+auto Document::ancestorRoute(NodeId identity) const -> std::vector<NodeId> {
+	std::vector<NodeId> route;
+	for (const auto *node = find(identity); node != nullptr; node = find(node->parent)) {
+		route.push_back(node->id);
+	}
+	return route;
+}
+
+auto Document::keyboardTarget() const -> NodeId {
+	if (focused_ && isEligible(*focused_)) {
+		return *focused_;
+	}
+	return root_;
+}
+
+template <typename Payload>
+auto Document::dispatch(NodeId target, EventKind kind, Payload event, bool includeAncestors)
+	-> Payload {
+	auto route = includeAncestors ? ancestorRoute(target) : std::vector<NodeId>{};
+	if (!includeAncestors && find(target) != nullptr) {
+		route.push_back(target);
+	}
+	if (route.empty()) {
+		return event;
+	}
+	event.target = target;
+	// Copy callables first. Disposal during a handler releases the occurrence's
+	// registrations before that handler returns.
+	const auto invoke = [&](NodeId identity, Phase phase) -> void {
+		const auto *node = find(identity);
+		if (node == nullptr || !node->scope.alive()) {
+			return;
+		}
+		std::vector<std::function<void(Payload &)>> handlers;
+		handlers.reserve(node->events.size());
+		for (const auto &registration : node->events) {
+			if (registration.kind != kind || registration.phase != phase) {
+				continue;
+			}
+			const auto *function =
+				std::get_if<std::function<void(Payload &)>>(&registration.handler);
+			if (function != nullptr && *function) {
+				handlers.push_back(*function);
+			}
+		}
+		event.phase = phase;
+		event.current = identity;
+		for (const auto &handler : handlers) {
+			const auto *current = find(identity);
+			if (current == nullptr || !current->scope.alive()) {
+				break;
+			}
+			handler(event);
+		}
+	};
+	if (includeAncestors) {
+		for (const auto identity : std::views::reverse(route)) {
+			invoke(identity, Phase::capture);
+		}
+		for (const auto identity : route) {
+			invoke(identity, Phase::bubble);
+		}
+	} else {
+		invoke(route.front(), Phase::capture);
+		invoke(route.front(), Phase::bubble);
+	}
+	return event;
+}
+
+void Document::updateHover(std::optional<NodeId> next, Point point) {
+	if (next == hovered_ || updatingHover_) {
+		return;
+	}
+	updatingHover_ = true;
+
+	struct HoverGuard {
+		bool *flag = nullptr;
+
+		explicit HoverGuard(bool *value) : flag(value) {}
+
+		HoverGuard(const HoverGuard &) = delete;
+		HoverGuard(HoverGuard &&) = delete;
+		auto operator=(const HoverGuard &) -> HoverGuard & = delete;
+		auto operator=(HoverGuard &&) -> HoverGuard & = delete;
+
+		~HoverGuard() { *flag = false; }
+	};
+
+	const HoverGuard guard{&updatingHover_};
+
+	const auto previous = std::exchange(hovered_, next);
+	const auto previousRoute = previous ? ancestorRoute(*previous) : std::vector<NodeId>{};
+	const auto nextRoute = next ? ancestorRoute(*next) : std::vector<NodeId>{};
+	const auto listed = [](const std::vector<NodeId> &route, NodeId identity) -> bool {
+		return std::ranges::find(route, identity) != route.end();
+	};
+	for (const auto identity : previousRoute) {
+		if (!listed(nextRoute, identity)) {
+			static_cast<void>(dispatch<PointerEvent>(
+				identity,
+				EventKind::pointerLeave,
+				PointerEvent{.position = point},
+				false
+			));
+		}
+	}
+	for (const auto identity : std::views::reverse(nextRoute)) {
+		if (!listed(previousRoute, identity)) {
+			static_cast<void>(dispatch<PointerEvent>(
+				identity,
+				EventKind::pointerEnter,
+				PointerEvent{.position = point},
+				false
+			));
+		}
+	}
+}
+
 auto Document::activate(NodeId identity) -> std::expected<void, Error> {
 	auto *node = find(identity);
 	if (node == nullptr || !node->scope.alive()) {
@@ -49,10 +168,14 @@ auto Document::activate(NodeId identity) -> std::expected<void, Error> {
 	if (!isEligible(identity)) {
 		return std::unexpected(Error::notFocusable);
 	}
-	const auto callback = node->onClick;
-	if (callback) {
-		stana::reactive::Transaction::perform(callback);
-	}
+	const auto fallback = node->defaultActivate;
+	stana::reactive::Transaction::perform([&] -> void {
+		const auto event = dispatch<ClickEvent>(identity, EventKind::click, ClickEvent{}, true);
+		if (!event.defaultPrevented && fallback && find(identity) != nullptr &&
+			isEligible(identity)) {
+			fallback();
+		}
+	});
 	return {};
 }
 
@@ -65,12 +188,19 @@ auto Document::focus(NodeId identity) -> std::expected<void, Error> {
 	if (focused_ == identity) {
 		return {};
 	}
-	if (focused_) {
-		invalidate(*focused_, Dirty::paint | Dirty::snapshot);
+	const auto previous = focused_;
+	if (previous) {
+		invalidate(*previous, Dirty::paint | Dirty::snapshot);
 	}
 	focused_ = identity;
 	invalidate(identity, Dirty::paint | Dirty::snapshot);
 	commit();
+	if (previous && find(*previous) != nullptr) {
+		static_cast<void>(dispatch<FocusEvent>(*previous, EventKind::blur, FocusEvent{}, true));
+	}
+	if (focused_ == identity && find(identity) != nullptr) {
+		static_cast<void>(dispatch<FocusEvent>(identity, EventKind::focus, FocusEvent{}, true));
+	}
 	return {};
 }
 
@@ -139,51 +269,73 @@ auto Document::hitTest(Point point) const -> std::optional<NodeId> {
 
 void Document::pointerDown(Point point) {
 	commit();
+	pointerPosition_ = point;
 	const auto target = hitTest(point);
+	updateHover(target, point);
 	if (!target) {
 		return;
 	}
-	std::vector<NodeId> route;
-	for (auto *node = find(*target); node != nullptr; node = find(node->parent)) {
-		route.push_back(node->id);
+	const auto event = dispatch<PointerEvent>(
+		*target,
+		EventKind::pointerDown,
+		PointerEvent{.position = point},
+		true
+	);
+	if (event.defaultPrevented) {
+		return;
 	}
-	PointerEvent event{.position = point};
-	for (const auto identity : std::views::reverse(route)) {
-		if (const auto *node = find(identity); node != nullptr && node->onPointerDownCapture) {
-			const auto action = node->onPointerDownCapture;
-			action(event);
-		}
-	}
-	for (const auto identity : route) {
-		if (const auto *node = find(identity); node != nullptr && node->onPointerDown) {
-			const auto action = node->onPointerDown;
-			action(event);
-		}
-	}
-	if (!event.defaultPrevented) {
-		for (const auto identity : route) {
-			if (const auto *node = find(identity); node != nullptr &&
-				(node->kind == NodeKind::button || node->kind == NodeKind::toggle)) {
-				pressed_ = identity;
-				if (const auto result = focus(identity); !result) {
-					report(result.error());
-				}
-				break;
+	for (const auto identity : ancestorRoute(*target)) {
+		const auto *node = find(identity);
+		if (node != nullptr && (node->kind == NodeKind::button || node->kind == NodeKind::toggle)) {
+			pressed_ = identity;
+			if (const auto result = focus(identity); !result) {
+				report(result.error());
 			}
+			break;
 		}
 	}
 }
 
 void Document::pointerUp(Point point) {
+	pointerPosition_ = point;
 	const auto pressed = std::exchange(pressed_, std::nullopt);
-	if (pressed) {
-		if (const auto bounds = interactionBounds(*pressed);
-			bounds && bounds->contains(point) && hitTest(point)) {
-			if (const auto result = activate(*pressed); !result) {
-				report(result.error());
-			}
+	const auto bounds = pressed ? interactionBounds(*pressed) : std::nullopt;
+	const bool releasedInside =
+		bounds.has_value() && bounds->contains(point) && hitTest(point).has_value();
+	const auto target = hitTest(point);
+	updateHover(target, point);
+	if (target) {
+		static_cast<void>(dispatch<PointerEvent>(
+			*target,
+			EventKind::pointerUp,
+			PointerEvent{.position = point},
+			true
+		));
+	}
+	if (pressed && releasedInside) {
+		if (const auto result = activate(*pressed); !result) {
+			report(result.error());
 		}
 	}
+}
+
+void Document::pointerMove(Point point) {
+	pointerPosition_ = point;
+	const auto target = hitTest(point);
+	updateHover(target, point);
+	if (!target) {
+		return;
+	}
+	static_cast<void>(dispatch<PointerEvent>(
+		*target,
+		EventKind::pointerMove,
+		PointerEvent{.position = point},
+		true
+	));
+}
+
+void Document::pointerLeave() {
+	updateHover(std::nullopt, pointerPosition_);
 }
 
 void Document::cancelPointer() {
@@ -192,8 +344,22 @@ void Document::cancelPointer() {
 
 void Document::scroll(Point point, double delta) {
 	stana::detail::requireFinite(delta);
-	for (auto target = hitTest(point); target;) {
-		auto *node = find(*target);
+	pointerPosition_ = point;
+	const auto target = hitTest(point);
+	if (!target) {
+		return;
+	}
+	const auto event = dispatch<ScrollEvent>(
+		*target,
+		EventKind::scroll,
+		ScrollEvent{.position = point, .delta = delta},
+		true
+	);
+	if (event.defaultPrevented) {
+		return;
+	}
+	for (auto current = target; current;) {
+		auto *node = find(*current);
 		if (node == nullptr) {
 			return;
 		}
@@ -206,7 +372,7 @@ void Document::scroll(Point point, double delta) {
 			commit();
 			return;
 		}
-		target = node->parent.serial == 0 ? std::nullopt : std::optional{node->parent};
+		current = node->parent.serial == 0 ? std::nullopt : std::optional{node->parent};
 	}
 }
 
@@ -410,5 +576,35 @@ void Document::keyActivate() {
 			report(result.error());
 		}
 	}
+}
+
+void Document::keyDown(Key key, bool backwards) {
+	const auto event = dispatch<KeyEvent>(
+		keyboardTarget(),
+		EventKind::keyDown,
+		KeyEvent{.key = key, .backwards = backwards},
+		true
+	);
+	if (event.defaultPrevented || isClosed_) {
+		return;
+	}
+	switch (key) {
+	case Key::tab:
+		tab(backwards);
+		break;
+	case Key::space:
+	case Key::enter:
+		keyActivate();
+		break;
+	}
+}
+
+void Document::keyUp(Key key, bool backwards) {
+	static_cast<void>(dispatch<KeyEvent>(
+		keyboardTarget(),
+		EventKind::keyUp,
+		KeyEvent{.key = key, .backwards = backwards},
+		true
+	));
 }
 } // namespace stana::document::detail

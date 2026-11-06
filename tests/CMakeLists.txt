@@ -60,6 +60,11 @@ target_link_libraries(stana-ui-contracts PRIVATE stana::stana)
 stana_apply_safety(stana-ui-contracts)
 add_test(NAME stana.ui COMMAND stana-ui-contracts)
 
+add_executable(stana-ui-events ui/events.cpp)
+target_link_libraries(stana-ui-events PRIVATE stana::stana)
+stana_apply_safety(stana-ui-events)
+add_test(NAME stana.ui.events COMMAND stana-ui-events)
+
 if(APPLE)
 	add_executable(stana-native-smoke MACOSX_BUNDLE platform/macos/window_smoke.cpp platform/macos/window_fixture.mm)
     set_target_properties(stana-native-smoke PROPERTIES

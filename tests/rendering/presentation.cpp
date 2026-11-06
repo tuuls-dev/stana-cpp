@@ -91,10 +91,14 @@ void inputUsesConfirmedGeometry() {
 	host.mount(
 		stana::ui::VStack{
 			.layout = {.padding = padding},
-			.children =
-				stana::ui::children(stana::ui::Button{.text = "Activate", .onClick = [&] -> void {
-														  ++activations;
-													  }})
+			.children = stana::ui::children(
+				stana::ui::Button{
+					.text = "Activate",
+					.events = {stana::ui::on(stana::ui::Event::click, [&] -> void {
+						++activations;
+					})}
+				}
+			)
 		}
 	);
 	const stana::Point oldPoint{.x = 1, .y = 1};
@@ -132,10 +136,14 @@ void staleFeedbackAndRecovery() {
 	host.mount(
 		stana::ui::VStack{
 			.layout = {.padding = padding},
-			.children =
-				stana::ui::children(stana::ui::Button{.text = "Activate", .onClick = [&] -> void {
-														  ++activations;
-													  }})
+			.children = stana::ui::children(
+				stana::ui::Button{
+					.text = "Activate",
+					.events = {stana::ui::on(stana::ui::Event::click, [&] -> void {
+						++activations;
+					})}
+				}
+			)
 		}
 	);
 	static_cast<void>(host.render());
@@ -305,10 +313,10 @@ void compositePins() {
 			.children = stana::ui::children(
 				stana::ui::Button{
 					.text = "activate",
-					.onClick = [&] -> void {
+					.textStyle = {.foreground = color},
+					.events = {stana::ui::on(stana::ui::Event::click, [&] -> void {
 						++clicks;
-					},
-					.textStyle = {.foreground = color}
+					})}
 				}
 			)
 		}
@@ -354,10 +362,14 @@ void olderConfirmationKeepsNewerGate() {
 	host.mount(
 		stana::ui::VStack{
 			.layout = {.padding = padding},
-			.children =
-				stana::ui::children(stana::ui::Button{.text = "route", .onClick = [&] -> void {
-														  ++clicks;
-													  }})
+			.children = stana::ui::children(
+				stana::ui::Button{
+					.text = "route",
+					.events = {stana::ui::on(stana::ui::Event::click, [&] -> void {
+						++clicks;
+					})}
+				}
+			)
 		}
 	);
 	static_cast<void>(host.render());
