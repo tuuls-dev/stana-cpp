@@ -126,10 +126,12 @@ struct alignas(vectorAlignment) Quad {
 struct alignas(vectorAlignment) Clip {
 	std::array<float, 4> bounds{};
 	std::array<float, 4> options{};
+	std::array<float, 4> top{};
+	std::array<float, 4> bottom{};
 };
 
 inline constexpr std::size_t quadBytes = 96;
-inline constexpr std::size_t clipBytes = 32;
+inline constexpr std::size_t clipBytes = 64;
 inline constexpr std::size_t vertexBytes = 24;
 static_assert(sizeof(Quad) == quadBytes && offsetof(Quad, flags) == quadBytes - vectorAlignment);
 static_assert(

@@ -197,3 +197,18 @@ add_executable(stana-shadows rendering/shadows.cpp)
 target_link_libraries(stana-shadows PRIVATE stana::stana)
 stana_apply_safety(stana-shadows)
 add_test(NAME stana.shadows COMMAND stana-shadows)
+
+add_executable(stana-ui-shadows ui/shadows.cpp)
+target_link_libraries(stana-ui-shadows PRIVATE stana::stana)
+stana_apply_safety(stana-ui-shadows)
+add_test(NAME stana.ui.shadows COMMAND stana-ui-shadows)
+
+if(APPLE AND (STANA_NATIVE_TESTS OR STANA_NATIVE_OFFSCREEN_TESTS))
+	add_executable(stana-native-shadows platform/macos/shadows.mm platform/macos/shadow_fixture.cpp)
+	target_link_libraries(stana-native-shadows PRIVATE stana::stana "-framework Metal" "-framework Foundation")
+	target_compile_options(stana-native-shadows PRIVATE "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>")
+	stana_apply_safety(stana-native-shadows)
+	add_test(NAME stana.native.shadows COMMAND stana-native-shadows)
+	set_tests_properties(stana.native.shadows PROPERTIES TIMEOUT 120 LABELS "native;offscreen" RUN_SERIAL TRUE
+		ENVIRONMENT "MTL_DEBUG_LAYER=1;MTL_SHADER_VALIDATION=1")
+endif()

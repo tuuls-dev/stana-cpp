@@ -105,7 +105,7 @@ constexpr unsigned char firstNonAscii = 128;
 [[nodiscard]] auto prepareOperation(const Command &command, double scale) -> PreparedOperation {
 	const bool emptyStroke = (command.operation == PaintOperation::stroke ||
 								 command.operation == PaintOperation::line) &&
-		command.lineWidth <= 0;
+		command.lineWidth <= 0 && !command.boxGeometry;
 	const bool emptyRectangle = (command.operation == PaintOperation::fill ||
 									command.operation == PaintOperation::stroke) &&
 		(command.width <= 0 || command.height <= 0);
@@ -122,6 +122,12 @@ constexpr unsigned char firstNonAscii = 128;
 	};
 	double margin = 1 / scale;
 	switch (command.operation) {
+	case PaintOperation::shadow:
+		if (!command.shadow) {
+			throw std::invalid_argument("Missing native shadow payload");
+		}
+		operation.ink.bounds = expanded(bounds, 2 / scale);
+		return operation;
 	case PaintOperation::text: {
 		operation.text = std::make_shared<PreparedText>(command);
 		const CGRect image = CTLineGetImageBounds(operation.text->line.get(), nullptr);
@@ -227,6 +233,7 @@ void prepareOperations(
 			for (const auto &command : source->paint->prefix) {
 				if (command.operation == PaintOperation::pushClip) {
 					paint->childClipRadius = command.radius;
+					paint->childClipGeometry = command.boxGeometry;
 					break;
 				}
 			}
@@ -440,7 +447,10 @@ void diff(
 			mask,
 			work
 		);
-		const bool clipChanged =
+		const bool clipChanged = old->paint->childClipGeometry.has_value() !=
+				next->paint->childClipGeometry.has_value() ||
+			(old->paint->childClipGeometry && next->paint->childClipGeometry &&
+				std::is_neq(*old->paint->childClipGeometry <=> *next->paint->childClipGeometry)) ||
 			std::is_neq(old->paint->childClipRadius <=> next->paint->childClipRadius) ||
 			old->paint->childClipBounds.has_value() != next->paint->childClipBounds.has_value() ||
 			(old->paint->childClipBounds &&
@@ -478,7 +488,7 @@ void diff(
 void replayOperation(CGContextRef context, const PreparedOperation &operation) {
 	if ((operation.command.operation == PaintOperation::stroke ||
 			operation.command.operation == PaintOperation::line) &&
-		operation.command.lineWidth <= 0) {
+		operation.command.lineWidth <= 0 && !operation.command.boxGeometry) {
 		return;
 	}
 	if ((operation.command.operation == PaintOperation::fill ||
@@ -493,12 +503,26 @@ void replayOperation(CGContextRef context, const PreparedOperation &operation) {
 
 	const auto &command = operation.command;
 	switch (command.operation) {
+	case PaintOperation::shadow:
+		throw std::logic_error("Box shadows require the GPU compositor");
 	case PaintOperation::fill:
 		CGContextSetRGBFillColor(context, command.red, command.green, command.blue, command.alpha);
 		CGContextAddPath(context, operation.path->path.get());
 		CGContextFillPath(context);
 		break;
 	case PaintOperation::stroke:
+		if (command.boxGeometry) {
+			CGContextSetRGBFillColor(
+				context,
+				command.red,
+				command.green,
+				command.blue,
+				command.alpha
+			);
+			CGContextAddPath(context, operation.path->path.get());
+			CGContextEOFillPath(context);
+			break;
+		}
 		CGContextSetRGBStrokeColor(
 			context,
 			command.red,
@@ -587,13 +611,86 @@ PreparedText::PreparedText(const Command &command)
 	ascent = baseline;
 }
 
-PreparedPath::PreparedPath(const Command &command)
-	: path(CGPathCreateWithRoundedRect(
-		  CGRectMake(command.x, command.y, command.width, command.height),
-		  command.radius,
-		  command.radius,
-		  nullptr
-	  )) {
+namespace {
+/// @brief Cubic approximation of independent elliptical quarters, shared by fill, border and clip.
+void appendContour(CGMutablePathRef path, const stana::gpu::detail::BoxContour &contour) {
+	const auto &b = contour.bounds;
+	const double left = b.at(0), top = b.at(1), right = left + b.at(2), bottom = top + b.at(3);
+	const auto &r = contour.radii;
+	constexpr double kappa = 0.5522847498307936;
+	CGPathMoveToPoint(path, nullptr, left + r.at(0).at(0), top);
+	CGPathAddLineToPoint(path, nullptr, right - r.at(1).at(0), top);
+	CGPathAddCurveToPoint(
+		path,
+		nullptr,
+		right - r.at(1).at(0) * (1 - kappa),
+		top,
+		right,
+		top + r.at(1).at(1) * (1 - kappa),
+		right,
+		top + r.at(1).at(1)
+	);
+	CGPathAddLineToPoint(path, nullptr, right, bottom - r.at(2).at(1));
+	CGPathAddCurveToPoint(
+		path,
+		nullptr,
+		right,
+		bottom - r.at(2).at(1) * (1 - kappa),
+		right - r.at(2).at(0) * (1 - kappa),
+		bottom,
+		right - r.at(2).at(0),
+		bottom
+	);
+	CGPathAddLineToPoint(path, nullptr, left + r.at(3).at(0), bottom);
+	CGPathAddCurveToPoint(
+		path,
+		nullptr,
+		left + r.at(3).at(0) * (1 - kappa),
+		bottom,
+		left,
+		bottom - r.at(3).at(1) * (1 - kappa),
+		left,
+		bottom - r.at(3).at(1)
+	);
+	CGPathAddLineToPoint(path, nullptr, left, top + r.at(0).at(1));
+	CGPathAddCurveToPoint(
+		path,
+		nullptr,
+		left,
+		top + r.at(0).at(1) * (1 - kappa),
+		left + r.at(0).at(0) * (1 - kappa),
+		top,
+		left + r.at(0).at(0),
+		top
+	);
+	CGPathCloseSubpath(path);
+}
+
+[[nodiscard]] auto rectanglePath(const Command &command) -> CGPathRef {
+	if (!command.boxGeometry) {
+		return CGPathCreateWithRoundedRect(
+			CGRectMake(command.x, command.y, command.width, command.height),
+			command.radius,
+			command.radius,
+			nullptr
+		);
+	}
+	const CoreOwner<CGMutablePathRef> path{CGPathCreateMutable()};
+	if (path.get() == nullptr) {
+		throw std::runtime_error("Unable to prepare contour path");
+	}
+	appendContour(path.get(), command.boxGeometry->outer);
+	if (command.operation == PaintOperation::stroke) {
+		const auto &padding = command.boxGeometry->padding;
+		if (padding.bounds.at(2) > 0 && padding.bounds.at(3) > 0) {
+			appendContour(path.get(), padding);
+		}
+	}
+	return CGPathCreateCopy(path.get());
+}
+} // namespace
+
+PreparedPath::PreparedPath(const Command &command) : path(rectanglePath(command)) {
 	if (path.get() == nullptr) {
 		throw std::runtime_error("Unable to prepare CoreGraphics path");
 	}

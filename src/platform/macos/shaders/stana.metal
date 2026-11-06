@@ -1,7 +1,9 @@
 #include <metal_stdlib>
 using namespace metal;
 struct Quad { float4 bounds; float4 geometry; float4 color; float4 viewport; float4 options; uint4 flags; };
-struct Clip { float4 bounds; float4 options; };
+struct Clip { float4 bounds; float4 options; float4 top; float4 bottom; };
+struct Contour { float4 bounds; float4 top; float4 bottom; };
+float contourDistance(float2 p, Contour c);
 struct Vertex { packed_float2 position; packed_float4 color; };
 struct Varying { float4 position [[position]]; float2 point; float2 uv; float4 color; };
 float3 decode(float3 value) {
@@ -31,7 +33,9 @@ float clipping(float2 point, constant Quad &quad, device const Clip *clips) {
     float value = 1;
     for (uint i = 0; i < quad.flags.y; ++i) {
         if (clips[i].bounds.z <= 0 || clips[i].bounds.w <= 0) return 0;
-        value *= coverage(rectangleDistance(point, clips[i].bounds, clips[i].options.x));
+        value *= coverage(clips[i].options.y != 0
+            ? contourDistance(point, Contour{clips[i].bounds, clips[i].top, clips[i].bottom})
+            : rectangleDistance(point, clips[i].bounds, clips[i].options.x));
     }
     return value;
 }
@@ -98,4 +102,64 @@ fragment float4 stana_display(Varying in [[stage_in]], constant Quad &quad [[buf
     if (level > knee) c *= (knee + (high-knee)*(level-knee)/((level-knee)+(high-knee))) / level;
     if (quad.flags.z == 0) c = clamp(encode(c), 0.0f, 1.0f);
     return float4(c * value.a, value.a);
+}
+
+struct ShadowUniform { Contour caster; Contour clip; float4 region; float4 options; uint4 blur; };
+float contourDistance(float2 p, Contour c) {
+    if (c.bounds.z <= 0 || c.bounds.w <= 0) return INFINITY;
+    float2 local = p - c.bounds.xy;
+    float2 r = float2(0), corner = float2(0);
+    if (local.x < c.top.x && local.y < c.top.y) { r = c.top.xy; corner = r; }
+    else if (local.x > c.bounds.z - c.top.z && local.y < c.top.w) {
+        r = c.top.zw; corner = float2(c.bounds.z - r.x, r.y);
+    } else if (local.x < c.bottom.x && local.y > c.bounds.w - c.bottom.y) {
+        r = c.bottom.xy; corner = float2(r.x, c.bounds.w - r.y);
+    } else if (local.x > c.bounds.z - c.bottom.z && local.y > c.bounds.w - c.bottom.w) {
+        r = c.bottom.zw; corner = c.bounds.zw - r;
+    }
+    if (r.x > 0 && r.y > 0) {
+        float2 n = (local - corner) / r;
+        return (length(n) - 1) * min(r.x, r.y);
+    }
+    return max(max(-local.x, local.x - c.bounds.z), max(-local.y, local.y - c.bounds.w));
+}
+kernel void stana_shadow_mask(constant ShadowUniform &s [[buffer(0)]],
+    texture2d<half, access::write> out [[texture(1)]], uint2 id [[thread_position_in_grid]]) {
+    if (id.x >= out.get_width() || id.y >= out.get_height()) return;
+    float value = 0;
+    // Deterministic area coverage at physical-pixel resolution, entirely on GPU.
+    for (uint y = 0; y < 4; ++y) for (uint x = 0; x < 4; ++x) {
+        float2 p = (s.region.xy + float2(id) + (float2(x,y) + 0.5f) / 4) / s.options.x;
+        value += contourDistance(p, s.caster) < 0 ? 1.0f / 16 : 0;
+    }
+    if (s.options.z != 0) value = 1 - value;
+    out.write(half4(half(value)), id);
+}
+kernel void stana_shadow_blur(constant ShadowUniform &s [[buffer(0)]],
+    texture2d<half, access::read> in [[texture(0)]], texture2d<half, access::write> out [[texture(1)]],
+    uint2 id [[thread_position_in_grid]]) {
+    if (id.x >= out.get_width() || id.y >= out.get_height()) return;
+    float sum = 0, weightSum = 0;
+    int support = int(s.blur.x);
+    for (int i = -support; i <= support; ++i) {
+        float weight = exp(-0.5f * pow(float(i) / s.options.y, 2.0f));
+        int2 p = int2(id) + (s.blur.y == 0 ? int2(i,0) : int2(0,i));
+        float value = s.options.z;
+        if (all(p >= 0) && p.x < int(in.get_width()) && p.y < int(in.get_height()))
+            value = float(in.read(uint2(p)).r);
+        sum += weight * value;
+        weightSum += weight;
+    }
+    out.write(half4(half(sum / weightSum)), id);
+}
+fragment float4 stana_shadow(Varying in [[stage_in]], constant Quad &quad [[buffer(0)]],
+    device const Clip *clips [[buffer(1)]], constant ShadowUniform &s [[buffer(2)]],
+    texture2d<float> mask [[texture(0)]]) {
+    float2 uv = (in.point - s.region.xy) / s.region.zw;
+    constexpr sampler sample(coord::normalized, address::clamp_to_edge, filter::linear);
+    float value = s.options.z;
+    if (all(uv >= 0) && all(uv <= 1)) value = mask.sample(sample, uv).r;
+    float box = (s.clip.bounds.z <= 0 || s.clip.bounds.w <= 0) ? 0 : coverage(contourDistance(in.point, s.clip));
+    float clip = s.options.z != 0 ? box : 1 - box;
+    return quad.color * (value * clip * quad.options.y * clipping(in.point, quad, clips));
 }

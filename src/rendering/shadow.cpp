@@ -165,13 +165,13 @@ auto prepareBoxShadows(
 	for (const auto &shadow : std::views::reverse(shadows)) {
 		const auto color =
 			shadow.color.value_or(foreground).resolved(environment.theme, environment.highContrast);
-		if (color.alpha <= 0 || bounds.size.width <= 0 || bounds.size.height <= 0) {
+		if (color.alpha <= 0) {
 			continue;
 		}
 		const auto clip = shadow.isInset ? geometry.padding : geometry.outer;
 		const auto caster =
 			spreadContour(clip, shadow.isInset ? -shadow.spreadRadius : shadow.spreadRadius);
-		if (clip.bounds.size.width <= 0 || clip.bounds.size.height <= 0 ||
+		if ((shadow.isInset && (clip.bounds.size.width <= 0 || clip.bounds.size.height <= 0)) ||
 			(!shadow.isInset &&
 				(caster.bounds.size.width <= 0 || caster.bounds.size.height <= 0))) {
 			continue;

@@ -134,6 +134,7 @@ struct BuiltinFunctions {
 	if (value.operation == PaintOperation::fill || value.operation == PaintOperation::stroke ||
 		value.operation == PaintOperation::pushClip) {
 		result.radius = value.radius;
+		result.boxGeometry = value.boxGeometry;
 	}
 	if (value.operation != PaintOperation::pushClip) {
 		result.red = value.red;
@@ -149,6 +150,7 @@ struct BuiltinFunctions {
 		result.fontSize = value.fontSize;
 		result.fontWeight = value.fontWeight;
 	}
+	result.shadow = value.shadow;
 	return result;
 }
 
@@ -171,14 +173,35 @@ void increment(std::uint64_t &value) {
 }
 
 struct DrawItem {
-	enum class Kind : std::uint8_t { shape, image, mesh } kind = Kind::shape;
+	enum class Kind : std::uint8_t { shape, image, mesh, shadow } kind = Kind::shape;
 	Quad quad{};
 	LogicalRect bounds{};
 	std::shared_ptr<TextureOwner> texture{};
 	std::shared_ptr<MeshUpload> mesh{};
 	std::shared_ptr<BufferOwner> clips{};
 	std::shared_ptr<BufferOwner> points{};
+	ShadowUniform shadow{};
 };
+
+[[nodiscard]] auto packedClip(const PreparedOperation &operation) -> Clip {
+	const auto &command = operation.command;
+	Clip result{
+		.bounds =
+			{static_cast<float>(command.x),
+				static_cast<float>(command.y),
+				static_cast<float>(command.width),
+				static_cast<float>(command.height)},
+		.options = {static_cast<float>(command.radius), 0, 0, 0}
+	};
+	if (command.boxGeometry) {
+		const auto contour = packContour(command.boxGeometry->outer);
+		result.bounds = contour.bounds;
+		result.top = contour.top;
+		result.bottom = contour.bottom;
+		result.options.at(1) = 1;
+	}
+	return result;
+}
 
 [[nodiscard]] auto allGPU(const std::shared_ptr<const SceneBranch> &root, bool visibleOnly)
 	-> std::vector<const GPUCanvasLeaf *> {
@@ -249,6 +272,18 @@ auto Compositor::create(
 			true,
 			samples
 		);
+		const auto shadow = pipeline(
+			result->resources_.device->device,
+			result->resources_.device->builtins,
+			{.vertex = @"stana_quad", .fragment = @"stana_shadow"},
+			format,
+			true,
+			samples
+		);
+		if (!shadow) {
+			return std::unexpected(shadow.error());
+		}
+		result->shadow_.at(index) = *shadow;
 		const auto texture = pipeline(
 			result->resources_.device->device,
 			result->resources_.device->builtins,
@@ -287,11 +322,30 @@ auto Compositor::create(
 			result->display_.at(index) = *display;
 		}
 	}
+	const auto shadows = result->shadows_.initialize(result->resources_);
+	if (!shadows) {
+		return std::unexpected(shadows.error());
+	}
 	return result;
 }
 
 auto Compositor::requiresHybrid(const std::shared_ptr<const Scene> &scene, ColorMode mode) -> bool {
-	return mode == ColorMode::extendedLinear || (scene && !allGPU(scene->root, true).empty());
+	const auto hasShadows = [&](const auto &self,
+								const std::shared_ptr<const SceneBranch> &branch) -> bool {
+		if (!branch || !branch->visible) {
+			return false;
+		}
+		if (std::ranges::any_of(branch->paint->prefix, [](const auto &command) -> bool {
+				return command.operation == PaintOperation::shadow;
+			})) {
+			return true;
+		}
+		return std::ranges::any_of(branch->children, [&](const auto &child) -> bool {
+			return self(self, child);
+		});
+	};
+	return mode == ColorMode::extendedLinear ||
+		(scene && (!allGPU(scene->root, true).empty() || hasShadows(hasShadows, scene->root)));
 }
 
 auto Compositor::requiresLinear(const std::shared_ptr<const Scene> &scene, ColorMode mode) -> bool {
@@ -332,6 +386,7 @@ void Compositor::reset(std::uint64_t epoch) {
 	cpuCache_.clear();
 	symbolCache_.clear();
 	lineCache_.clear();
+	shadows_.reset();
 	cancelCompilation(resources_.device, window_);
 	compilerActive_ = false;
 }
@@ -754,6 +809,52 @@ auto Compositor::prepare(
 	}];
 	std::vector<DrawItem> items;
 	std::vector<PreparedOperation> clips;
+	const auto appendShadow = [&](stana::gpu::detail::Shadow shadow,
+								  LogicalPoint origin,
+								  double opacity,
+								  std::shared_ptr<BufferOwner> clipBuffer,
+								  std::uint32_t clipCount) -> Result<void> {
+		for (auto *bounds : {&shadow.clip.bounds, &shadow.caster.bounds, &shadow.ink}) {
+			bounds->at(0) += origin.x;
+			bounds->at(1) += origin.y;
+		}
+		if (shadow.color.at(3) <= 0 || opacity <= 0) {
+			return {};
+		}
+		const LogicalRect viewport{.size = packet->scene->source->size};
+		const auto &ink = shadow.ink;
+		if (!intersects(
+				viewport,
+				expanded(
+					{.origin = {.x = ink.at(0), .y = ink.at(1)},
+						.size = {.width = ink.at(2), .height = ink.at(3)}},
+					2 / packet->scene->scale
+				)
+			)) {
+			return {};
+		}
+		auto prepared =
+			shadows_.prepare(resources_, commands, shadow, packet->scene->scale, viewport);
+		if (!prepared) {
+			return std::unexpected(prepared.error());
+		}
+		Quad quad;
+		quad.bounds = floats(prepared->bounds);
+		quad.color = packedColor(Color{.rgba = shadow.color}, linear);
+		quad.options.at(1) = static_cast<float>(opacity);
+		quad.flags.at(1) = clipCount;
+		items.push_back(
+			{.kind = DrawItem::Kind::shadow,
+				.quad = quad,
+				.bounds = prepared->bounds,
+				.texture = prepared->mask->texture,
+				.clips = std::move(clipBuffer),
+				.shadow = prepared->uniform}
+		);
+		packet->shadows.push_back(std::move(*prepared));
+		work_.shadows = shadows_.statistics();
+		return {};
+	};
 	const auto appendCPU = [&](const PreparedOperation &operation) -> Result<void> {
 		if (operation.command.operation == PaintOperation::pushClip) {
 			clips.push_back(operation);
@@ -765,6 +866,35 @@ auto Compositor::prepare(
 			}
 			clips.pop_back();
 			return {};
+		}
+		if (operation.command.operation == PaintOperation::shadow) {
+			if (!operation.command.shadow) {
+				return failed(Diagnostic::Category::execution, "Missing shadow payload");
+			}
+			std::vector<Clip> packed;
+			packed.reserve(clips.size());
+			for (const auto &clip : clips) {
+				packed.push_back(packedClip(clip));
+			}
+			std::shared_ptr<BufferOwner> buffer;
+			if (!packed.empty()) {
+				auto allocated = resources_.buffer(
+					packed.size() * sizeof(Clip),
+					std::as_bytes(std::span{packed})
+				);
+				if (!allocated) {
+					return std::unexpected(allocated.error());
+				}
+				buffer = *allocated;
+				packet->buffers.push_back(buffer);
+			}
+			return appendShadow(
+				*operation.command.shadow,
+				{},
+				1,
+				std::move(buffer),
+				static_cast<std::uint32_t>(packed.size())
+			);
 		}
 		const auto asset = cpu(operation, clips, *packet->scene, grid, commands);
 		if (!asset) {
@@ -822,14 +952,7 @@ auto Compositor::prepare(
 		std::vector<Clip> packedClips;
 		packedClips.reserve(clips.size() + 1);
 		for (const auto &clip : clips) {
-			packedClips.push_back(
-				{.bounds =
-						{static_cast<float>(clip.command.x),
-							static_cast<float>(clip.command.y),
-							static_cast<float>(clip.command.width),
-							static_cast<float>(clip.command.height)},
-					.options = {static_cast<float>(clip.command.radius), 0, 0, 0}}
-			);
+			packedClips.push_back(packedClip(clip));
 		}
 		packedClips.push_back({.bounds = floats(leaf.bounds)});
 		if (packedClips.size() > stana::gpu::detail::payloadLimit / sizeof(Clip)) {
@@ -861,7 +984,20 @@ auto Compositor::prepare(
 			const auto encoded = std::visit(
 				[&](const auto &value) -> Result<void> {
 					using T = std::decay_t<decltype(value)>;
-					if constexpr (std::is_same_v<T, Shape>) {
+					if constexpr (std::is_same_v<T, stana::gpu::detail::BoxShadows>) {
+						for (const auto &shadow : value.shadows) {
+							const auto appended = appendShadow(
+								shadow,
+								leaf.bounds.origin,
+								leaf.opacity,
+								*clipBuffer,
+								static_cast<std::uint32_t>(packedClips.size())
+							);
+							if (!appended) {
+								return appended;
+							}
+						}
+					} else if constexpr (std::is_same_v<T, Shape>) {
 						if (value.bounds.width <= 0 || value.bounds.height <= 0) {
 							return {};
 						}
@@ -1022,6 +1158,9 @@ auto Compositor::prepare(
 			);
 			if (!encoded) {
 				report(leaf, 0, encoded.error());
+				if (std::holds_alternative<stana::gpu::detail::BoxShadows>(command)) {
+					return encoded;
+				}
 			}
 			++commandIndex;
 		}
@@ -1201,7 +1340,11 @@ auto Compositor::prepare(
 							 indexBufferOffset:0];
 			} else {
 				[encoder setVertexBytes:&quad length:sizeof(quad) atIndex:0];
-				if (item.kind == DrawItem::Kind::image) {
+				if (item.kind == DrawItem::Kind::shadow) {
+					[encoder setRenderPipelineState:shadow_.at(profile)];
+					[encoder setFragmentTexture:item.texture->texture atIndex:0];
+					[encoder setFragmentBytes:&item.shadow length:sizeof(item.shadow) atIndex:2];
+				} else if (item.kind == DrawItem::Kind::image) {
 					[encoder setRenderPipelineState:texture_.at(profile)];
 					[encoder setFragmentTexture:item.texture->texture atIndex:0];
 				} else {

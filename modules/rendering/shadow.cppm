@@ -68,7 +68,11 @@ struct ShadowPaint {
 	double blurRadius = 0;
 	bool isInset = false;
 	Rect ink{};
-	[[nodiscard]] auto operator==(const ShadowPaint &) const -> bool = default;
+	auto operator<=>(const ShadowPaint &) const = default;
+
+	[[nodiscard]] auto operator==(const ShadowPaint &other) const -> bool {
+		return std::is_eq(*this <=> other);
+	}
 };
 
 /// @brief Exact finite Gaussian support is 3 sigma, plus one pixel for coverage/placement.
