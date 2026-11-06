@@ -354,6 +354,8 @@ void GPUDrawing::append(stana::rendering::detail::GPUCommand command) {
 				);
 			} else if constexpr (std::is_same_v<T, stana::rendering::detail::GPUPolyline>) {
 				direct += operation.points.size() * sizeof(Point);
+			} else if constexpr (std::is_same_v<T, stana::rendering::detail::GPUBoxShadows>) {
+				direct += operation.shadows.size() * sizeof(BoxShadow);
 			} else if constexpr (std::is_same_v<T, GPUProgram>) {
 				const auto &descriptor = operation.descriptor();
 				additions.emplace(descriptor.shader.version(), descriptor.shader.source().size());
@@ -458,6 +460,27 @@ void GPUDrawing::fillEllipse(Rect rect, ExtendedColor value) {
 	append(stana::rendering::detail::GPUEllipse{.bounds = rect, .color = value});
 }
 
+void GPUDrawing::drawBoxShadows(
+	Rect bounds,
+	std::span<const BoxShadow> shadows,
+	CornerRadii cornerRadii,
+	BorderWidths borderWidths
+) {
+	rectangle(bounds);
+	static_cast<void>(detail::prepareBoxShadows(bounds, shadows, cornerRadii, borderWidths));
+	if (shadows.empty()) {
+		return;
+	}
+	append(
+		detail::GPUBoxShadows{
+			.bounds = bounds,
+			.shadows = {shadows.begin(), shadows.end()},
+			.cornerRadii = cornerRadii,
+			.borderWidths = borderWidths
+		}
+	);
+}
+
 void GPUDrawing::drawMesh(GPUMesh mesh) {
 	append(std::move(mesh));
 }
@@ -526,6 +549,8 @@ auto GPUDrawing::requiresExtended() const -> bool {
 					return true;
 				} else if constexpr (std::is_same_v<T, GPUProgram>) {
 					return operation.descriptor().outputColor == GPUColorEncoding::extendedLinear;
+				} else if constexpr (std::is_same_v<T, stana::rendering::detail::GPUBoxShadows>) {
+					return false;
 				} else {
 					return std::holds_alternative<ExtendedColor>(operation.color);
 				}

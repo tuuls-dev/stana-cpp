@@ -1,12 +1,14 @@
 module;
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
 export module stana:rendering;
 export import :rendering_presentation;
 export import :rendering_gpu;
+export import :rendering_shadow;
 export import :primitives;
 export import :rendering_diagnostics;
 
@@ -19,6 +21,7 @@ enum class PaintKind : std::uint8_t {
 	text,		///< Draws text using the supplied font and foreground color.
 	line,		///< Draws a segment from bounds.origin to origin + size.
 	pushClip,	///< Saves graphics state and intersects it with the supplied clip region.
+	boxShadow,	///< Built-in GPU shadow; projection-only, not a CPUCanvas authoring operation.
 	popClip		///< Restores the graphics state saved by the matching pushClip.
 };
 
@@ -40,6 +43,9 @@ struct PaintCommand {
 	double lineWidth = 1;	 ///< Outline or segment thickness in logical points.
 	std::string text{};		 ///< Owned display text; used only for PaintKind::text.
 	Font font{};			 ///< System-font request; used only for PaintKind::text.
+	std::optional<detail::BoxGeometry>
+		boxGeometry{};							 ///< Opt-in physical fill/border/clip contours.
+	std::optional<detail::ShadowPaint> shadow{}; ///< Owning immutable built-in GPU operation.
 	[[nodiscard]] auto operator==(const PaintCommand &) const -> bool;
 };
 

@@ -192,3 +192,8 @@ add_executable(stana-gpu-validation rendering/gpu_validation.cpp)
 target_link_libraries(stana-gpu-validation PRIVATE stana::stana)
 stana_apply_safety(stana-gpu-validation)
 add_test(NAME stana.gpu-validation COMMAND stana-gpu-validation)
+
+add_executable(stana-shadows rendering/shadows.cpp)
+target_link_libraries(stana-shadows PRIVATE stana::stana)
+stana_apply_safety(stana-shadows)
+add_test(NAME stana.shadows COMMAND stana-shadows)

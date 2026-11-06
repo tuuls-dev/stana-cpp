@@ -70,11 +70,40 @@ namespace stana::application::detail {
 	return result;
 }
 
+[[nodiscard]] inline auto convertContour(const stana::rendering::detail::BoxContour &value)
+	-> stana::gpu::detail::BoxContour {
+	stana::gpu::detail::BoxContour result{
+		.bounds = {
+			value.bounds.origin.x,
+			value.bounds.origin.y,
+			value.bounds.size.width,
+			value.bounds.size.height
+		}
+	};
+	for (std::size_t index = 0; index < value.radii.size(); ++index) {
+		result.radii.at(index) = {value.radii.at(index).width, value.radii.at(index).height};
+	}
+	return result;
+}
+
+[[nodiscard]] inline auto convertShadow(const stana::rendering::detail::ShadowPaint &value)
+	-> stana::gpu::detail::Shadow {
+	return {
+		.clip = convertContour(value.clip),
+		.caster = convertContour(value.caster),
+		.offset = {value.offset.x, value.offset.y},
+		.color = {value.color.red, value.color.green, value.color.blue, value.color.alpha},
+		.blurRadius = value.blurRadius,
+		.isInset = value.isInset,
+		.ink = {value.ink.origin.x, value.ink.origin.y, value.ink.size.width, value.ink.size.height}
+	};
+}
+
 /// @brief Weak bounded conversion caches; blobs are shared, packed mesh conversion happens once.
 struct GPUConversion {
 	std::map<std::uint64_t, std::weak_ptr<const stana::gpu::detail::Program>> programs;
 	std::map<std::uint64_t, std::weak_ptr<const stana::gpu::detail::Mesh>> meshes;
-	using DrawingKey = std::tuple<std::uint64_t, Theme, bool>;
+	using DrawingKey = std::tuple<std::uint64_t, Theme, bool, Direction>;
 	std::map<DrawingKey, std::weak_ptr<const stana::gpu::detail::Drawing>> drawings;
 
 	[[nodiscard]] auto program(const stana::rendering::GPUProgram &value)
@@ -255,7 +284,12 @@ struct GPUConversion {
 
 	[[nodiscard]] auto drawing(const stana::rendering::GPUDrawing &value, Environment environment)
 		-> std::shared_ptr<const stana::gpu::detail::Drawing> {
-		const DrawingKey key{value.version(), environment.theme, environment.highContrast};
+		const DrawingKey key{
+			value.version(),
+			environment.theme,
+			environment.highContrast,
+			environment.direction
+		};
 		if (const auto found = drawings.find(key); found != drawings.end()) {
 			if (auto retained = found->second.lock()) {
 				return retained;
@@ -283,6 +317,21 @@ struct GPUConversion {
 								.color = color(input.color, environment),
 								.ellipse = true
 							};
+						} else if constexpr (std::is_same_v<
+												 T,
+												 stana::rendering::detail::GPUBoxShadows>) {
+							stana::gpu::detail::BoxShadows result;
+							for (const auto &shadow : stana::rendering::detail::prepareBoxShadows(
+									 input.bounds,
+									 input.shadows,
+									 input.cornerRadii,
+									 input.borderWidths,
+									 Color::text(),
+									 environment
+								 )) {
+								result.shadows.push_back(convertShadow(shadow));
+							}
+							return result;
 						} else if constexpr (std::is_same_v<T, stana::rendering::GPUMesh>) {
 							return mesh(input);
 						} else if constexpr (std::is_same_v<T, stana::rendering::GPUProgram>) {
