@@ -26,7 +26,7 @@ build preset="debug": (configure preset)
 test preset="debug": (build preset)
     ctest --preset {{quote(preset)}}
 
-# Build and run an example:
+# Compile and run an example without source policy or clang-tidy checks:
 # eg. just example symbols.
 # Native rendering traces are on by default; pass --no-trace to disable.
 example name *args:

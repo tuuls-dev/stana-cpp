@@ -13,7 +13,8 @@
 			"binaryDir": "${sourceDir}/build/${presetName}",
 			"toolchainFile": "${sourceDir}/cmake/clang.cmake",
 			"cacheVariables": {
-				"CMAKE_EXPORT_COMPILE_COMMANDS": true
+				"CMAKE_EXPORT_COMPILE_COMMANDS": true,
+				"STANA_ENABLE_CHECKS": true
 			}
 		},
 		{
@@ -21,6 +22,13 @@
 			"inherits": "base",
 			"cacheVariables": {
 				"CMAKE_BUILD_TYPE": "Debug"
+			}
+		},
+		{
+			"name": "example",
+			"inherits": "debug",
+			"cacheVariables": {
+				"STANA_ENABLE_CHECKS": false
 			}
 		},
 		{
@@ -51,6 +59,10 @@
 		}
 	],
 	"buildPresets": [
+		{
+			"name": "example",
+			"configurePreset": "example"
+		},
 		{
 			"name": "debug",
 			"configurePreset": "debug"

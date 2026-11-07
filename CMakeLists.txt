@@ -10,12 +10,14 @@ stana_find_icu()
 find_package(Threads REQUIRED)
 include(cmake/ShaderCompiler.cmake)
 
-add_custom_target(stana-source-policy ALL
-	COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/policy.py"
-					"${CMAKE_CURRENT_SOURCE_DIR}"
-	COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/namespace_policy.py"
+if(STANA_ENABLE_CHECKS)
+	add_custom_target(stana-source-policy ALL
+		COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/policy.py"
 				"${CMAKE_CURRENT_SOURCE_DIR}"
-	COMMENT "Checking Stana source and namespace policy" VERBATIM)
+		COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/namespace_policy.py"
+				"${CMAKE_CURRENT_SOURCE_DIR}"
+		COMMENT "Checking Stana source and namespace policy" VERBATIM)
+endif()
 
 add_library(stana STATIC)
 add_library(stana::stana ALIAS stana)
@@ -37,9 +39,11 @@ set_target_properties(stana PROPERTIES
 	CXX_STANDARD 23 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO
 	CXX_SCAN_FOR_MODULES YES POSITION_INDEPENDENT_CODE YES)
 stana_apply_safety(stana)
-set_property(SOURCE modules/stana.cppm src/version.cpp APPEND PROPERTY OBJECT_DEPENDS
-	"${CMAKE_CURRENT_SOURCE_DIR}/.clang-tidy")
-add_dependencies(stana stana-source-policy)
+if(STANA_ENABLE_CHECKS)
+	set_property(SOURCE modules/stana.cppm src/version.cpp APPEND PROPERTY OBJECT_DEPENDS
+		"${CMAKE_CURRENT_SOURCE_DIR}/.clang-tidy")
+	add_dependencies(stana stana-source-policy)
+endif()
 
 if(APPLE)
 	target_compile_options(stana PUBLIC "$<BUILD_INTERFACE:-nostdinc++>")

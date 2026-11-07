@@ -17,18 +17,19 @@ def main() -> None:
 		help="Enable native rendering traces (on by default)")
 	args = parser.parse_args()
 	target = f"stana-{args.name}"
-	subprocess.run(["cmake", "--preset", "debug"], cwd=ROOT, check=True)
-	subprocess.run(["cmake", "--build", "--preset", "debug", "--target", target,
+	# Isolate unchecked example objects and module caches from checked builds.
+	subprocess.run(["cmake", "--preset", "example"], cwd=ROOT, check=True)
+	subprocess.run(["cmake", "--build", "--preset", "example", "--target", target,
 		"--parallel", "3"], cwd=ROOT, check=True)
 	suffix = ".exe" if os.name == "nt" else ""
-	executable = ROOT / "build/debug" / f"{target}{suffix}"
+	executable = ROOT / "build/example" / f"{target}{suffix}"
 	environment = os.environ.copy()
 	if args.trace:
 		environment["STANA_TRACE_NATIVE"] = "1"
 	else:
 		environment.pop("STANA_TRACE_NATIVE", None)
 	if sys.platform == "darwin":
-		bundle = ROOT / "build/debug" / f"{target}.app"
+		bundle = ROOT / "build/example" / f"{target}.app"
 		command = ["/usr/bin/open", "-W", "-n"]
 		if args.trace:
 			command.extend(["--env", "STANA_TRACE_NATIVE=1"])

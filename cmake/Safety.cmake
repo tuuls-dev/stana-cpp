@@ -1,4 +1,5 @@
 set(STANA_LLVM_VERSION "22.1.8")
+option(STANA_ENABLE_CHECKS "Run source policy and clang-tidy checks" ON)
 set(STANA_SANITIZER "" CACHE STRING "Runtime instrumentation: empty, address, address-undefined")
 set_property(CACHE STANA_SANITIZER PROPERTY STRINGS "" address address-undefined)
 
@@ -28,7 +29,11 @@ function(stana_validate_toolchain)
 	endif()
 	find_package(Python3 3.11 REQUIRED COMPONENTS Interpreter)
 	get_filename_component(llvm_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
-	foreach(tool IN ITEMS clang-tidy clang-format clang-scan-deps)
+	set(required_tools clang-format clang-scan-deps)
+	if(STANA_ENABLE_CHECKS)
+		list(APPEND required_tools clang-tidy)
+	endif()
+	foreach(tool IN LISTS required_tools)
 		string(REPLACE "-" "_" key "${tool}")
 		string(TOUPPER "${key}" key)
 		find_program(STANA_${key} NAMES "${tool}" HINTS "${llvm_bin}" NO_DEFAULT_PATH REQUIRED)
@@ -39,26 +44,28 @@ function(stana_validate_toolchain)
 		endif()
 		set(STANA_${key} "${STANA_${key}}" PARENT_SCOPE)
 	endforeach()
-	# LLVM 22's --verify-config runs before custom check registration. Validate
-	# built-ins separately, then require the custom diagnostics from a real probe.
-	file(READ "${PROJECT_SOURCE_DIR}/.clang-tidy" verification_config)
-	string(REPLACE "  custom-*" "" verification_config "${verification_config}")
-	file(WRITE "${PROJECT_BINARY_DIR}/verify-tidy.yaml" "${verification_config}")
-	execute_process(COMMAND "${STANA_CLANG_TIDY}" --experimental-custom-checks
-		"--config-file=${PROJECT_BINARY_DIR}/verify-tidy.yaml" --verify-config
-		RESULT_VARIABLE tidy_status OUTPUT_VARIABLE tidy_output ERROR_VARIABLE tidy_error)
-	if(NOT tidy_status EQUAL 0)
-		message(FATAL_ERROR "Required clang-tidy configuration unavailable:\n${tidy_output}${tidy_error}")
-	endif()
-	file(WRITE "${PROJECT_BINARY_DIR}/tidy-probe.cppm"
-		"export module stana_toolchain_probe;\nexport auto rejected() -> int* { return new int((int)1); }\n")
-	execute_process(COMMAND "${STANA_CLANG_TIDY}" --experimental-custom-checks
-		"--config-file=${PROJECT_SOURCE_DIR}/.clang-tidy" "${PROJECT_BINARY_DIR}/tidy-probe.cppm"
-		-- -std=c++23
-		RESULT_VARIABLE probe_status OUTPUT_VARIABLE probe_output ERROR_VARIABLE probe_error)
-	if(NOT "${probe_output}${probe_error}" MATCHES "custom-no-raw-allocation" OR
-		NOT "${probe_output}${probe_error}" MATCHES "custom-no-c-style-cast" OR probe_status EQUAL 0)
-		message(FATAL_ERROR "Required custom AST checks are not working:\n${probe_output}${probe_error}")
+	if(STANA_ENABLE_CHECKS)
+		# LLVM 22's --verify-config runs before custom check registration. Validate
+		# built-ins separately, then require the custom diagnostics from a real probe.
+		file(READ "${PROJECT_SOURCE_DIR}/.clang-tidy" verification_config)
+		string(REPLACE "  custom-*" "" verification_config "${verification_config}")
+		file(WRITE "${PROJECT_BINARY_DIR}/verify-tidy.yaml" "${verification_config}")
+		execute_process(COMMAND "${STANA_CLANG_TIDY}" --experimental-custom-checks
+			"--config-file=${PROJECT_BINARY_DIR}/verify-tidy.yaml" --verify-config
+			RESULT_VARIABLE tidy_status OUTPUT_VARIABLE tidy_output ERROR_VARIABLE tidy_error)
+		if(NOT tidy_status EQUAL 0)
+			message(FATAL_ERROR "Required clang-tidy configuration unavailable:\n${tidy_output}${tidy_error}")
+		endif()
+		file(WRITE "${PROJECT_BINARY_DIR}/tidy-probe.cppm"
+			"export module stana_toolchain_probe;\nexport auto rejected() -> int* { return new int((int)1); }\n")
+		execute_process(COMMAND "${STANA_CLANG_TIDY}" --experimental-custom-checks
+			"--config-file=${PROJECT_SOURCE_DIR}/.clang-tidy" "${PROJECT_BINARY_DIR}/tidy-probe.cppm"
+			-- -std=c++23
+			RESULT_VARIABLE probe_status OUTPUT_VARIABLE probe_output ERROR_VARIABLE probe_error)
+		if(NOT "${probe_output}${probe_error}" MATCHES "custom-no-raw-allocation" OR
+			NOT "${probe_output}${probe_error}" MATCHES "custom-no-c-style-cast" OR probe_status EQUAL 0)
+			message(FATAL_ERROR "Required custom AST checks are not working:\n${probe_output}${probe_error}")
+		endif()
 	endif()
 	# Reject silently ignored hardening macros, a different standard library,
 	# and externally disabled RTTI/exceptions before building module interfaces.
@@ -114,14 +121,20 @@ endfunction()
 function(stana_apply_safety target)
 	set_target_properties(${target} PROPERTIES
 		CXX_STANDARD 23 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO
-		CXX_SCAN_FOR_MODULES YES
-		CXX_CLANG_TIDY "${STANA_CLANG_TIDY};--experimental-custom-checks;--config-file=${PROJECT_SOURCE_DIR}/.clang-tidy")
+		CXX_SCAN_FOR_MODULES YES)
+	if(STANA_ENABLE_CHECKS)
+		set_target_properties(${target} PROPERTIES
+			CXX_CLANG_TIDY "${STANA_CLANG_TIDY};--experimental-custom-checks;--config-file=${PROJECT_SOURCE_DIR}/.clang-tidy")
+	endif()
 
 	if(APPLE)
- set_target_properties(${target} PROPERTIES OBJCXX_STANDARD 23 OBJCXX_STANDARD_REQUIRED YES
- OBJCXX_EXTENSIONS NO
- OBJCXX_CLANG_TIDY "${STANA_CLANG_TIDY};--experimental-custom-checks;--config-file=${PROJECT_SOURCE_DIR}/.clang-tidy")
-endif()
+		set_target_properties(${target} PROPERTIES
+			OBJCXX_STANDARD 23 OBJCXX_STANDARD_REQUIRED YES OBJCXX_EXTENSIONS NO)
+		if(STANA_ENABLE_CHECKS)
+			set_target_properties(${target} PROPERTIES
+				OBJCXX_CLANG_TIDY "${STANA_CLANG_TIDY};--experimental-custom-checks;--config-file=${PROJECT_SOURCE_DIR}/.clang-tidy")
+		endif()
+	endif()
 
 	set(warnings
 		-Wall -Wextra -Wpedantic -Werror -pedantic-errors
