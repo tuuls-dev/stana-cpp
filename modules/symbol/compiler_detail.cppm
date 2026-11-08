@@ -1887,9 +1887,12 @@ svgShape(std::string_view name, const Attributes &attributes, int limit, const C
 }
 
 [[nodiscard]] constexpr auto isIdentity(const AssetTransform &transform) noexcept -> bool {
-	return std::is_eq(transform.a <=> ScaleFactor{1}) && std::is_eq(transform.b <=> ScaleFactor{}) &&
-		std::is_eq(transform.c <=> ScaleFactor{}) && std::is_eq(transform.d <=> ScaleFactor{1}) &&
-		std::is_eq(transform.tx <=> AssetUnits{}) && std::is_eq(transform.ty <=> AssetUnits{});
+	constexpr double identityScale = 1;
+	constexpr double zero = 0;
+	return std::is_eq(transform.a.value() <=> identityScale) &&
+		std::is_eq(transform.b.value() <=> zero) && std::is_eq(transform.c.value() <=> zero) &&
+		std::is_eq(transform.d.value() <=> identityScale) &&
+		std::is_eq(transform.tx.value() <=> zero) && std::is_eq(transform.ty.value() <=> zero);
 }
 
 constexpr void requireMapped(
@@ -2132,7 +2135,9 @@ constexpr void requireCommandsMapped(
 	if (frame.name == "title" || frame.name == "desc") {
 		return {};
 	}
-	if (frame.name == "svg" && isIdentity(frame.transform) && std::is_eq(frame.opacity <=> Opacity{1})) {
+	constexpr double opaque = 1;
+	if (frame.name == "svg" && isIdentity(frame.transform) &&
+		std::is_eq(frame.opacity.value() <=> opaque)) {
 		return std::move(frame.children);
 	}
 	Element::Group group;

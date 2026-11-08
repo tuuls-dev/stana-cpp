@@ -17,12 +17,18 @@ auto main() -> int {
 	if (!attempt ||
 		tracker.reportPresented(
 			*attempt,
-			stana::rendering::TilePresentation{.tile = tiles.front(), .timestamp = 1}
+			stana::rendering::TilePresentation{
+				.tile = tiles.front(),
+				.timestamp = stana::PresentationTimePoint{stana::PresentationDuration{1}}
+			}
 		)) {
 		return 1;
 	}
 	stana::rendering::Drawing drawing;
-	drawing.fillRect({.size = {.width = 1, .height = 1}}, stana::Color::accent());
+	drawing.fillRect(
+		{.size = {.width = stana::Points{1}, .height = stana::Points{1}}},
+		stana::Color::accent()
+	);
 	const stana::reactive::Signal model{drawing};
 	const stana::ui::CPUCanvas canvas{.drawing = model, .appearance = {.clip = false}};
 	static_cast<void>(canvas);
@@ -45,14 +51,17 @@ auto main() -> int {
 	}
 	stana::rendering::GPUDrawing graphics{*program};
 	const std::vector<stana::rendering::BoxShadow> shadows{
-		{.offset = {.x = 0, .y = 6}, .blurRadius = 16, .color = stana::Color::rgb(0, 0, 0, 0.2)}
+		{.offset = {.x = stana::Points{0}, .y = stana::Points{6}},
+			.blurRadius = stana::Points{16},
+			.color = stana::Color::rgb(0, 0, 0, 0.2)}
 	};
-	const auto interpolated = stana::rendering::interpolateBoxShadows({}, shadows, 0.5);
+	const auto interpolated =
+		stana::rendering::interpolateBoxShadows({}, shadows, stana::Progress{0.5});
 	graphics.drawBoxShadows(
-		{.size = {.width = 120, .height = 60}},
+		{.size = {.width = stana::Points{120}, .height = stana::Points{60}}},
 		interpolated,
-		stana::CornerRadii::all(12),
-		stana::BorderWidths::all(2)
+		stana::CornerRadii::all(stana::Points{12}),
+		stana::BorderWidths::all(stana::Points{2})
 	);
 	const stana::reactive::Signal gpu{graphics};
 	stana::testing::TestHost host;
@@ -70,7 +79,7 @@ auto main() -> int {
 	}
 	const stana::application::Window positional{
 		std::string{"canvas"},
-		stana::Size{.width = 1, .height = 1},
+		stana::Size{.width = stana::Points{1}, .height = stana::Points{1}},
 		stana::ui::CPUCanvas{}
 	};
 	if (positional.renderingColorMode != stana::rendering::RenderingColorMode::automatic) {
