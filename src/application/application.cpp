@@ -29,6 +29,7 @@ import :rendering;
 import :reactive;
 #include "gpu_conversion.hpp"
 #include "scene_conversion.hpp"
+#include "window_session.hpp"
 
 namespace stana::application {
 namespace {
@@ -149,10 +150,30 @@ void installNativeTaskDispatcher() {
 	};
 }
 
-auto runWindows(const std::vector<WindowSession> &sessions) -> int {
+auto runWindows(std::vector<WindowSession> &sessions) -> int {
 	try {
+		if (!validateSessionIdentities(sessions)) {
+			std::cerr << "Stana: duplicate WindowId values in Application::run\n";
+			return 1;
+		}
+		if (!attachSessionRequestStreams(sessions)) {
+			std::cerr << "Stana: window request stream attachment failed\n";
+			return 1;
+		}
 		std::vector<stana::platform::detail::Window> windows;
-		for (const auto &session : sessions) {
+		std::vector<std::shared_ptr<WindowSessionRuntime>> runtimes;
+		runtimes.reserve(sessions.size());
+		for (auto &session : sessions) {
+			if (!session.configurationValid || !session.document) {
+				std::cerr << "Stana: window configuration validation failed\n";
+				return 1;
+			}
+			auto runtime = std::make_shared<WindowSessionRuntime>();
+			runtime->id = session.id;
+			runtime->options = &session.options;
+			runtime->events = session.events;
+			runtimes.push_back(runtime);
+
 			const auto sessionDocument = session.document;
 			sessionDocument->enablePresentationTracking();
 			sessionDocument->setTextMeasure(
@@ -192,251 +213,261 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 					stana::reactive::detail::ReactiveRuntime::current().flush();
 				}
 			};
-			windows.push_back(
-				{.title = session.title,
-					.width = session.size.width.value(),
-					.height = session.size.height.value(),
-					.colorMode = convertMode(session.renderingColorMode),
-					.gpuError = [weakDocument](stana::gpu::detail::Diagnostic diagnostic) -> void {
-						if (const auto owner = weakDocument.lock()) {
-							owner->queueGPUDiagnostic(
-								{.category = diagnosticCategory(diagnostic.category),
-									.message = std::move(diagnostic.message),
-									.instance =
-										{.document = diagnostic.document,
-											.serial = diagnostic.instance},
-									.programVersion = diagnostic.programVersion},
-								diagnostic.drawingVersion,
-								diagnostic.epoch
-							);
-							stana::reactive::detail::ReactiveRuntime::current().flush();
-						}
-					},
-					.scene = [weakDocument, conversion] -> stana::platform::detail::SceneResult {
-						if (const auto owner = weakDocument.lock()) {
-							const auto snapshot = owner->renderSnapshot();
-							if (snapshot) {
-								return conversion->convert(snapshot);
-							}
-						}
-						return std::unexpected("Window document closed");
-					},
-					.resize = [weakDocument](double width, double height) -> void {
-						const auto document = weakDocument.lock();
-						if (!document) {
-							return;
-						}
-						document->resize({.width = Points{width}, .height = Points{height}});
-					},
-					.appearance = [weakDocument](bool isDark) -> void {
-						const auto document = weakDocument.lock();
-						if (!document) {
-							return;
-						}
-						auto environment = document->environment();
-						const auto theme = isDark ? Theme::dark : Theme::light;
-						if (environment.theme == theme) {
-							return;
-						}
-						environment.theme = theme;
-						document->setEnvironment(environment);
-					},
-					.pointerDown = [weakDocument](double x, double y) -> void {
-						const auto document = weakDocument.lock();
-						if (!document) {
-							return;
-						}
-						document->pointerDown({.x = Points{x}, .y = Points{y}});
-					},
-					.pointerUp = [weakDocument](double x, double y) -> void {
-						const auto document = weakDocument.lock();
-						if (!document) {
-							return;
-						}
-						document->pointerUp({.x = Points{x}, .y = Points{y}});
-					},
-					.pointerMove = [weakDocument](double x, double y) -> void {
-						const auto document = weakDocument.lock();
-						if (!document) {
-							return;
-						}
-						document->pointerMove({.x = Points{x}, .y = Points{y}});
-					},
-					.pointerLeave = [weakDocument]() -> void {
-						const auto document = weakDocument.lock();
-						if (!document) {
-							return;
-						}
-						document->pointerLeave();
-					},
-					.scroll = [weakDocument](double x, double y, double delta) -> void {
-						const auto document = weakDocument.lock();
-						if (!document) {
-							return;
-						}
-						document->scroll({.x = Points{x}, .y = Points{y}}, Points{delta});
-					},
-					.key = [weakDocument](
-							   stana::platform::detail::KeyAction action,
-							   stana::platform::detail::KeyPhase phase
-						   ) -> void {
-						const auto document = weakDocument.lock();
-						if (!document) {
-							return;
-						}
-						using stana::document::Key;
-						using stana::platform::detail::KeyAction;
-						using stana::platform::detail::KeyPhase;
-						const bool released = phase == KeyPhase::up;
-						switch (action) {
-						case KeyAction::tabForward:
-							if (released) {
-								document->keyUp(Key::tab);
-							} else {
-								document->keyDown(Key::tab);
-							}
-							break;
-						case KeyAction::tabBackward:
-							if (released) {
-								document->keyUp(Key::tab, true);
-							} else {
-								document->keyDown(Key::tab, true);
-							}
-							break;
-						case KeyAction::space:
-							if (released) {
-								document->keyUp(Key::space);
-							} else {
-								document->keyDown(Key::space);
-							}
-							break;
-						case KeyAction::enter:
-							if (released) {
-								document->keyUp(Key::enter);
-							} else {
-								document->keyDown(Key::enter);
-							}
-							break;
-						}
-					},
-					.beginPresentation =
-						[weakDocument](const stana::platform::detail::PresentationRequest &request)
-						-> std::expected<stana::platform::detail::FrameIdentity, std::string> {
-						const auto owner = weakDocument.lock();
-						if (!owner) {
-							return std::unexpected("Window document closed");
-						}
-						std::vector<stana::rendering::TileId> tiles;
-						tiles.reserve(request.expectedTiles.size());
-						for (const auto tile : request.expectedTiles) {
-							tiles.push_back(stana::rendering::TileId{tile.value});
-						}
-						const auto attempt =
-							owner->beginPresentation(request.epoch, request.sceneRevision, tiles);
-						if (!attempt) {
-							return std::unexpected("Presentation admission failed");
-						}
-						return stana::platform::detail::FrameIdentity{
-							.epoch = attempt->epoch,
-							.sequence = attempt->sequence,
-							.sceneRevision = attempt->sceneRevision
-						};
-					},
-					.gpuCompleted = [weakDocument](
-										stana::platform::detail::FrameIdentity frame,
-										bool success
-									) -> bool {
-						const auto owner = weakDocument.lock();
-						return owner && owner->reportGPUCompletion(portableAttempt(frame), success);
-					},
-					.drawablePresented = [weakDocument](
-											 stana::platform::detail::FrameIdentity frame,
-											 stana::platform::detail::TilePresentation observation
-										 ) -> bool {
-						const auto owner = weakDocument.lock();
-						return owner &&
-							owner->reportPresentation(
-								portableAttempt(frame),
-								stana::rendering::TilePresentation{
-									.tile = stana::rendering::TileId{observation.tile.value},
-									.timestamp = PresentationTimePoint{
-										PresentationDuration{observation.timestamp}
-									}
-								}
-							);
-					},
-					.abandonPresentation =
-						[weakDocument](stana::platform::detail::FrameIdentity frame) -> void {
-						const auto document = weakDocument.lock();
-						if (!document) {
-							return;
-						}
-						document->abandonPresentation(portableAttempt(frame));
-					},
-					.resetPresentation = [weakDocument](std::uint64_t epoch) -> void {
-						const auto document = weakDocument.lock();
-						if (!document) {
-							return;
-						}
-						document->resetPresentation(epoch);
-					},
-					.holdPreparedGeometry = [weakDocument](std::uint64_t revision) -> void {
-						if (const auto owner = weakDocument.lock()) {
-							owner->holdPreparedGeometry(revision);
-						}
-					},
-					.gatePendingPresentation =
-						[weakDocument](stana::platform::detail::FrameIdentity frame) -> void {
-						if (const auto owner = weakDocument.lock()) {
-							owner->gatePendingPresentation(portableAttempt(frame));
-						}
-					},
-					.gateSurface = [weakDocument] -> void {
-						if (const auto owner = weakDocument.lock()) {
-							owner->gateSurface();
-						}
-					},
-					.close = [weakDocument] -> void {
-						const auto document = weakDocument.lock();
-						if (!document) {
-							return;
-						}
-						document->close();
-					},
-					.ready = [weakDocument](std::function<void()> invalidate) -> void {
-						const auto document = weakDocument.lock();
-						if (!document) {
-							return;
-						}
-						document->setOnPublish(std::move(invalidate));
-					},
-					.frame = [weakDocument](double timestamp, double deadline) -> void {
-						const auto document = weakDocument.lock();
-						if (!document) {
-							return;
-						}
-						document->tickFrames(
-							{.timestamp = FrameTimePoint{FrameDuration{timestamp}},
-								.targetTimestamp = FrameTimePoint{FrameDuration{deadline}}}
+			const auto initial = nativeConfigurationFromOptions(session.options);
+			stana::platform::detail::Window window{
+				.title = initial.title,
+				.width = initial.contentWidth,
+				.height = initial.contentHeight,
+				.configuration = initial,
+				.colorMode = convertMode(session.options.creation.renderingColorMode),
+				.gpuError = [weakDocument](stana::gpu::detail::Diagnostic diagnostic) -> void {
+					if (const auto owner = weakDocument.lock()) {
+						owner->queueGPUDiagnostic(
+							{.category = diagnosticCategory(diagnostic.category),
+								.message = std::move(diagnostic.message),
+								.instance =
+									{.document = diagnostic.document,
+										.serial = diagnostic.instance},
+								.programVersion = diagnostic.programVersion},
+							diagnostic.drawingVersion,
+							diagnostic.epoch
 						);
 						stana::reactive::detail::ReactiveRuntime::current().flush();
-						document->commit();
-					},
-					.hostVisible = [weakDocument](bool visible) -> void {
-						const auto document = weakDocument.lock();
-						if (!document) {
-							return;
+					}
+				},
+				.scene = [weakDocument, conversion] -> stana::platform::detail::SceneResult {
+					if (const auto owner = weakDocument.lock()) {
+						const auto snapshot = owner->renderSnapshot();
+						if (snapshot) {
+							return conversion->convert(snapshot);
 						}
-						document->setHostVisible(visible);
-						document->commit();
-					},
-					.animation = animation}
-			);
+					}
+					return std::unexpected("Window document closed");
+				},
+				.resize = [weakDocument](double width, double height) -> void {
+					const auto document = weakDocument.lock();
+					if (!document) {
+						return;
+					}
+					document->resize({.width = Points{width}, .height = Points{height}});
+				},
+				.appearance = [weakDocument](bool isDark) -> void {
+					const auto document = weakDocument.lock();
+					if (!document) {
+						return;
+					}
+					auto environment = document->environment();
+					const auto theme = isDark ? Theme::dark : Theme::light;
+					if (environment.theme == theme) {
+						return;
+					}
+					environment.theme = theme;
+					document->setEnvironment(environment);
+				},
+				.pointerDown = [weakDocument](double x, double y) -> void {
+					const auto document = weakDocument.lock();
+					if (!document) {
+						return;
+					}
+					document->pointerDown({.x = Points{x}, .y = Points{y}});
+				},
+				.pointerUp = [weakDocument](double x, double y) -> void {
+					const auto document = weakDocument.lock();
+					if (!document) {
+						return;
+					}
+					document->pointerUp({.x = Points{x}, .y = Points{y}});
+				},
+				.pointerMove = [weakDocument](double x, double y) -> void {
+					const auto document = weakDocument.lock();
+					if (!document) {
+						return;
+					}
+					document->pointerMove({.x = Points{x}, .y = Points{y}});
+				},
+				.pointerLeave = [weakDocument]() -> void {
+					const auto document = weakDocument.lock();
+					if (!document) {
+						return;
+					}
+					document->pointerLeave();
+				},
+				.scroll = [weakDocument](double x, double y, double delta) -> void {
+					const auto document = weakDocument.lock();
+					if (!document) {
+						return;
+					}
+					document->scroll({.x = Points{x}, .y = Points{y}}, Points{delta});
+				},
+				.key =
+					[weakDocument](
+						stana::platform::detail::KeyAction action,
+						stana::platform::detail::KeyPhase phase
+					) -> void {
+					const auto document = weakDocument.lock();
+					if (!document) {
+						return;
+					}
+					using stana::document::Key;
+					using stana::platform::detail::KeyAction;
+					using stana::platform::detail::KeyPhase;
+					const bool released = phase == KeyPhase::up;
+					switch (action) {
+					case KeyAction::tabForward:
+						if (released) {
+							document->keyUp(Key::tab);
+						} else {
+							document->keyDown(Key::tab);
+						}
+						break;
+					case KeyAction::tabBackward:
+						if (released) {
+							document->keyUp(Key::tab, true);
+						} else {
+							document->keyDown(Key::tab, true);
+						}
+						break;
+					case KeyAction::space:
+						if (released) {
+							document->keyUp(Key::space);
+						} else {
+							document->keyDown(Key::space);
+						}
+						break;
+					case KeyAction::enter:
+						if (released) {
+							document->keyUp(Key::enter);
+						} else {
+							document->keyDown(Key::enter);
+						}
+						break;
+					}
+				},
+				.beginPresentation =
+					[weakDocument](const stana::platform::detail::PresentationRequest &request)
+					-> std::expected<stana::platform::detail::FrameIdentity, std::string> {
+					const auto owner = weakDocument.lock();
+					if (!owner) {
+						return std::unexpected("Window document closed");
+					}
+					std::vector<stana::rendering::TileId> tiles;
+					tiles.reserve(request.expectedTiles.size());
+					for (const auto tile : request.expectedTiles) {
+						tiles.push_back(stana::rendering::TileId{tile.value});
+					}
+					const auto attempt =
+						owner->beginPresentation(request.epoch, request.sceneRevision, tiles);
+					if (!attempt) {
+						return std::unexpected("Presentation admission failed");
+					}
+					return stana::platform::detail::FrameIdentity{
+						.epoch = attempt->epoch,
+						.sequence = attempt->sequence,
+						.sceneRevision = attempt->sceneRevision
+					};
+				},
+				.gpuCompleted =
+					[weakDocument](stana::platform::detail::FrameIdentity frame, bool success)
+					-> bool {
+					const auto owner = weakDocument.lock();
+					return owner && owner->reportGPUCompletion(portableAttempt(frame), success);
+				},
+				.drawablePresented =
+					[weakDocument](
+						stana::platform::detail::FrameIdentity frame,
+						stana::platform::detail::TilePresentation observation
+					) -> bool {
+					const auto owner = weakDocument.lock();
+					return owner &&
+						owner->reportPresentation(
+							portableAttempt(frame),
+							stana::rendering::TilePresentation{
+								.tile = stana::rendering::TileId{observation.tile.value},
+								.timestamp = PresentationTimePoint{
+									PresentationDuration{observation.timestamp}
+								}
+							}
+						);
+				},
+				.abandonPresentation =
+					[weakDocument](stana::platform::detail::FrameIdentity frame) -> void {
+					const auto document = weakDocument.lock();
+					if (!document) {
+						return;
+					}
+					document->abandonPresentation(portableAttempt(frame));
+				},
+				.resetPresentation = [weakDocument](std::uint64_t epoch) -> void {
+					const auto document = weakDocument.lock();
+					if (!document) {
+						return;
+					}
+					document->resetPresentation(epoch);
+				},
+				.holdPreparedGeometry = [weakDocument](std::uint64_t revision) -> void {
+					if (const auto owner = weakDocument.lock()) {
+						owner->holdPreparedGeometry(revision);
+					}
+				},
+				.gatePendingPresentation =
+					[weakDocument](stana::platform::detail::FrameIdentity frame) -> void {
+					if (const auto owner = weakDocument.lock()) {
+						owner->gatePendingPresentation(portableAttempt(frame));
+					}
+				},
+				.gateSurface = [weakDocument] -> void {
+					if (const auto owner = weakDocument.lock()) {
+						owner->gateSurface();
+					}
+				},
+				.close = [weakDocument] -> void {
+					const auto document = weakDocument.lock();
+					if (!document) {
+						return;
+					}
+					document->close();
+				},
+				.ready = [weakDocument](std::function<void()> invalidate) -> void {
+					const auto document = weakDocument.lock();
+					if (!document) {
+						return;
+					}
+					document->setOnPublish(std::move(invalidate));
+				},
+				.frame = [weakDocument](double timestamp, double deadline) -> void {
+					const auto document = weakDocument.lock();
+					if (!document) {
+						return;
+					}
+					document->tickFrames(
+						{.timestamp = FrameTimePoint{FrameDuration{timestamp}},
+							.targetTimestamp = FrameTimePoint{FrameDuration{deadline}}}
+					);
+					stana::reactive::detail::ReactiveRuntime::current().flush();
+					document->commit();
+				},
+				.hostVisible = [weakDocument](bool visible) -> void {
+					const auto document = weakDocument.lock();
+					if (!document) {
+						return;
+					}
+					document->setHostVisible(visible);
+					document->commit();
+				},
+				.animation = animation
+			};
+			installSessionController(window, runtime);
+			windows.push_back(std::move(window));
 		}
 		const auto result = stana::platform::detail::run(windows);
 		stana::tasks::detail::TaskScheduler::current().dispatcher = {};
+		for (const auto &runtime : runtimes) {
+			teardownSessionRuntime(runtime);
+		}
 		for (const auto &session : sessions) {
-			session.document->close();
+			if (session.document) {
+				session.document->close();
+			}
 		}
 		if (!result) {
 			std::cerr << "Stana: " << result.error() << '\n';

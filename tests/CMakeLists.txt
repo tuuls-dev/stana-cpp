@@ -36,6 +36,11 @@ stana_apply_safety(stana-smoke)
 set_property(SOURCE smoke.cpp APPEND PROPERTY OBJECT_DEPENDS "${PROJECT_SOURCE_DIR}/.clang-tidy")
 add_test(NAME stana.smoke COMMAND stana-smoke)
 
+add_executable(stana-application-contracts application/contracts.cpp)
+target_link_libraries(stana-application-contracts PRIVATE stana::stana)
+stana_apply_safety(stana-application-contracts)
+add_test(NAME stana.application COMMAND stana-application-contracts)
+
 add_test(NAME stana.policy
 	COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/policy_test.py"
 		--root "${PROJECT_SOURCE_DIR}" --build "${PROJECT_BINARY_DIR}"

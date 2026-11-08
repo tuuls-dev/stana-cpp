@@ -125,8 +125,12 @@ struct WindowRequestResult {
 	WindowRequestPayload payload{};				 ///< Owned action-specific data when present.
 };
 
+class WindowRequestStream;
+
 namespace detail {
 struct WindowRequestChannel;
+[[nodiscard]] auto requestStreamChannel(const WindowRequestStream &stream)
+	-> std::shared_ptr<WindowRequestChannel>;
 } // namespace detail
 
 /// @brief Attachable handle for ordered discrete window actions.
@@ -146,6 +150,8 @@ class WindowRequestStream {
   private:
 	friend class WindowRequestSource;
 	friend struct detail::WindowRequestChannel;
+	friend auto detail::requestStreamChannel(const WindowRequestStream &stream)
+		-> std::shared_ptr<detail::WindowRequestChannel>;
 	explicit WindowRequestStream(std::shared_ptr<detail::WindowRequestChannel> channel)
 		: channel_(std::move(channel)) {}
 
@@ -179,6 +185,12 @@ class WindowRequestSource {
 
 namespace detail {
 
+/// @brief One accepted request waiting for the owning session to drain it.
+struct PendingWindowRequest {
+	WindowRequestId id{};				 ///< Identity returned by `emit`.
+	WindowAction action = CloseWindow{}; ///< Owned copy of the queued action.
+};
+
 /// @brief Shared request channel state implemented out of line.
 struct WindowRequestChannel {
 	WindowRequestChannel();
@@ -197,9 +209,23 @@ struct WindowRequestChannel {
 	/// @brief Marks the channel closed; further emissions fail with `windowClosed`.
 	void close();
 
+	/// @brief Moves queued requests out for ordered session dispatch.
+	[[nodiscard]] auto drain() -> std::vector<PendingWindowRequest>;
+
 	struct State;
 	std::unique_ptr<State> state;
 };
+
+/// @brief Returns the shared channel behind a stream handle, or empty when inert.
+[[nodiscard]] auto requestStreamChannel(const WindowRequestStream &stream)
+	-> std::shared_ptr<WindowRequestChannel>;
+
+/// @brief Attaches a stream's channel to one window session.
+[[nodiscard]] auto attachRequestStream(const WindowRequestStream &stream)
+	-> std::expected<void, WindowRequestError>;
+
+/// @brief Closes a stream's channel when present.
+void closeRequestStream(const WindowRequestStream &stream);
 
 /// @brief Validates a discrete action against structural contracts before queuing.
 [[nodiscard]] auto validateWindowAction(const WindowAction &action)

@@ -1,5 +1,7 @@
 module;
 
+#include "../platform/native_contracts.hpp"
+
 #include <cmath>
 #include <concepts>
 #include <cstdint>
@@ -72,6 +74,7 @@ struct WindowRequestChannel::State {
 	std::mutex mutex{};
 	bool attached = false;
 	bool closed = false;
+	std::vector<PendingWindowRequest> pending{};
 };
 
 WindowRequestChannel::WindowRequestChannel() : state(std::make_unique<State>()) {}
@@ -93,6 +96,14 @@ auto WindowRequestChannel::attach() -> std::expected<void, WindowRequestError> {
 void WindowRequestChannel::close() {
 	std::lock_guard lock(state->mutex);
 	state->closed = true;
+	state->pending.clear();
+}
+
+auto WindowRequestChannel::drain() -> std::vector<PendingWindowRequest> {
+	std::lock_guard lock(state->mutex);
+	std::vector<PendingWindowRequest> drained{};
+	drained.swap(state->pending);
+	return drained;
 }
 
 auto WindowRequestChannel::emit(WindowAction action)
@@ -107,7 +118,29 @@ auto WindowRequestChannel::emit(WindowAction action)
 	if (!state->attached) {
 		return std::unexpected(WindowRequestError::notAttached);
 	}
-	return WindowRequestId{.value = ::stana::detail::nextIdentity()};
+	const WindowRequestId id{.value = ::stana::detail::nextIdentity()};
+	state->pending.push_back(PendingWindowRequest{.id = id, .action = std::move(action)});
+	return id;
+}
+
+auto requestStreamChannel(const WindowRequestStream &stream)
+	-> std::shared_ptr<WindowRequestChannel> {
+	return stream.channel_;
+}
+
+auto attachRequestStream(const WindowRequestStream &stream)
+	-> std::expected<void, WindowRequestError> {
+	const auto channel = requestStreamChannel(stream);
+	if (!channel) {
+		return {};
+	}
+	return channel->attach();
+}
+
+void closeRequestStream(const WindowRequestStream &stream) {
+	if (const auto channel = requestStreamChannel(stream)) {
+		channel->close();
+	}
 }
 
 auto validateWindowAction(const WindowAction &action)
@@ -227,9 +260,28 @@ auto sampleConfiguration(WindowId id, const WindowOptions &options)
 } // namespace detail
 
 auto Application::screens() -> std::vector<Screen> {
-	// Native enumeration is supplied by the platform host; unsupported backends
-	// expose an empty list rather than inventing displays.
-	return {};
+	std::vector<Screen> result;
+	for (const auto &screen : ::stana::platform::detail::enumerateScreens()) {
+		result.push_back(
+			{.id = ScreenId{.value = screen.id},
+				.name = screen.name,
+				.bounds =
+					{.origin = {.x = Points{screen.bounds.origin.x}, .y = Points{screen.bounds.origin.y}},
+						.size =
+							{.width = Points{screen.bounds.size.width},
+								.height = Points{screen.bounds.size.height}}},
+				.workArea =
+					{.origin =
+							{.x = Points{screen.workArea.origin.x},
+								.y = Points{screen.workArea.origin.y}},
+						.size =
+							{.width = Points{screen.workArea.size.width},
+								.height = Points{screen.workArea.size.height}}},
+				.backingScale = ScaleFactor{screen.backingScale},
+				.isPrimary = screen.isPrimary}
+		);
+	}
+	return result;
 }
 
 } // namespace stana::application

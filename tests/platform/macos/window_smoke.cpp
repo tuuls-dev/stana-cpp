@@ -335,14 +335,26 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 		);
 	});
 	scenario->queue();
-	const int status = stana::application::detail::runWindows(
-		{{.title = primaryTitle,
-			 .size = {.width = stana::Points{initialWidth}, .height = stana::Points{initialHeight}},
-			 .document = scenario->document},
-			{.title = secondaryTitle,
-				.size = {.width = stana::Points{smallWidth}, .height = stana::Points{smallHeight}},
-				.document = scenario->otherDocument}}
-	);
+	std::vector<stana::application::detail::WindowSession> sessions(2);
+	sessions.at(0) = {
+		.options =
+			{.geometry =
+					{.contentSize =
+							{.width = stana::Points{initialWidth},
+								.height = stana::Points{initialHeight}}},
+				.appearance = {.title = primaryTitle}},
+		.document = scenario->document
+	};
+	sessions.at(1) = {
+		.options =
+			{.geometry =
+					{.contentSize =
+							{.width = stana::Points{smallWidth},
+								.height = stana::Points{smallHeight}}},
+				.appearance = {.title = secondaryTitle}},
+		.document = scenario->otherDocument
+	};
+	const int status = stana::application::detail::runWindows(sessions);
 	require(
 		scenario->document->snapshots().empty() && scenario->otherDocument->snapshots().empty(),
 		"closed documents cannot resurrect"

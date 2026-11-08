@@ -133,8 +133,6 @@ struct WorkerScenario : std::enable_shared_from_this<WorkerScenario> {
 	});
 	const auto code = stana::application::Application::run(
 		stana::application::Window{
-			.title = "Stana thread-safe writes",
-			.size = {.width = stana::Points{width}, .height = stana::Points{height}},
 			.content = stana::ui::Text{
 				.text = scenario->text,
 				.lifecycle = {.onMount = [scenario](const stana::document::NodeHandle &) -> void {
@@ -145,7 +143,12 @@ struct WorkerScenario : std::enable_shared_from_this<WorkerScenario> {
 					}
 					scenario->queue();
 				}}
-			}
+			},
+			.options =
+				{.geometry =
+						{.contentSize =
+								{.width = stana::Points{width}, .height = stana::Points{height}}},
+					.appearance = {.title = "Stana thread-safe writes"}}
 		}
 	);
 	scenario->worker.get();
@@ -158,8 +161,6 @@ struct WorkerScenario : std::enable_shared_from_this<WorkerScenario> {
 	const stana::reactive::Signal value{LivePayload{live, 0}};
 	const auto code = stana::application::Application::run(
 		stana::application::Window{
-			.title = "Stana queued shutdown",
-			.size = {.width = stana::Points{width}, .height = stana::Points{height}},
 			.content = stana::ui::Text{
 				.text = "shutdown",
 				.lifecycle = {
@@ -171,7 +172,12 @@ struct WorkerScenario : std::enable_shared_from_this<WorkerScenario> {
 						stana::application::Application::stop();
 					}
 				}
-			}
+			},
+			.options =
+				{.geometry =
+						{.contentSize =
+								{.width = stana::Points{width}, .height = stana::Points{height}}},
+					.appearance = {.title = "Stana queued shutdown"}}
 		}
 	);
 	require(code == 0, "native scenario 2 shutdown");
@@ -195,14 +201,17 @@ struct WorkerScenario : std::enable_shared_from_this<WorkerScenario> {
 	});
 	const auto code = stana::application::Application::run(
 		stana::application::Window{
-			.title = "Stana queued failure",
-			.size = {.width = stana::Points{width}, .height = stana::Points{height}},
 			.content = stana::ui::Text{
 				.text = "failure",
 				.lifecycle = {.onMount = [value](const stana::document::NodeHandle &) -> void {
 					value.setThreadSafe(1);
 				}}
-			}
+			},
+			.options =
+				{.geometry =
+						{.contentSize =
+								{.width = stana::Points{width}, .height = stana::Points{height}}},
+					.appearance = {.title = "Stana queued failure"}}
 		}
 	);
 	require(code != 0, "native scenario 3 contained apply exception");

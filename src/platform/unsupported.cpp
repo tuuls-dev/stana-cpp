@@ -12,6 +12,10 @@ auto diagnostics() -> std::vector<WindowStatistics> {
 	return {};
 }
 
+auto enumerateScreens() -> std::vector<NativeScreen> {
+	return {};
+}
+
 auto run(const std::vector<Window> &) -> std::expected<int, std::string> {
 	return std::unexpected("Native windows are currently implemented only on macOS 26+");
 }

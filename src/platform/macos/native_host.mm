@@ -1,4 +1,5 @@
 #include "presentation.hpp"
+#include "window_configuration.hpp"
 
 #import <AppKit/AppKit.h>
 #import <CoreGraphics/CoreGraphics.h>
@@ -11,6 +12,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <cmath>
 #include <compare>
 #include <cstddef>
@@ -31,8 +33,6 @@ namespace stana::platform::detail {
 void publishAppearance(const std::shared_ptr<WindowState> &state);
 
 namespace {
-constexpr double initialWindowOffset = 40;
-
 [[nodiscard]] auto stopRequested() -> std::atomic<bool> & {
 	static std::atomic<bool> requested{false};
 	return requested;
@@ -439,10 +439,48 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 @end
 @implementation STANAWindowDelegate
 
+- (BOOL)windowShouldClose:(NSWindow *)sender {
+	static_cast<void>(sender);
+	if (!state_ || state_->isClosed || !state_->callbacks.closeShouldProceed) {
+		return YES;
+	}
+	std::uint64_t requestId = 1;
+	if (state_->appliedConfiguration != nullptr) {
+		if (state_->appliedConfiguration->deferredCloseRequest != 0) {
+			requestId = state_->appliedConfiguration->deferredCloseRequest;
+		} else {
+			static std::atomic<std::uint64_t> nextCloseRequest{1};
+			requestId = nextCloseRequest.fetch_add(1, std::memory_order_relaxed);
+			state_->appliedConfiguration->deferredCloseRequest = requestId;
+		}
+	}
+	using stana::platform::detail::NativeCloseDecision;
+	switch (state_->callbacks.closeShouldProceed(requestId)) {
+	case NativeCloseDecision::allow:
+		if (state_->appliedConfiguration != nullptr) {
+			state_->appliedConfiguration->deferredCloseRequest = 0;
+		}
+		return YES;
+	case NativeCloseDecision::deny:
+		if (state_->appliedConfiguration != nullptr) {
+			state_->appliedConfiguration->deferredCloseRequest = 0;
+		}
+		return NO;
+	case NativeCloseDecision::defer:
+		return NO;
+	}
+	return YES;
+}
+
 - (void)windowDidBecomeKey:(NSNotification *)notification {
 	static_cast<void>(notification);
 	if (state_ && !state_->isClosed) {
 		stana::platform::detail::requestFrame(state_);
+		if (state_->callbacks.stateChanged) {
+			state_->callbacks.stateChanged(
+				stana::platform::detail::observeNativeWindow(notification.object)
+			);
+		}
 	}
 }
 
@@ -514,6 +552,11 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 @end
 
 namespace stana::platform::detail {
+
+auto enumerateScreens() -> std::vector<NativeScreen> {
+	return enumerateMacScreens();
+}
+
 auto diagnostics() -> std::vector<WindowStatistics> {
 	if (![NSThread isMainThread]) {
 		throw std::logic_error("Native diagnostics require the UI executor");
@@ -736,22 +779,22 @@ auto run(std::vector<Window> windows) -> std::expected<int, std::string> {
 				}
 			});
 
-			const NSRect frame = NSMakeRect(
-				initialWindowOffset,
-				initialWindowOffset,
-				state->callbacks.width,
-				state->callbacks.height
-			);
-			NSWindow *const window = [[NSWindow alloc]
-				initWithContentRect:frame
-						  styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
-				NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable
-							backing:NSBackingStoreBuffered
-							  defer:NO];
-			window.releasedWhenClosed = NO;
-			window.title = nativeString(state->callbacks.title);
+			WindowConfiguration configuration = state->callbacks.configuration;
+			if (configuration.contentWidth <= 0) {
+				configuration.contentWidth = state->callbacks.width;
+			}
+			if (configuration.contentHeight <= 0) {
+				configuration.contentHeight = state->callbacks.height;
+			}
+			if (configuration.title.empty()) {
+				configuration.title = state->callbacks.title;
+			}
+			NSWindow *const window = createConfiguredWindow(configuration);
+			state->nativeWindow = window;
+			state->appliedConfiguration->requested = configuration;
+			state->appliedConfiguration->hasApplied = true;
 			STANAView *const view = [[STANAView alloc]
-				initWithFrame:NSMakeRect(0, 0, frame.size.width, frame.size.height)];
+				initWithFrame:NSMakeRect(0, 0, configuration.contentWidth, configuration.contentHeight)];
 			view->state_ = state;
 			state->view = view;
 			view.wantsLayer = YES;
@@ -767,6 +810,12 @@ auto run(std::vector<Window> windows) -> std::expected<int, std::string> {
 					 object:nil];
 			[delegates addObject:delegate];
 			[nativeWindows addObject:window];
+			installWindowHostControl(
+				window,
+				state,
+				state->callbacks.hostControl,
+				state->appliedConfiguration
+			);
 			publishAppearance(state);
 			const auto weakState = std::weak_ptr{state};
 			state->callbacks.ready([weakState] -> void {
@@ -774,12 +823,23 @@ auto run(std::vector<Window> windows) -> std::expected<int, std::string> {
 					requestFrame(current);
 				}
 			});
-			[window center];
-			[window makeKeyAndOrderFront:nil];
+			if (configuration.isVisible) {
+				if (configuration.presentWithoutActivation || !configuration.acceptsFocus) {
+					[window orderFront:nil];
+				} else {
+					[window makeKeyAndOrderFront:nil];
+				}
+			}
 			[window makeFirstResponder:view];
 			installSurface(state);
 			[view installFrameLink];
 			requestFrame(state);
+			if (state->callbacks.configurationApplied) {
+				state->callbacks.configurationApplied();
+			}
+			if (state->callbacks.stateChanged) {
+				state->callbacks.stateChanged(observeNativeWindow(window));
+			}
 		}
 		if (windows.empty()) {
 			stopRequested().store(false, std::memory_order_release);

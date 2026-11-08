@@ -63,7 +63,7 @@ def main() -> None:
 			run(*configure, "-B", str(consumer_build))
 		run("cmake", "--build", str(consumer_build), "--parallel", "2")
 		run("ctest", "--test-dir", str(consumer_build), "--output-on-failure")
-		for target, name in (
+		rejects = [
 			("old-canvas", "Canvas"),
 			("native_shader", "metalSource"),
 			("native_library", "metalLibrary"),
@@ -72,7 +72,10 @@ def main() -> None:
 			("asset_point", "AssetPoint"),
 			("asset_transform", "AssetTransform"),
 			("frame_clock", "PresentationTimePoint"),
-		):
+		]
+		if sys.platform != "darwin":
+			rejects.append(("macos_window_options", "PlatformWindowOptions"))
+		for target, name in rejects:
 			rejected = subprocess.run(
 				["cmake", "--build", str(consumer_build), "--target", f"rejected-{target}"],
 				capture_output=True,

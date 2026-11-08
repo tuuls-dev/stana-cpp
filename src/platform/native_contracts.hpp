@@ -307,6 +307,121 @@ struct FrameIdentity {
 	std::uint64_t sceneRevision = 0; ///< Owning document's submitted scene revision.
 };
 
+/// @brief Portable role intent at the module-free native boundary.
+enum class NativeWindowRole : std::uint8_t { standard, dialog, utility, popup };
+
+/// @brief Placement mode; explicit uses originX/originY in Stana top-left y-down space.
+enum class NativePlacementKind : std::uint8_t { system, centered, explicitOrigin };
+
+/// @brief High-level native window state request/observation.
+enum class NativeWindowState : std::uint8_t { normal, minimized, maximized, fullscreen };
+
+/// @brief Portable stacking intent at the native boundary.
+enum class NativeWindowLevel : std::uint8_t { normal, floating };
+
+/// @brief Close-gate response; defer keeps the window open pending a later action.
+enum class NativeCloseDecision : std::uint8_t { allow, deny, defer };
+
+/// @brief Discrete native request kinds the host may attempt.
+enum class NativeWindowActionKind : std::uint8_t {
+	focus,
+	setState,
+	close,
+	beginInteractiveMove,
+	beginInteractiveResize,
+	showWindowMenu,
+	capture,
+	print,
+	respondDeferredClose
+};
+
+/// @brief Outcome classification mirrored from the portable window API.
+enum class NativeWindowOutcome : std::uint8_t {
+	applied,
+	pending,
+	adjusted,
+	unsupported,
+	invalid,
+	denied,
+	failed,
+	cancelled,
+	unconfirmed
+};
+
+/// @brief Chrome and interaction style flags applied at creation and on updates.
+struct NativeWindowStyle {
+	bool closable = true;
+	bool minimizable = true;
+	bool maximizable = true;
+	bool resizable = true;
+	bool titled = true; ///< False selects a borderless content surface.
+	bool fullscreens = true;
+};
+
+/// @brief Optional macOS-only extension snapshot; doubles/std only, no AppKit types.
+struct NativeMacosExtension {
+	bool present = false;
+	bool fullSizeContentView = false;
+	bool transparentTitleBar = false;
+	bool titleVisible = true;
+	bool hideTitleBarControls = false;
+	std::uint8_t tabbingMode = 0; ///< 0 automatic, 1 preferred, 2 disallowed.
+	std::optional<std::string> tabbingIdentifier{};
+	std::uint8_t spacesBehavior = 0;	 ///< 0 managed, 1 canJoinAllSpaces, 2 moveToActiveSpace.
+	std::uint8_t fullscreenBehavior = 0; ///< 0 primary, 1 auxiliary, 2 disallowed.
+	bool becomesKeyOnlyIfNeeded = false;
+	bool worksWhenModal = false;
+	bool floatingPanel = false;
+	std::uint8_t nativeLevel = 0; ///< Matches portable NativeWindowLevel extension enum order.
+};
+
+/// @brief Module-free configuration payload the host applies at creation and updates.
+struct WindowConfiguration {
+	double contentWidth = 800;
+	double contentHeight = 600;
+	std::string title{};
+	NativeWindowStyle style{};
+	double opacity = 1;
+	bool hasShadow = true;
+	bool isVisible = true;
+	bool acceptsFocus = true;
+	bool ignoresMouseEvents = false;
+	bool presentWithoutActivation = false;
+	std::optional<LogicalSize> minimumContentSize{};
+	std::optional<LogicalSize> maximumContentSize{};
+	std::optional<double> aspectRatio{};
+	std::optional<LogicalSize> resizeIncrement{};
+	NativePlacementKind placement = NativePlacementKind::centered;
+	double originX = 0; ///< Stana global top-left x when placement is explicit.
+	double originY = 0; ///< Stana global top-left y-down when placement is explicit.
+	NativeWindowLevel level = NativeWindowLevel::normal;
+	NativeWindowState state = NativeWindowState::normal;
+	NativeWindowRole role = NativeWindowRole::standard;
+	NativeMacosExtension macos{};
+};
+
+/// @brief Observed native window state delivered to the portable session.
+struct NativeWindowObservation {
+	double contentX = 0;
+	double contentY = 0;
+	double contentWidth = 0;
+	double contentHeight = 0;
+	std::uint64_t screenId = 0;
+	NativeWindowState state = NativeWindowState::normal;
+	bool isVisible = false;
+	bool isKey = false;
+	bool isActive = false;
+	double backingScale = 1;
+};
+
+/// @brief Host-populated control surface for runtime updates and discrete actions.
+struct WindowHostControl {
+	std::function<void(const WindowConfiguration &)> applyConfiguration{};
+	std::function<NativeWindowOutcome(NativeWindowActionKind, NativeWindowState, std::uint64_t)>
+		dispatchAction{};
+	std::function<NativeWindowObservation()> observe{};
+};
+
 /// @brief Callbacks installed by one C++ window session and invoked on the main thread.
 /// Native hosts own this value until closure. Callback captures must not borrow
 /// component descriptions, because descriptions are already destroyed after mounting.
@@ -314,6 +429,9 @@ struct Window {
 	std::string title{}; ///< Initial UTF-8 native title.
 	double width = 0;	 ///< Initial content width in logical points.
 	double height = 0;	 ///< Initial content height in logical points.
+	WindowConfiguration configuration{}; ///< Full creation/update configuration payload.
+	std::shared_ptr<WindowHostControl>
+		hostControl{}; ///< Filled by the host; portable code pushes updates through it.
 	stana::gpu::detail::ColorMode colorMode = stana::gpu::detail::ColorMode::automatic;
 	std::function<void(stana::gpu::detail::Diagnostic)> gpuError{};
 	std::function<SceneResult()> scene{};		  ///< Produces an owning current scene.
@@ -347,9 +465,27 @@ struct Window {
 		frame{}; ///< Display-link sample. Not called while the host is hidden.
 	std::function<void(bool visible)>
 		hostVisible{}; ///< Explicit visibility only; occlusion is not hiding.
+	std::function<void()> configurationApplied{}; ///< Fired after initial native apply succeeds.
+	std::function<NativeCloseDecision(std::uint64_t closeRequestId)>
+		closeShouldProceed{}; ///< Close gate; defer keeps the window open.
+	std::function<void(const NativeWindowObservation &)>
+		stateChanged{}; ///< Actual state observation from the host.
 	std::shared_ptr<AnimationGate>
 		animation{}; ///< Document demand writes it; the host wakes the link.
 };
+
+/// @brief Portable screen description at the module-free boundary.
+struct NativeScreen {
+	std::uint64_t id = 0;
+	std::string name{};
+	LogicalRect bounds{};
+	LogicalRect workArea{};
+	double backingScale = 1;
+	bool isPrimary = false;
+};
+
+/// @brief Enumerates attached displays; empty on unsupported backends.
+[[nodiscard]] auto enumerateScreens() -> std::vector<NativeScreen>;
 
 /// @brief Last-known native progress for one active host; no mutable native objects escape.
 struct WindowStatistics {

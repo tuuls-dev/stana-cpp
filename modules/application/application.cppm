@@ -55,27 +55,19 @@ namespace detail {
 /// @brief C++ composition-root state passed to the compiled native application adapter.
 ///
 /// The root component description is already mounted and is not retained here.
-/// Fields required by the current native host remain populated from resolved options
-/// until the host consumes the fuller configuration surface.
+/// Live `options` remain owned by the session so reactive updates can re-sample
+/// properties without reconstructing the declaration value.
 struct WindowSession {
 	WindowId id{}; ///< Portable identity correlating events and native attachments.
-	std::string title{}; ///< Owning title configuration for native construction.
-	Size size{};		 ///< Initial logical viewport matching document construction.
-	::stana::rendering::RenderingColorMode renderingColorMode =
-		::stana::rendering::RenderingColorMode::automatic; ///< Renderer color policy.
-	WindowRole role = StandardWindow{}; ///< Structural role resolved at prepare time.
-	WindowPlacement placement = CenteredPlacement{}; ///< Initial placement preference.
-	WindowControls controls{}; ///< Initial control affordances.
-	bool isResizable = true;   ///< Initial resize participation.
-	double opacity = 1.0;	   ///< Initial opacity in [0, 1].
-	WindowRequestStream requests{}; ///< Attached discrete request stream, if any.
-	WindowEvents events{};			///< Observation callbacks for this session.
+	WindowOptions options{}; ///< Live grouped configuration, including the request stream.
+	WindowEvents events{};	 ///< Observation callbacks for this session.
 	std::shared_ptr<::stana::document::detail::Document>
 		document{}; ///< Authoritative retained window state.
+	bool configurationValid = true; ///< False when prepare-time validation failed.
 };
 
 void installNativeTaskDispatcher();
-[[nodiscard]] auto runWindows(const std::vector<WindowSession> &sessions) -> int;
+[[nodiscard]] auto runWindows(std::vector<WindowSession> &sessions) -> int;
 
 class NativeExecutorSession {
   public:
@@ -115,6 +107,9 @@ class Application {
 		// vector instead. Same constraint as symbol path compilation.
 		std::vector<::stana::application::detail::WindowSession> sessions(1);
 		sessions.at(0) = prepare(window);
+		if (!sessions.at(0).configurationValid) {
+			return session.complete(1);
+		}
 		return session.complete(::stana::application::detail::runWindows(sessions));
 	}
 
@@ -134,6 +129,11 @@ class Application {
 			},
 			windows
 		);
+		for (const auto &prepared : sessions) {
+			if (!prepared.configurationValid) {
+				return session.complete(1);
+			}
+		}
 		return session.complete(::stana::application::detail::runWindows(sessions));
 	}
 
@@ -166,8 +166,18 @@ class Application {
 	template <::stana::ui::Component Content>
 	[[nodiscard]] static auto prepare(const Window<Content> &window) -> detail::WindowSession {
 		::stana::application::detail::installNativeTaskDispatcher();
-		const auto contentSize = window.options.geometry.contentSize.get();
-		const auto title = window.options.appearance.title.get();
+		const auto snapshot = detail::sampleConfiguration(window.id, window.options);
+		const auto validation = detail::validateConfiguration(snapshot);
+		if (!validation) {
+			return {
+				.id = window.id,
+				.options = window.options,
+				.events = window.events,
+				.document = {},
+				.configurationValid = false
+			};
+		}
+		const auto contentSize = snapshot.contentSize;
 		auto document = ::stana::document::detail::Document::create(contentSize);
 		::stana::reactive::Transaction::perform([&] -> void {
 			::stana::ui::MountContext context{.document = document, .parent = document->root()};
@@ -176,17 +186,10 @@ class Application {
 		});
 		return {
 			.id = window.id,
-			.title = title,
-			.size = contentSize,
-			.renderingColorMode = window.options.creation.renderingColorMode,
-			.role = window.options.creation.role,
-			.placement = window.options.geometry.placement.get(),
-			.controls = window.options.behavior.controls.get(),
-			.isResizable = window.options.behavior.isResizable.get(),
-			.opacity = window.options.appearance.opacity.get(),
-			.requests = window.options.requests,
+			.options = window.options,
 			.events = window.events,
-			.document = std::move(document)
+			.document = std::move(document),
+			.configurationValid = true
 		};
 	}
 };
