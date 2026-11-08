@@ -88,10 +88,7 @@ void compiledIconMatchesTheAuthoredPath() {
 	require(same(line.x.value(), lineEnd) && same(line.y.value(), moveY), "first line");
 	const auto &down = std::get<stana::symbol::MoveTo>(path.commands.at(2));
 	const auto &up = std::get<stana::symbol::LineTo>(path.commands.at(3));
-	require(
-		same(down.x.value(), verticalX) && same(down.y.value(), verticalStart),
-		"second move"
-	);
+	require(same(down.x.value(), verticalX) && same(down.y.value(), verticalStart), "second move");
 	require(same(up.x.value(), verticalX) && same(up.y.value(), lineEnd), "second line");
 }
 
@@ -224,10 +221,7 @@ void paintGrammarKeepsLiteralColors() {
 			same(hex->blue.value(), hexBlue),
 		"hex"
 	);
-	require(
-		same(green->green.value(), greenChannel) && same(green->red.value(), 0),
-		"green"
-	);
+	require(same(green->green.value(), greenChannel) && same(green->red.value(), 0), "green");
 	require(
 		same(rgb->red.value(), rgbRed) && same(rgb->green.value(), rgbGreen) &&
 			same(rgb->blue.value(), unit),
@@ -277,10 +271,7 @@ void normalizedArcKeepsTheSwiftCenter() {
 		R"(<svg viewBox="0 0 24 24"><path d="M0 0A1 1 0 0 1 10 0"/></svg>)">();
 	const auto &path = std::get<stana::symbol::Element::Path>(arc.elements().at(0).value);
 	const auto &curve = std::get<stana::symbol::ArcTo>(path.commands.at(1));
-	require(
-		same(curve.centerX.value(), arcCenter) && same(curve.centerY.value(), 0),
-		"arc center"
-	);
+	require(same(curve.centerX.value(), arcCenter) && same(curve.centerY.value(), 0), "arc center");
 	require(
 		same(curve.radiusX.value(), arcCenter) && same(curve.radiusY.value(), arcCenter),
 		"arc radii"

@@ -24,13 +24,13 @@ struct Points {
 	double value_ = 0;
 
 	constexpr Points() noexcept = default;
+
 	explicit constexpr Points(double value) noexcept : value_(value) {}
 
-	[[nodiscard]] constexpr auto value() const noexcept -> double {
-		return value_;
-	}
+	[[nodiscard]] constexpr auto value() const noexcept -> double { return value_; }
 
 	auto operator<=>(const Points &) const = default;
+
 	[[nodiscard]] constexpr auto operator==(const Points &other) const -> bool {
 		return std::is_eq(*this <=> other);
 	}
@@ -39,33 +39,42 @@ struct Points {
 [[nodiscard]] constexpr auto operator+(Points left, Points right) noexcept -> Points {
 	return Points{left.value() + right.value()};
 }
+
 [[nodiscard]] constexpr auto operator-(Points left, Points right) noexcept -> Points {
 	return Points{left.value() - right.value()};
 }
+
 [[nodiscard]] constexpr auto operator-(Points value) noexcept -> Points {
 	return Points{-value.value()};
 }
+
 [[nodiscard]] constexpr auto operator*(Points left, double right) noexcept -> Points {
 	return Points{left.value() * right};
 }
+
 [[nodiscard]] constexpr auto operator*(double left, Points right) noexcept -> Points {
 	return Points{left * right.value()};
 }
+
 [[nodiscard]] constexpr auto operator/(Points left, double right) noexcept -> Points {
 	return Points{left.value() / right};
 }
+
 constexpr auto operator+=(Points &left, Points right) noexcept -> Points & {
 	left = left + right;
 	return left;
 }
+
 constexpr auto operator-=(Points &left, Points right) noexcept -> Points & {
 	left = left - right;
 	return left;
 }
+
 constexpr auto operator*=(Points &left, double right) noexcept -> Points & {
 	left = left * right;
 	return left;
 }
+
 constexpr auto operator/=(Points &left, double right) noexcept -> Points & {
 	left = left / right;
 	return left;
@@ -78,13 +87,13 @@ struct Percentage {
 	double value_ = 0;
 
 	constexpr Percentage() noexcept = default;
+
 	explicit constexpr Percentage(double value) noexcept : value_(value) {}
 
-	[[nodiscard]] constexpr auto value() const noexcept -> double {
-		return value_;
-	}
+	[[nodiscard]] constexpr auto value() const noexcept -> double { return value_; }
 
 	auto operator<=>(const Percentage &) const = default;
+
 	[[nodiscard]] constexpr auto operator==(const Percentage &other) const -> bool {
 		return std::is_eq(*this <=> other);
 	}
@@ -97,11 +106,10 @@ struct Opacity {
 	double value_ = 1;
 
 	constexpr Opacity() noexcept = default;
+
 	explicit constexpr Opacity(double value) noexcept : value_(value) {}
 
-	[[nodiscard]] constexpr auto value() const noexcept -> double {
-		return value_;
-	}
+	[[nodiscard]] constexpr auto value() const noexcept -> double { return value_; }
 
 	/// @brief Builds opacity from a percentage of full opacity.
 	/// @param value Percentage where 100_pct is opaque. Values outside [0, 100]
@@ -115,6 +123,7 @@ struct Opacity {
 	}
 
 	auto operator<=>(const Opacity &) const = default;
+
 	[[nodiscard]] constexpr auto operator==(const Opacity &other) const -> bool {
 		return std::is_eq(*this <=> other);
 	}
@@ -126,11 +135,10 @@ struct Angle {
 	double radians_ = 0;
 
 	constexpr Angle() noexcept = default;
+
 	explicit constexpr Angle(double radians) noexcept : radians_(radians) {}
 
-	[[nodiscard]] constexpr auto radians() const noexcept -> double {
-		return radians_;
-	}
+	[[nodiscard]] constexpr auto radians() const noexcept -> double { return radians_; }
 
 	[[nodiscard]] constexpr auto degrees() const noexcept -> double {
 		constexpr double halfTurnDegrees = 180;
@@ -147,6 +155,7 @@ struct Angle {
 	}
 
 	auto operator<=>(const Angle &) const = default;
+
 	[[nodiscard]] constexpr auto operator==(const Angle &other) const -> bool {
 		return std::is_eq(*this <=> other);
 	}
@@ -155,15 +164,19 @@ struct Angle {
 [[nodiscard]] constexpr auto operator+(Angle left, Angle right) noexcept -> Angle {
 	return Angle{left.radians() + right.radians()};
 }
+
 [[nodiscard]] constexpr auto operator-(Angle left, Angle right) noexcept -> Angle {
 	return Angle{left.radians() - right.radians()};
 }
+
 [[nodiscard]] constexpr auto operator-(Angle value) noexcept -> Angle {
 	return Angle{-value.radians()};
 }
+
 [[nodiscard]] constexpr auto operator*(Angle left, double right) noexcept -> Angle {
 	return Angle{left.radians() * right};
 }
+
 [[nodiscard]] constexpr auto operator*(double left, Angle right) noexcept -> Angle {
 	return Angle{left * right.radians()};
 }
@@ -175,49 +188,55 @@ struct FontWeight {
 	double value_ = 0;
 
 	constexpr FontWeight() noexcept = default;
+
 	explicit constexpr FontWeight(double value) noexcept : value_(value) {}
 
-	[[nodiscard]] constexpr auto value() const noexcept -> double {
-		return value_;
-	}
+	[[nodiscard]] constexpr auto value() const noexcept -> double { return value_; }
 
 	[[nodiscard]] static constexpr auto thin() noexcept -> FontWeight {
 		constexpr double thinWeight = -0.8;
 		return FontWeight{thinWeight};
 	}
+
 	[[nodiscard]] static constexpr auto ultraLight() noexcept -> FontWeight {
 		constexpr double ultraLightWeight = -0.6;
 		return FontWeight{ultraLightWeight};
 	}
+
 	[[nodiscard]] static constexpr auto light() noexcept -> FontWeight {
 		constexpr double lightWeight = -0.4;
 		return FontWeight{lightWeight};
 	}
-	[[nodiscard]] static constexpr auto regular() noexcept -> FontWeight {
-		return FontWeight{0};
-	}
+
+	[[nodiscard]] static constexpr auto regular() noexcept -> FontWeight { return FontWeight{0}; }
+
 	[[nodiscard]] static constexpr auto medium() noexcept -> FontWeight {
 		constexpr double mediumWeight = 0.23;
 		return FontWeight{mediumWeight};
 	}
+
 	[[nodiscard]] static constexpr auto semibold() noexcept -> FontWeight {
 		constexpr double semiboldWeight = 0.3;
 		return FontWeight{semiboldWeight};
 	}
+
 	[[nodiscard]] static constexpr auto bold() noexcept -> FontWeight {
 		constexpr double boldWeight = 0.4;
 		return FontWeight{boldWeight};
 	}
+
 	[[nodiscard]] static constexpr auto heavy() noexcept -> FontWeight {
 		constexpr double heavyWeight = 0.56;
 		return FontWeight{heavyWeight};
 	}
+
 	[[nodiscard]] static constexpr auto black() noexcept -> FontWeight {
 		constexpr double blackWeight = 0.62;
 		return FontWeight{blackWeight};
 	}
 
 	auto operator<=>(const FontWeight &) const = default;
+
 	[[nodiscard]] constexpr auto operator==(const FontWeight &other) const -> bool {
 		return std::is_eq(*this <=> other);
 	}
@@ -228,13 +247,13 @@ struct Ratio {
 	double value_ = 0;
 
 	constexpr Ratio() noexcept = default;
+
 	explicit constexpr Ratio(double value) noexcept : value_(value) {}
 
-	[[nodiscard]] constexpr auto value() const noexcept -> double {
-		return value_;
-	}
+	[[nodiscard]] constexpr auto value() const noexcept -> double { return value_; }
 
 	auto operator<=>(const Ratio &) const = default;
+
 	[[nodiscard]] constexpr auto operator==(const Ratio &other) const -> bool {
 		return std::is_eq(*this <=> other);
 	}
@@ -249,13 +268,13 @@ struct ScaleFactor {
 	double value_ = 1;
 
 	constexpr ScaleFactor() noexcept = default;
+
 	explicit constexpr ScaleFactor(double value) noexcept : value_(value) {}
 
-	[[nodiscard]] constexpr auto value() const noexcept -> double {
-		return value_;
-	}
+	[[nodiscard]] constexpr auto value() const noexcept -> double { return value_; }
 
 	auto operator<=>(const ScaleFactor &) const = default;
+
 	[[nodiscard]] constexpr auto operator==(const ScaleFactor &other) const -> bool {
 		return std::is_eq(*this <=> other);
 	}
@@ -264,16 +283,21 @@ struct ScaleFactor {
 [[nodiscard]] constexpr auto operator*(Points left, ScaleFactor right) noexcept -> Points {
 	return Points{left.value() * right.value()};
 }
+
 [[nodiscard]] constexpr auto operator*(ScaleFactor left, Points right) noexcept -> Points {
 	return Points{left.value() * right.value()};
 }
+
 constexpr auto operator*=(Points &left, ScaleFactor right) noexcept -> Points & {
 	left = left * right;
 	return left;
 }
-[[nodiscard]] constexpr auto operator*(ScaleFactor left, ScaleFactor right) noexcept -> ScaleFactor {
+
+[[nodiscard]] constexpr auto operator*(ScaleFactor left, ScaleFactor right) noexcept
+	-> ScaleFactor {
 	return ScaleFactor{left.value() * right.value()};
 }
+
 constexpr auto operator*=(ScaleFactor &left, ScaleFactor right) noexcept -> ScaleFactor & {
 	left = left * right;
 	return left;
@@ -285,13 +309,13 @@ struct Progress {
 	double value_ = 0;
 
 	constexpr Progress() noexcept = default;
+
 	explicit constexpr Progress(double value) noexcept : value_(value) {}
 
-	[[nodiscard]] constexpr auto value() const noexcept -> double {
-		return value_;
-	}
+	[[nodiscard]] constexpr auto value() const noexcept -> double { return value_; }
 
 	auto operator<=>(const Progress &) const = default;
+
 	[[nodiscard]] constexpr auto operator==(const Progress &other) const -> bool {
 		return std::is_eq(*this <=> other);
 	}
@@ -303,13 +327,13 @@ struct SdrChannel {
 	double value_ = 0;
 
 	constexpr SdrChannel() noexcept = default;
+
 	explicit constexpr SdrChannel(double value) noexcept : value_(value) {}
 
-	[[nodiscard]] constexpr auto value() const noexcept -> double {
-		return value_;
-	}
+	[[nodiscard]] constexpr auto value() const noexcept -> double { return value_; }
 
 	auto operator<=>(const SdrChannel &) const = default;
+
 	[[nodiscard]] constexpr auto operator==(const SdrChannel &other) const -> bool {
 		return std::is_eq(*this <=> other);
 	}
@@ -320,13 +344,13 @@ struct LinearChannel {
 	double value_ = 0;
 
 	constexpr LinearChannel() noexcept = default;
+
 	explicit constexpr LinearChannel(double value) noexcept : value_(value) {}
 
-	[[nodiscard]] constexpr auto value() const noexcept -> double {
-		return value_;
-	}
+	[[nodiscard]] constexpr auto value() const noexcept -> double { return value_; }
 
 	auto operator<=>(const LinearChannel &) const = default;
+
 	[[nodiscard]] constexpr auto operator==(const LinearChannel &other) const -> bool {
 		return std::is_eq(*this <=> other);
 	}
@@ -338,13 +362,13 @@ struct PixelDistance {
 	double value_ = 0;
 
 	constexpr PixelDistance() noexcept = default;
+
 	explicit constexpr PixelDistance(double value) noexcept : value_(value) {}
 
-	[[nodiscard]] constexpr auto value() const noexcept -> double {
-		return value_;
-	}
+	[[nodiscard]] constexpr auto value() const noexcept -> double { return value_; }
 
 	auto operator<=>(const PixelDistance &) const = default;
+
 	[[nodiscard]] constexpr auto operator==(const PixelDistance &other) const -> bool {
 		return std::is_eq(*this <=> other);
 	}
@@ -355,13 +379,13 @@ struct PixelCount {
 	std::uint32_t value_ = 0;
 
 	constexpr PixelCount() noexcept = default;
+
 	explicit constexpr PixelCount(std::uint32_t value) noexcept : value_(value) {}
 
-	[[nodiscard]] constexpr auto value() const noexcept -> std::uint32_t {
-		return value_;
-	}
+	[[nodiscard]] constexpr auto value() const noexcept -> std::uint32_t { return value_; }
 
 	auto operator<=>(const PixelCount &) const = default;
+
 	[[nodiscard]] constexpr auto operator==(const PixelCount &other) const -> bool {
 		return std::is_eq(*this <=> other);
 	}
@@ -373,13 +397,13 @@ struct SourcePeak {
 	double value_ = defaultPeak;
 
 	constexpr SourcePeak() noexcept = default;
+
 	explicit constexpr SourcePeak(double value) noexcept : value_(value) {}
 
-	[[nodiscard]] constexpr auto value() const noexcept -> double {
-		return value_;
-	}
+	[[nodiscard]] constexpr auto value() const noexcept -> double { return value_; }
 
 	auto operator<=>(const SourcePeak &) const = default;
+
 	[[nodiscard]] constexpr auto operator==(const SourcePeak &other) const -> bool {
 		return std::is_eq(*this <=> other);
 	}
@@ -390,13 +414,13 @@ struct SamplingRadius {
 	double value_ = 0;
 
 	constexpr SamplingRadius() noexcept = default;
+
 	explicit constexpr SamplingRadius(double value) noexcept : value_(value) {}
 
-	[[nodiscard]] constexpr auto value() const noexcept -> double {
-		return value_;
-	}
+	[[nodiscard]] constexpr auto value() const noexcept -> double { return value_; }
 
 	auto operator<=>(const SamplingRadius &) const = default;
+
 	[[nodiscard]] constexpr auto operator==(const SamplingRadius &other) const -> bool {
 		return std::is_eq(*this <=> other);
 	}
@@ -407,13 +431,13 @@ struct BindingIndex {
 	std::uint32_t value_ = 0;
 
 	constexpr BindingIndex() noexcept = default;
+
 	explicit constexpr BindingIndex(std::uint32_t value) noexcept : value_(value) {}
 
-	[[nodiscard]] constexpr auto value() const noexcept -> std::uint32_t {
-		return value_;
-	}
+	[[nodiscard]] constexpr auto value() const noexcept -> std::uint32_t { return value_; }
 
 	auto operator<=>(const BindingIndex &) const = default;
+
 	[[nodiscard]] constexpr auto operator==(const BindingIndex &other) const -> bool {
 		return std::is_eq(*this <=> other);
 	}
@@ -428,9 +452,7 @@ struct FrameClock {
 	using time_point = std::chrono::time_point<FrameClock, duration>;
 	static constexpr bool is_steady = true;
 
-	[[nodiscard]] static auto now() noexcept -> time_point {
-		return time_point{};
-	}
+	[[nodiscard]] static auto now() noexcept -> time_point { return time_point{}; }
 };
 
 /// @brief Host presentation / compositor evidence clock. Distinct from FrameClock.
@@ -441,9 +463,7 @@ struct PresentationClock {
 	using time_point = std::chrono::time_point<PresentationClock, duration>;
 	static constexpr bool is_steady = true;
 
-	[[nodiscard]] static auto now() noexcept -> time_point {
-		return time_point{};
-	}
+	[[nodiscard]] static auto now() noexcept -> time_point { return time_point{}; }
 };
 
 using FrameTimePoint = FrameClock::time_point;
@@ -456,6 +476,7 @@ inline namespace literals {
 [[nodiscard]] constexpr auto operator""_pt(long double value) noexcept -> Points {
 	return Points{static_cast<double>(value)};
 }
+
 [[nodiscard]] constexpr auto operator""_pt(unsigned long long value) noexcept -> Points {
 	return Points{static_cast<double>(value)};
 }
@@ -463,6 +484,7 @@ inline namespace literals {
 [[nodiscard]] constexpr auto operator""_pct(long double value) noexcept -> Percentage {
 	return Percentage{static_cast<double>(value)};
 }
+
 [[nodiscard]] constexpr auto operator""_pct(unsigned long long value) noexcept -> Percentage {
 	return Percentage{static_cast<double>(value)};
 }
@@ -470,6 +492,7 @@ inline namespace literals {
 [[nodiscard]] constexpr auto operator""_rad(long double value) noexcept -> Angle {
 	return Angle::fromRadians(static_cast<double>(value));
 }
+
 [[nodiscard]] constexpr auto operator""_rad(unsigned long long value) noexcept -> Angle {
 	return Angle::fromRadians(static_cast<double>(value));
 }
@@ -477,6 +500,7 @@ inline namespace literals {
 [[nodiscard]] constexpr auto operator""_deg(long double value) noexcept -> Angle {
 	return Angle::fromDegrees(static_cast<double>(value));
 }
+
 [[nodiscard]] constexpr auto operator""_deg(unsigned long long value) noexcept -> Angle {
 	return Angle::fromDegrees(static_cast<double>(value));
 }

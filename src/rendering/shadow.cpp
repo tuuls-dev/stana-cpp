@@ -42,7 +42,10 @@ void validateRect(Rect bounds) {
 	const auto limit = [&](double extent, Points first, Points second) -> void {
 		const double largest = std::max(first.value(), second.value());
 		if (largest > 0) {
-			factor = std::min(factor, (extent / largest) / (first.value() / largest + second.value() / largest));
+			factor = std::min(
+				factor,
+				(extent / largest) / (first.value() / largest + second.value() / largest)
+			);
 		}
 	};
 	limit(contour.bounds.size.width.value(), r.at(0).width, r.at(1).width);
@@ -132,10 +135,8 @@ auto boxGeometry(Rect bounds, CornerRadii radii, BorderWidths widths, Direction 
 		}
 	};
 	outer = normalize(outer);
-	const double left = std::min(
-		bounds.size.width.value(),
-		(rtl ? widths.trailing : widths.leading).value()
-	);
+	const double left =
+		std::min(bounds.size.width.value(), (rtl ? widths.trailing : widths.leading).value());
 	const double right = std::min(
 		bounds.size.width.value() - left,
 		(rtl ? widths.leading : widths.trailing).value()
@@ -144,9 +145,7 @@ auto boxGeometry(Rect bounds, CornerRadii radii, BorderWidths widths, Direction 
 	const double bottom = std::min(bounds.size.height.value() - top, widths.bottom.value());
 	BoxContour padding{
 		.bounds =
-			{.origin =
-				 {.x = bounds.origin.x + Points{left},
-						.y = bounds.origin.y + Points{top}},
+			{.origin = {.x = bounds.origin.x + Points{left}, .y = bounds.origin.y + Points{top}},
 				.size =
 					{.width = Points{bounds.size.width.value() - left - right},
 						.height = Points{bounds.size.height.value() - top - bottom}}},
@@ -157,8 +156,7 @@ auto boxGeometry(Rect bounds, CornerRadii radii, BorderWidths widths, Direction 
 		radius.width = Points{
 			std::max(0.0, radius.width.value() - ((index == 0 || index == 3) ? left : right))
 		};
-		radius.height =
-			Points{std::max(0.0, radius.height.value() - (index < 2 ? top : bottom))};
+		radius.height = Points{std::max(0.0, radius.height.value() - (index < 2 ? top : bottom))};
 	}
 	return {.outer = outer, .padding = normalize(padding)};
 }
@@ -205,12 +203,8 @@ auto prepareBoxShadows(
 			ink.size.height += Points{2 * support};
 		}
 		validateRect(ink);
-		stana::detail::requireFinite(
-			caster.bounds.origin.x.value() + shadow.offset.x.value()
-		);
-		stana::detail::requireFinite(
-			caster.bounds.origin.y.value() + shadow.offset.y.value()
-		);
+		stana::detail::requireFinite(caster.bounds.origin.x.value() + shadow.offset.x.value());
+		stana::detail::requireFinite(caster.bounds.origin.y.value() + shadow.offset.y.value());
 		result.push_back(
 			{.clip = clip,
 				.caster = caster,
@@ -294,26 +288,25 @@ auto interpolateBoxShadows(
 		};
 		result.push_back(
 			{.offset =
-					{.x = Points{
-						 std::lerp(start.offset.x.value(), end.offset.x.value(), progressValue)
-					 },
-						.y = Points{
-						 std::lerp(start.offset.y.value(), end.offset.y.value(), progressValue)
-					 }},
-				.blurRadius = Points{
-					std::lerp(
-						start.blurRadius.value(),
-						end.blurRadius.value(),
-						progressValue
-					)
-				},
-				.spreadRadius = Points{
-					std::lerp(
-						start.spreadRadius.value(),
-						end.spreadRadius.value(),
-						progressValue
-					)
-				},
+					{.x = Points{std::lerp(
+						 start.offset.x.value(),
+						 end.offset.x.value(),
+						 progressValue
+					 )},
+						.y = Points{std::lerp(
+							start.offset.y.value(),
+							end.offset.y.value(),
+							progressValue
+						)}},
+				.blurRadius =
+					Points{
+						std::lerp(start.blurRadius.value(), end.blurRadius.value(), progressValue)
+					},
+				.spreadRadius = Points{std::lerp(
+					start.spreadRadius.value(),
+					end.spreadRadius.value(),
+					progressValue
+				)},
 				.color = Color::rgb(
 					channel(a.red.value(), b.red.value()),
 					channel(a.green.value(), b.green.value()),

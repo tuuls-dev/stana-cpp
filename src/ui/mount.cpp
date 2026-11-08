@@ -582,10 +582,8 @@ auto mount(const Symbol &description, stana::ui::MountContext &context)
 			return live != nullptr && live->scope.alive() && live->symbol &&
 				live->symbol->playbackState.needsFrame();
 		},
-		[weak, identity](
-			stana::document::detail::Document::FrameStamp,
-			FrameDuration elapsed
-		) -> void {
+		[weak, identity](stana::document::detail::Document::FrameStamp, FrameDuration elapsed)
+			-> void {
 			const auto document = weak.lock();
 			auto *live = document ? document->find(identity) : nullptr;
 			if (live == nullptr || !live->symbol) {

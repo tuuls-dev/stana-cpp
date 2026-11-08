@@ -20,11 +20,11 @@ export namespace stana::symbol {
 namespace detail {
 [[nodiscard]] constexpr auto toRect(AssetRect rect) noexcept -> Rect {
 	return {
-		.origin =
-			{.x = Points{rect.origin.x.value()}, .y = Points{rect.origin.y.value()}},
-		.size =
-			{.width = Points{rect.size.width.value()},
-				.height = Points{rect.size.height.value()}}
+		.origin = {.x = Points{rect.origin.x.value()}, .y = Points{rect.origin.y.value()}},
+		.size = {
+			.width = Points{rect.size.width.value()},
+			.height = Points{rect.size.height.value()}
+		}
 	};
 }
 
@@ -45,19 +45,20 @@ namespace detail {
 	return {
 		.origin = {.x = x, .y = y},
 		.size = {
-			.width = AssetUnits{
-				std::max(
-					left.origin.x.value() + left.size.width.value(),
-					right.origin.x.value() + right.size.width.value()
-				) -
+			.width =
+				AssetUnits{
+					std::max(
+						left.origin.x.value() + left.size.width.value(),
+						right.origin.x.value() + right.size.width.value()
+					) -
 					x.value()
-			},
+				},
 			.height = AssetUnits{
 				std::max(
 					left.origin.y.value() + left.size.height.value(),
 					right.origin.y.value() + right.size.height.value()
 				) -
-					y.value()
+				y.value()
 			}
 		}
 	};
@@ -67,17 +68,12 @@ namespace detail {
 /// @brief Centered square of side min(size, content width, content height).
 /// A zero side still reports the center of the content box. textScale is not an input.
 [[nodiscard]] inline auto square(Points size, Rect content) noexcept -> Rect {
-	const double side = std::min(
-		{size.value(), content.size.width.value(), content.size.height.value()}
-	);
+	const double side =
+		std::min({size.value(), content.size.width.value(), content.size.height.value()});
 	return {
 		.origin =
-			{.x = Points{
-				 content.origin.x.value() + (content.size.width.value() - side) / 2
-			 },
-				.y = Points{
-				 content.origin.y.value() + (content.size.height.value() - side) / 2
-			 }},
+			{.x = Points{content.origin.x.value() + (content.size.width.value() - side) / 2},
+				.y = Points{content.origin.y.value() + (content.size.height.value() - side) / 2}},
 		.size = {.width = Points{side}, .height = Points{side}}
 	};
 }
@@ -128,15 +124,10 @@ namespace detail {
 	}
 	const std::array<AssetPoint, 4> corners = {
 		transform.apply({.x = rect.origin.x, .y = rect.origin.y}),
+		transform.apply({.x = rect.origin.x + rect.size.width, .y = rect.origin.y}),
+		transform.apply({.x = rect.origin.x, .y = rect.origin.y + rect.size.height}),
 		transform.apply(
-			{.x = rect.origin.x + rect.size.width, .y = rect.origin.y}
-		),
-		transform.apply(
-			{.x = rect.origin.x, .y = rect.origin.y + rect.size.height}
-		),
-		transform.apply(
-			{.x = rect.origin.x + rect.size.width,
-				.y = rect.origin.y + rect.size.height}
+			{.x = rect.origin.x + rect.size.width, .y = rect.origin.y + rect.size.height}
 		)
 	};
 	double minX = corners.front().x.value();
@@ -188,9 +179,8 @@ namespace detail {
 			}
 			const bool hasFill =
 				!std::holds_alternative<NoPaint>(path.fill) && path.fillOpacity.value() > 0;
-			const AssetUnits width = strokeOverride
-				? AssetUnits{strokeOverride->value()}
-				: path.strokeWidth;
+			const AssetUnits width =
+				strokeOverride ? AssetUnits{strokeOverride->value()} : path.strokeWidth;
 			const bool hasStroke = !std::holds_alternative<NoPaint>(path.stroke) &&
 				path.strokeOpacity.value() > 0 && width.value() > 0;
 			if (!hasFill && !hasStroke) {
@@ -269,9 +259,10 @@ namespace detail {
 				parent.concatenating(path.transform),
 				AssetRect{
 					.origin = {.x = left, .y = top},
-					.size =
-						{.width = AssetUnits{right.value() - left.value()},
-							.height = AssetUnits{bottom.value() - top.value()}}
+					.size = {
+						.width = AssetUnits{right.value() - left.value()},
+						.height = AssetUnits{bottom.value() - top.value()}
+					}
 				}
 			);
 			if (!bounds) {
@@ -333,19 +324,12 @@ struct Presentation {
 		return std::nullopt;
 	}
 	const AssetRect box = asset.viewBox();
-	const double boxLongest =
-		std::max(box.size.width.value(), box.size.height.value());
-	const ScaleFactor fitScale{boxLongest > 0
-			? fitted.size.width.value() / boxLongest
-			: 0};
-	const Points centerX =
-		fitted.origin.x + Points{fitted.size.width.value() / 2};
-	const Points centerY =
-		fitted.origin.y + Points{fitted.size.height.value() / 2};
-	const AssetUnits boxCenterX =
-		AssetUnits{box.origin.x.value() + box.size.width.value() / 2};
-	const AssetUnits boxCenterY =
-		AssetUnits{box.origin.y.value() + box.size.height.value() / 2};
+	const double boxLongest = std::max(box.size.width.value(), box.size.height.value());
+	const ScaleFactor fitScale{boxLongest > 0 ? fitted.size.width.value() / boxLongest : 0};
+	const Points centerX = fitted.origin.x + Points{fitted.size.width.value() / 2};
+	const Points centerY = fitted.origin.y + Points{fitted.size.height.value() / 2};
+	const AssetUnits boxCenterX = AssetUnits{box.origin.x.value() + box.size.width.value() / 2};
+	const AssetUnits boxCenterY = AssetUnits{box.origin.y.value() + box.size.height.value() / 2};
 	const double mirror = asset.mirrorsInRTL() && direction == Direction::rightToLeft ? -1.0 : 1.0;
 	const double cosine =
 		std::cos(effect.rotation.radians()) * effect.scale.value() * fitScale.value();
@@ -360,7 +344,7 @@ struct Presentation {
 	};
 	const Points translateY{
 		centerY.value() + effect.verticalFraction.value() * fitted.size.height.value() -
-			sine * mirror * boxCenterX.value() - cosine * boxCenterY.value()
+		sine * mirror * boxCenterX.value() - cosine * boxCenterY.value()
 	};
 	const bool finite = std::isfinite(horizontal.value()) && std::isfinite(vertical.value()) &&
 		std::isfinite(skew.value()) && std::isfinite(verticalScale.value()) &&
@@ -372,7 +356,8 @@ struct Presentation {
 		.strokeWidth = strokeWidth,
 		.generation = generation,
 		.preparationLimited = limited,
-		.preparationScale = limited ? ScaleFactor{1} : ScaleFactor{fitScale.value() * effect.scale.value()}
+		.preparationScale =
+			limited ? ScaleFactor{1} : ScaleFactor{fitScale.value() * effect.scale.value()}
 	};
 	if (!limited) {
 		result.transform = {

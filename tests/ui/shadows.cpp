@@ -50,20 +50,15 @@ void retained() {
 	using Shadows = std::vector<rendering::BoxShadow>;
 	const reactive::Signal shadows{Shadows{
 		{.offset = {.x = Points{8}, .y = Points{6}}, .blurRadius = Points{12}},
-		{.offset = {.x = Points{-2}, .y = Points{1}},
-			.color = Color::accent(),
-			.isInset = true}
+		{.offset = {.x = Points{-2}, .y = Points{1}}, .color = Color::accent(), .isInset = true}
 	}};
 	const auto computedShadows = shadows.map([](const Shadows &value) -> Shadows {
 		return value;
 	});
 	const reactive::Signal foreground{Color::rgb(1, 0, 0)};
-	const reactive::Signal radii{
-		CornerRadii{
-			.topLeading =
-				{.width = Points{horizontalRadius}, .height = Points{verticalRadius}}
-		}
-	};
+	const reactive::Signal radii{CornerRadii{
+		.topLeading = {.width = Points{horizontalRadius}, .height = Points{verticalRadius}}
+	}};
 	const reactive::Signal widths{BorderWidths{.leading = Points{4}, .trailing = Points{8}}};
 	const reactive::Signal opacity{Opacity{1}};
 	const reactive::Signal visibility{Visibility::visible};

@@ -15,13 +15,13 @@ struct AssetUnits {
 	double value_ = 0;
 
 	constexpr AssetUnits() noexcept = default;
+
 	explicit constexpr AssetUnits(double value) noexcept : value_(value) {}
 
-	[[nodiscard]] constexpr auto value() const noexcept -> double {
-		return value_;
-	}
+	[[nodiscard]] constexpr auto value() const noexcept -> double { return value_; }
 
 	auto operator<=>(const AssetUnits &) const = default;
+
 	[[nodiscard]] constexpr auto operator==(const AssetUnits &other) const -> bool {
 		return std::is_eq(*this <=> other);
 	}
@@ -30,28 +30,36 @@ struct AssetUnits {
 [[nodiscard]] constexpr auto operator+(AssetUnits left, AssetUnits right) noexcept -> AssetUnits {
 	return AssetUnits{left.value() + right.value()};
 }
+
 [[nodiscard]] constexpr auto operator-(AssetUnits left, AssetUnits right) noexcept -> AssetUnits {
 	return AssetUnits{left.value() - right.value()};
 }
+
 [[nodiscard]] constexpr auto operator-(AssetUnits value) noexcept -> AssetUnits {
 	return AssetUnits{-value.value()};
 }
+
 [[nodiscard]] constexpr auto operator*(AssetUnits left, double right) noexcept -> AssetUnits {
 	return AssetUnits{left.value() * right};
 }
+
 [[nodiscard]] constexpr auto operator*(double left, AssetUnits right) noexcept -> AssetUnits {
 	return AssetUnits{left * right.value()};
 }
+
 [[nodiscard]] constexpr auto operator/(AssetUnits left, double right) noexcept -> AssetUnits {
 	return AssetUnits{left.value() / right};
 }
+
 [[nodiscard]] constexpr auto operator/(AssetUnits left, AssetUnits right) noexcept -> Ratio {
 	return Ratio{left.value() / right.value()};
 }
+
 constexpr auto operator+=(AssetUnits &left, AssetUnits right) noexcept -> AssetUnits & {
 	left = left + right;
 	return left;
 }
+
 constexpr auto operator-=(AssetUnits &left, AssetUnits right) noexcept -> AssetUnits & {
 	left = left - right;
 	return left;
@@ -62,6 +70,7 @@ struct AssetPoint {
 	AssetUnits x{};
 	AssetUnits y{};
 	auto operator<=>(const AssetPoint &) const = default;
+
 	[[nodiscard]] constexpr auto operator==(const AssetPoint &other) const -> bool {
 		return std::is_eq(*this <=> other);
 	}
@@ -72,6 +81,7 @@ struct AssetSize {
 	AssetUnits width{};
 	AssetUnits height{};
 	auto operator<=>(const AssetSize &) const = default;
+
 	[[nodiscard]] constexpr auto operator==(const AssetSize &other) const -> bool {
 		return std::is_eq(*this <=> other);
 	}
@@ -82,6 +92,7 @@ struct AssetRect {
 	AssetPoint origin{};
 	AssetSize size{};
 	auto operator<=>(const AssetRect &) const = default;
+
 	[[nodiscard]] constexpr auto operator==(const AssetRect &other) const -> bool {
 		return std::is_eq(*this <=> other);
 	}
@@ -97,9 +108,7 @@ struct AssetTransform {
 	AssetUnits tx{};
 	AssetUnits ty{};
 
-	[[nodiscard]] static constexpr auto identity() noexcept -> AssetTransform {
-		return {};
-	}
+	[[nodiscard]] static constexpr auto identity() noexcept -> AssetTransform { return {}; }
 
 	[[nodiscard]] static constexpr auto translation(AssetUnits x, AssetUnits y) noexcept
 		-> AssetTransform {
@@ -128,20 +137,18 @@ struct AssetTransform {
 			.b = ScaleFactor{b.value() * other.a.value() + d.value() * other.b.value()},
 			.c = ScaleFactor{a.value() * other.c.value() + c.value() * other.d.value()},
 			.d = ScaleFactor{b.value() * other.c.value() + d.value() * other.d.value()},
-			.tx = AssetUnits{
-				a.value() * other.tx.value() + c.value() * other.ty.value() + tx.value()
-			},
-			.ty = AssetUnits{
-				b.value() * other.tx.value() + d.value() * other.ty.value() + ty.value()
-			}
+			.tx =
+				AssetUnits{
+					a.value() * other.tx.value() + c.value() * other.ty.value() + tx.value()
+				},
+			.ty =
+				AssetUnits{b.value() * other.tx.value() + d.value() * other.ty.value() + ty.value()}
 		};
 	}
 
 	[[nodiscard]] constexpr auto apply(AssetPoint point) const noexcept -> AssetPoint {
 		return {
-			.x = AssetUnits{
-				a.value() * point.x.value() + c.value() * point.y.value() + tx.value()
-			},
+			.x = AssetUnits{a.value() * point.x.value() + c.value() * point.y.value() + tx.value()},
 			.y = AssetUnits{b.value() * point.x.value() + d.value() * point.y.value() + ty.value()}
 		};
 	}
@@ -182,6 +189,7 @@ struct AssetTransform {
 	}
 
 	auto operator<=>(const AssetTransform &) const = default;
+
 	[[nodiscard]] constexpr auto operator==(const AssetTransform &other) const -> bool {
 		return std::is_eq(*this <=> other);
 	}

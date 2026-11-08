@@ -75,10 +75,13 @@ void require(bool condition, const std::string &message) {
 		.origin =
 			stana::symbol::AssetPoint{
 				.x = stana::symbol::AssetUnits{viewOriginX},
-				.y = stana::symbol::AssetUnits{viewOriginY}},
+				.y = stana::symbol::AssetUnits{viewOriginY}
+			},
 		.size = stana::symbol::AssetSize{
 			.width = stana::symbol::AssetUnits{viewWidth},
-			.height = stana::symbol::AssetUnits{viewHeight}}};
+			.height = stana::symbol::AssetUnits{viewHeight}
+		}
+	};
 	return stana::symbol::Asset::compiled(
 		bridgeVersion,
 		viewBox,
@@ -121,8 +124,9 @@ void fittedSquareMatchesTheSwiftPlacement() {
 	const auto asset = icon(false);
 	const stana::Rect content{
 		.origin = stana::Point{.x = stana::Points{placedX}, .y = stana::Points{placedY}},
-		.size = stana::Size{
-			.width = stana::Points{placedWidth}, .height = stana::Points{placedHeight}}};
+		.size =
+			stana::Size{.width = stana::Points{placedWidth}, .height = stana::Points{placedHeight}}
+	};
 	const auto ink = stana::symbol::inkBounds(asset, std::nullopt);
 	const auto presentation = stana::symbol::presentationFor(
 		asset,
@@ -138,12 +142,10 @@ void fittedSquareMatchesTheSwiftPlacement() {
 	);
 	require(presentation.has_value(), "fitted artwork has a presentation");
 	const auto placed = presentation.value_or(stana::symbol::Presentation{});
-	const auto topLeft = placed.transform.apply(
-		{.x = stana::Points{viewOriginX}, .y = stana::Points{viewOriginY}}
-	);
+	const auto topLeft =
+		placed.transform.apply({.x = stana::Points{viewOriginX}, .y = stana::Points{viewOriginY}});
 	const auto bottomRight = placed.transform.apply(
-		{.x = stana::Points{viewWidth + viewOriginX},
-			.y = stana::Points{viewHeight + viewOriginY}}
+		{.x = stana::Points{viewWidth + viewOriginX}, .y = stana::Points{viewHeight + viewOriginY}}
 	);
 	require(
 		same(topLeft.x.value(), fittedTopLeftX) && same(topLeft.y.value(), fittedTopLeftY) &&
@@ -159,7 +161,8 @@ void measurementIgnoresTextScale() {
 	stana::testing::TestHost host{
 		stana::Size{
 			.width = stana::Points{placedWidth * textScale},
-			.height = stana::Points{placedHeight * textScale}},
+			.height = stana::Points{placedHeight * textScale}
+		},
 		environment
 	};
 	host.mount(
@@ -287,9 +290,7 @@ void rightToLeftMirrorsWhenRequested() {
 		stana::Size{.width = stana::Points{placedWidth}, .height = stana::Points{placedHeight}},
 		environment
 	};
-	host.mount(
-		stana::symbol::Symbol{.asset = icon(true), .size = stana::Points{symbolSize}}
-	);
+	host.mount(stana::symbol::Symbol{.asset = icon(true), .size = stana::Points{symbolSize}});
 	require(
 		requirePaint(host).transform.a.value() < 0.0,
 		"RTL mirror negates the horizontal scale"

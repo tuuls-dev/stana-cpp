@@ -33,7 +33,10 @@ auto mixedScene(bool extended) -> std::shared_ptr<const stana::platform::detail:
 			stana::rendering::ExtendedColor{2, 0, 0}
 		);
 	} else {
-		back.fillRect({.size = {.width = stana::Points{extent}, .height = stana::Points{extent}}}, stana::Color::rgb(1, 0, 0));
+		back.fillRect(
+			{.size = {.width = stana::Points{extent}, .height = stana::Points{extent}}},
+			stana::Color::rgb(1, 0, 0)
+		);
 		picture.fillRect(
 			{.size = {.width = stana::Points{extent}, .height = stana::Points{extent}}},
 			stana::Color::rgb(0, 1, 0, translucent)
@@ -45,7 +48,9 @@ auto mixedScene(bool extended) -> std::shared_ptr<const stana::platform::detail:
 		);
 	}
 	const stana::Frame fill{.width = stana::Length::fill(), .height = stana::Length::fill()};
-	auto document = stana::document::detail::Document::create({.width = stana::Points{extent}, .height = stana::Points{extent}});
+	auto document = stana::document::detail::Document::create(
+		{.width = stana::Points{extent}, .height = stana::Points{extent}}
+	);
 	stana::reactive::Transaction::perform([&] -> void {
 		stana::ui::MountContext context{.document = document, .parent = document->root()};
 		static_cast<void>(stana::ui::mount(
@@ -80,7 +85,8 @@ auto builtinScenes() -> std::vector<std::shared_ptr<const stana::platform::detai
 	constexpr double meshExtent = 80;
 	stana::rendering::GPUDrawing picture;
 	picture.fillRect(
-		{.origin = {.x = stana::Points{quarter}, .y = stana::Points{quarter}}, .size = {.width = stana::Points{rounded}, .height = stana::Points{rounded}}},
+		{.origin = {.x = stana::Points{quarter}, .y = stana::Points{quarter}},
+			.size = {.width = stana::Points{rounded}, .height = stana::Points{rounded}}},
 		stana::rendering::ExtendedColor{1, 0, 0},
 		radius
 	);
@@ -95,11 +101,15 @@ auto builtinScenes() -> std::vector<std::shared_ptr<const stana::platform::detai
 			.color = stana::rendering::ExtendedColor{1, 0, 0}
 		},
 		stana::rendering::GPUVertex{
-			.position = {.x = stana::Points{meshX + meshExtent} + quarter, .y = stana::Points{top + quarter}},
+			.position =
+				{.x = stana::Points{meshX + meshExtent} + quarter,
+					.y = stana::Points{top + quarter}},
 			.color = stana::rendering::ExtendedColor{0, 1, 0}
 		},
 		stana::rendering::GPUVertex{
-			.position = {.x = stana::Points{meshX + quarter}, .y = stana::Points{top + meshExtent} + quarter},
+			.position =
+				{.x = stana::Points{meshX + quarter},
+					.y = stana::Points{top + meshExtent} + quarter},
 			.color = stana::rendering::ExtendedColor{0, 0, 1}
 		}
 	};
@@ -126,7 +136,9 @@ auto builtinScenes() -> std::vector<std::shared_ptr<const stana::platform::detai
 	picture.strokePolyline(point, stana::rendering::ExtendedColor{0, 1, 1}, radius);
 	const stana::reactive::Signal model{picture};
 	const stana::Frame fill{.width = stana::Length::fill(), .height = stana::Length::fill()};
-	auto document = stana::document::detail::Document::create({.width = stana::Points{width}, .height = stana::Points{height}});
+	auto document = stana::document::detail::Document::create(
+		{.width = stana::Points{width}, .height = stana::Points{height}}
+	);
 	stana::reactive::Transaction::perform([&] -> void {
 		stana::ui::MountContext context{.document = document, .parent = document->root()};
 		static_cast<void>(stana::ui::mount(

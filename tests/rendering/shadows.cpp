@@ -84,8 +84,14 @@ void values() {
 		{.theme = Theme::dark}
 	);
 	require(dark.front().color == Color::white(), "omitted themed foreground");
-	near(interpolateBoxShadows(start, start, Progress{0}).front().offset.x.value(), -offsetMagnitude);
-	near(interpolateBoxShadows(start, start, Progress{1}).front().offset.x.value(), -offsetMagnitude);
+	near(
+		interpolateBoxShadows(start, start, Progress{0}).front().offset.x.value(),
+		-offsetMagnitude
+	);
+	near(
+		interpolateBoxShadows(start, start, Progress{1}).front().offset.x.value(),
+		-offsetMagnitude
+	);
 	for (const double progress :
 		{-1.0,
 			2.0,
@@ -221,7 +227,8 @@ void geometryAndValidation() {
 		}
 		require(rejected, "nonfinite geometry/invalid color rejected");
 	}
-	for (const CornerRadii corners : {CornerRadii::all(Points{-1}), CornerRadii::all(Points{nan})}) {
+	for (const CornerRadii corners :
+		{CornerRadii::all(Points{-1}), CornerRadii::all(Points{nan})}) {
 		bool rejected = false;
 		try {
 			static_cast<void>(rendering::detail::boxGeometry(bounds, corners));

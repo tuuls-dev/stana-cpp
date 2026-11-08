@@ -81,10 +81,9 @@ namespace stana::application::detail {
 		}
 	};
 	for (std::size_t index = 0; index < value.radii.size(); ++index) {
-		result.radii.at(index) = {
-			value.radii.at(index).width.value(),
-			value.radii.at(index).height.value()
-		};
+		result.radii.at(
+			index
+		) = {value.radii.at(index).width.value(), value.radii.at(index).height.value()};
 	}
 	return result;
 }
@@ -102,11 +101,12 @@ namespace stana::application::detail {
 				value.color.alpha.value()},
 		.blurRadius = value.blurRadius.value(),
 		.isInset = value.isInset,
-		.ink =
-			{value.ink.origin.x.value(),
-				value.ink.origin.y.value(),
-				value.ink.size.width.value(),
-				value.ink.size.height.value()}
+		.ink = {
+			value.ink.origin.x.value(),
+			value.ink.origin.y.value(),
+			value.ink.size.width.value(),
+			value.ink.size.height.value()
+		}
 	};
 }
 
@@ -365,9 +365,7 @@ struct GPUConversion {
 							};
 							line.points.reserve(input.points.size());
 							for (const auto point : input.points) {
-								line.points.push_back(
-									{.x = point.x.value(), .y = point.y.value()}
-								);
+								line.points.push_back({.x = point.x.value(), .y = point.y.value()});
 							}
 							return line;
 						} else {

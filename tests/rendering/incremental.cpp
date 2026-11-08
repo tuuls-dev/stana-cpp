@@ -236,9 +236,8 @@ void differential() {
 					host.setEnvironment(
 						{.direction = random() % 2 == 0 ? stana::Direction::leftToRight
 														: stana::Direction::rightToLeft,
-							.textScale = stana::ScaleFactor{
-								1 + value / static_cast<double>(scalarRange)
-							}}
+							.textScale =
+								stana::ScaleFactor{1 + value / static_cast<double>(scalarRange)}}
 					);
 					break;
 				case Edit::resize:
@@ -250,10 +249,7 @@ void differential() {
 				}
 			});
 			if (fixture == 1) {
-				host.scroll(
-					{.x = stana::Points{1}, .y = stana::Points{1}},
-					stana::Points{value}
-				);
+				host.scroll({.x = stana::Points{1}, .y = stana::Points{1}}, stana::Points{value});
 			}
 			const auto incremental = host.scene();
 			const auto nodes = host.nodes();
@@ -359,11 +355,9 @@ void providerSettlement() {
 	const auto weak = std::weak_ptr{document};
 	bool effectSawFinal = false;
 	document->setTextMeasure(
-		[text, weak, &effectSawFinal](
-			const std::string &value,
-			stana::Font,
-			stana::Points
-		) -> stana::Size {
+		[text,
+			weak,
+			&effectSawFinal](const std::string &value, stana::Font, stana::Points) -> stana::Size {
 			if (value == "middle") {
 				stana::reactive::detail::ReactiveRuntime::current().effects.emplace_back(
 					[weak, &effectSawFinal] -> void {
@@ -526,10 +520,12 @@ void owningCore() {
 		root = stana::rendering::detail::geometrySet(
 			root,
 			{.document = 1, .serial = serial},
-			{.bounds =
-					{.size =
-							{.width = stana::Points{static_cast<double>(serial)},
-								.height = stana::Points{1}}}}
+			{.bounds = {
+				 .size = {
+					 .width = stana::Points{static_cast<double>(serial)},
+					 .height = stana::Points{1}
+				 }
+			 }}
 		);
 	}
 	const auto immutable = root;

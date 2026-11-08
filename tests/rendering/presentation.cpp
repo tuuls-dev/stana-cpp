@@ -126,9 +126,7 @@ void inputUsesConfirmedGeometry() {
 	require(activations == 2, "unknown changed region blocks actions");
 	host.reportGPUCompletion(shifted, true);
 	host.reportPresentation(shifted, at(2));
-	host.click(
-		{.x = stana::Points{shiftedPadding + 1}, .y = stana::Points{shiftedPadding + 1}}
-	);
+	host.click({.x = stana::Points{shiftedPadding + 1}, .y = stana::Points{shiftedPadding + 1}});
 	constexpr int expectedActivations = 3;
 	require(activations == expectedActivations, "newly confirmed location accepts input");
 }

@@ -43,8 +43,8 @@ struct PaintCommand {
 	Color color{}; ///< Fill, outline, line or text color, including opacity.
 	Points cornerRadius{}; ///< Rectangle/clip rounding radius in logical points.
 	Points lineWidth{1};   ///< Outline or segment thickness in logical points.
-	std::string text{};		 ///< Owned display text; used only for PaintKind::text.
-	Font font{};			 ///< System-font request; used only for PaintKind::text.
+	std::string text{};	   ///< Owned display text; used only for PaintKind::text.
+	Font font{};		   ///< System-font request; used only for PaintKind::text.
 	std::optional<detail::BoxGeometry>
 		boxGeometry{};							 ///< Opt-in physical fill/border/clip contours.
 	std::optional<detail::ShadowPaint> shadow{}; ///< Owning immutable built-in GPU operation.
@@ -65,23 +65,15 @@ struct Drawing {
 	void validate() const;
 	[[nodiscard]] auto operator==(const Drawing &) const -> bool = default;
 	void fillRect(Rect bounds, Color color, Points cornerRadius = Points{});
-	void strokeRect(
-		Rect bounds,
-		Color color,
-		Points width = Points{1},
-		Points cornerRadius = Points{}
-	);
+	void
+	strokeRect(Rect bounds, Color color, Points width = Points{1}, Points cornerRadius = Points{});
 
 	void fill(Rect bounds, Color color, Points cornerRadius = Points{}) {
 		fillRect(bounds, color, cornerRadius);
 	}
 
-	void stroke(
-		Rect bounds,
-		Color color,
-		Points width = Points{1},
-		Points cornerRadius = Points{}
-	) {
+	void
+	stroke(Rect bounds, Color color, Points width = Points{1}, Points cornerRadius = Points{}) {
 		strokeRect(bounds, color, width, cornerRadius);
 	}
 };

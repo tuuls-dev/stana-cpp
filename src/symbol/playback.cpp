@@ -119,8 +119,7 @@ auto PlaybackState::sample() const -> EffectSample {
 auto PlaybackState::sample(Effect effect, Progress phase) -> EffectSample {
 	const bool settled =
 		std::is_eq(phase.value() <=> 0.0) || std::is_eq(phase.value() <=> settledPhase.value());
-	const double wave =
-		settled ? 0.0 : std::pow(std::sin(std::numbers::pi * phase.value()), 2);
+	const double wave = settled ? 0.0 : std::pow(std::sin(std::numbers::pi * phase.value()), 2);
 	switch (effect) {
 	case Effect::rotate:
 		return {

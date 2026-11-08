@@ -415,12 +415,8 @@ struct Budget {
 inline constexpr void
 validateElements(std::vector<Element> &elements, int depth, AssetTransform parent, Budget &budget);
 
-inline constexpr void validateElements(
-	std::vector<Element> &elements,
-	int depth,
-	AssetTransform parent,
-	Budget &budget
-) {
+inline constexpr void
+validateElements(std::vector<Element> &elements, int depth, AssetTransform parent, Budget &budget) {
 	if (elements.empty()) {
 		return;
 	}
@@ -553,7 +549,7 @@ constexpr auto Asset::compiled(
 	viewBox = {
 		.origin =
 			{.x = detail::normalizedUnits(viewBox.origin.x),
-			 .y = detail::normalizedUnits(viewBox.origin.y)},
+				.y = detail::normalizedUnits(viewBox.origin.y)},
 		.size = {
 			.width = detail::normalizedUnits(viewBox.size.width),
 			.height = detail::normalizedUnits(viewBox.size.height)

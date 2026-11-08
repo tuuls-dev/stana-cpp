@@ -38,9 +38,7 @@ void validateCommand(const PaintCommand &command) {
 	case strokeRect:
 	case line: {
 		stana::detail::requireNonnegative(command.lineWidth);
-		stana::detail::requireFinite(
-			std::abs(rect.size.width.value()) + command.lineWidth.value()
-		);
+		stana::detail::requireFinite(std::abs(rect.size.width.value()) + command.lineWidth.value());
 		stana::detail::requireFinite(
 			std::abs(rect.size.height.value()) + command.lineWidth.value()
 		);
@@ -71,12 +69,11 @@ void validateCommand(const PaintCommand &command) {
 		stana::detail::requireFinite(command.font.weight.value());
 	}
 	if (command.kind != pushClip) {
-		for (const double component : {
-				 command.color.red.value(),
-				 command.color.green.value(),
-				 command.color.blue.value(),
-				 command.color.alpha.value()
-			 }) {
+		for (const double component :
+			{command.color.red.value(),
+				command.color.green.value(),
+				command.color.blue.value(),
+				command.color.alpha.value()}) {
 			stana::detail::requireNonnegative(component);
 			if (component > 1) {
 				throw std::invalid_argument("Drawing SDR color exceeds one");

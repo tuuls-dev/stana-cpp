@@ -121,12 +121,8 @@ class GPUDrawing {
 		BorderWidths borderWidths = {}
 	);
 	void drawMesh(GPUMesh);
-	void strokePolyline(
-		std::span<const Point>,
-		Color,
-		Points width = Points{1},
-		bool closed = false
-	);
+	void
+	strokePolyline(std::span<const Point>, Color, Points width = Points{1}, bool closed = false);
 	void strokePolyline(
 		std::span<const Point>,
 		ExtendedColor,

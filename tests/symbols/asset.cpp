@@ -61,10 +61,13 @@ void require(bool condition, const std::string &message) {
 		.origin =
 			stana::symbol::AssetPoint{
 				.x = stana::symbol::AssetUnits{viewOriginX},
-				.y = stana::symbol::AssetUnits{viewOriginY}},
+				.y = stana::symbol::AssetUnits{viewOriginY}
+			},
 		.size = stana::symbol::AssetSize{
 			.width = stana::symbol::AssetUnits{viewWidth},
-			.height = stana::symbol::AssetUnits{viewHeight}}};
+			.height = stana::symbol::AssetUnits{viewHeight}
+		}
+	};
 	return stana::symbol::Asset::compiled(bridgeVersion, viewBox, false, {Element{.value = path}});
 }
 
@@ -78,7 +81,10 @@ void compiledArtworkNormalizesAndRejectsBudgets() {
 	try {
 		const stana::symbol::AssetRect tiny{
 			.size = stana::symbol::AssetSize{
-				.width = stana::symbol::AssetUnits{1}, .height = stana::symbol::AssetUnits{1}}};
+				.width = stana::symbol::AssetUnits{1},
+				.height = stana::symbol::AssetUnits{1}
+			}
+		};
 		static_cast<void>(stana::symbol::Asset::compiled(rejectedBridgeVersion, tiny, false, {}));
 	} catch (const std::invalid_argument &) {
 		rejected = true;
@@ -89,7 +95,10 @@ void compiledArtworkNormalizesAndRejectsBudgets() {
 void squareAndPlaybackMatchTheSwiftContract() {
 	const stana::Rect content{
 		.size = stana::Size{
-			.width = stana::Points{contentWidth}, .height = stana::Points{contentHeight}}};
+			.width = stana::Points{contentWidth},
+			.height = stana::Points{contentHeight}
+		}
+	};
 	const auto fitted = stana::symbol::square(stana::Points{fittedSide}, content);
 	require(
 		same(fitted.size.width.value(), fittedSide) &&
@@ -113,14 +122,17 @@ void squareAndPlaybackMatchTheSwiftContract() {
 		sample.rotation.radians() > 0.0 && same(sample.scale.value(), 1.0),
 		"rotate advances after the reset frame"
 	);
-	const auto transform =
-		stana::AffineTransform::translation(stana::Points{translationX}, stana::Points{translationY})
-			.concatenating(stana::AffineTransform::scale(
-				stana::ScaleFactor{scaleX},
-				stana::ScaleFactor{scaleY}
-			));
-	const auto point =
-		transform.apply({.x = stana::Points{sampleX}, .y = stana::Points{sampleY}});
+	const auto transform = stana::AffineTransform::translation(
+		stana::Points{translationX},
+		stana::Points{translationY}
+	)
+							   .concatenating(
+								   stana::AffineTransform::scale(
+									   stana::ScaleFactor{scaleX},
+									   stana::ScaleFactor{scaleY}
+								   )
+							   );
+	const auto point = transform.apply({.x = stana::Points{sampleX}, .y = stana::Points{sampleY}});
 	require(
 		same(point.x.value(), mappedX) && same(point.y.value(), mappedY),
 		"concatenating applies scale first"

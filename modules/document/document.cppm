@@ -441,8 +441,8 @@ struct Node {
 		cornerRadii{}; ///< Opt-in outer contour; scalar fallback is preserved.
 	std::optional<BorderWidths> borderWidths{}; ///< Opt-in inward edges; never layout insets.
 	std::vector<::stana::rendering::BoxShadow> boxShadows{}; ///< Local, non-inherited paint layers.
-	Opacity opacity{1}; ///< Local alpha multiplied into descendant paint opacity.
-	Points spacing{};	///< Gap used by sequential child layout.
+	Opacity opacity{1};	   ///< Local alpha multiplied into descendant paint opacity.
+	Points spacing{};	   ///< Gap used by sequential child layout.
 	Points scrollOffset{}; ///< Retained vertical viewport displacement, clamped during arrangement.
 	Alignment alignment =
 		Alignment::leading; ///< Logical horizontal placement policy for child content.
@@ -554,8 +554,7 @@ class Document : public std::enable_shared_from_this<Document> {
 	[[nodiscard]] auto
 	reportGPUCompletion(::stana::rendering::PresentationAttempt attempt, bool success) -> bool;
 	/// @brief Joins finite positive display evidence; stale feedback cannot gate current input.
-	[[nodiscard]] auto
-	reportPresentation(
+	[[nodiscard]] auto reportPresentation(
 		::stana::rendering::PresentationAttempt attempt,
 		PresentationTimePoint timestamp
 	) -> bool;

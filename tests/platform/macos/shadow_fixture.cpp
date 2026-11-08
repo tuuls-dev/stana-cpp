@@ -43,7 +43,12 @@ auto shadowScenes(ShadowSceneKind kind)
 		.topTrailing = {.width = stana::Points{8}, .height = stana::Points{24}},
 		.bottomTrailing = {.width = stana::Points{40}, .height = stana::Points{12}}
 	};
-	const stana::BorderWidths edges{.top = stana::Points{3}, .leading = stana::Points{7}, .bottom = stana::Points{9}, .trailing = stana::Points{2}};
+	const stana::BorderWidths edges{
+		.top = stana::Points{3},
+		.leading = stana::Points{7},
+		.bottom = stana::Points{9},
+		.trailing = stana::Points{2}
+	};
 	const Shadows outer{
 		{.offset = {.x = stana::Points{8}, .y = stana::Points{6}},
 			.blurRadius = stana::Points{changedTop},
@@ -51,7 +56,9 @@ auto shadowScenes(ShadowSceneKind kind)
 			.color = stana::Color::rgb(0, 0, 0, shadowOpacity)}
 	};
 	const stana::reactive::Signal shadows{outer};
-	const stana::reactive::Signal padding{stana::Insets{.top = stana::Points{insetY}, .leading = stana::Points{insetX}}};
+	const stana::reactive::Signal padding{
+		stana::Insets{.top = stana::Points{insetY}, .leading = stana::Points{insetX}}
+	};
 	const stana::reactive::Signal width{stana::Frame{
 		.width = stana::Length::points(stana::Points{boxWidth}),
 		.height = stana::Length::points(stana::Points{boxHeight})
@@ -70,10 +77,13 @@ auto shadowScenes(ShadowSceneKind kind)
 		);
 		return drawing;
 	};
-	const stana::CornerRadii ancestorCorners{.topLeading = {.width = stana::Points{400}, .height = stana::Points{150}}};
+	const stana::CornerRadii ancestorCorners{
+		.topLeading = {.width = stana::Points{400}, .height = stana::Points{150}}
+	};
 	stana::rendering::GPUDrawing markings;
 	markings.fillRect(
-		{.origin = {.x = stana::Points{markingX}, .y = stana::Points{0}}, .size = {.width = stana::Points{markingWidth}, .height = stana::Points{boxHeight}}},
+		{.origin = {.x = stana::Points{markingX}, .y = stana::Points{0}},
+			.size = {.width = stana::Points{markingWidth}, .height = stana::Points{boxHeight}}},
 		stana::Color::rgb(0, 0, 1, shadowOpacity)
 	);
 	const stana::reactive::Signal drawing{drawingFor(outer)};

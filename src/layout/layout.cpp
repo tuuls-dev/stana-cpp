@@ -100,10 +100,9 @@ auto Document::measure(NodeId identity, Size available) -> Size {
 			0.0,
 			available.width.value() - padding.leading.value() - padding.trailing.value()
 		)},
-		.height = Points{std::max(
-			0.0,
-			available.height.value() - padding.top.value() - padding.bottom.value()
-		)}
+		.height = Points{
+			std::max(0.0, available.height.value() - padding.top.value() - padding.bottom.value())
+		}
 	};
 	Size intrinsic;
 	if (node->kind == NodeKind::text || node->kind == NodeKind::button ||

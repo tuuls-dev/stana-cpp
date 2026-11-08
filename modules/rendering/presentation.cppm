@@ -106,8 +106,8 @@ class PresentationTracker {
 	}
 
 	/// @brief Supplies the native drawable's timestamp; zero means unconfirmed/dropped.
-	[[nodiscard]] auto
-	reportPresented(PresentationAttempt attempt, PresentationTimePoint timestamp) -> bool {
+	[[nodiscard]] auto reportPresented(PresentationAttempt attempt, PresentationTimePoint timestamp)
+		-> bool {
 		return reportPresented(
 			attempt,
 			TilePresentation{.tile = TileId{0}, .timestamp = timestamp}

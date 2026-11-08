@@ -98,8 +98,8 @@ void requirePoint(stana::Point actual, stana::Point expected, const std::string 
 	return stana::symbol::Asset::compiled(
 		bridgeVersion,
 		{.size =
-			 {.width = stana::symbol::AssetUnits{extent},
-				 .height = stana::symbol::AssetUnits{extent}}},
+				{.width = stana::symbol::AssetUnits{extent},
+					.height = stana::symbol::AssetUnits{extent}}},
 		false,
 		{Element{.value = std::move(path)}}
 	);

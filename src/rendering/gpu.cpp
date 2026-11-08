@@ -253,12 +253,7 @@ ExtendedColor::ExtendedColor(
 	  green_(green),
 	  blue_(blue),
 	  alpha_(alpha) {
-	const std::array components{
-		red.value(),
-		green.value(),
-		blue.value(),
-		alpha.value()
-	};
+	const std::array components{red.value(), green.value(), blue.value(), alpha.value()};
 	for (const double component : components) {
 		if (!std::isfinite(component) || std::abs(component) > stana::gpu::detail::halfMaximum) {
 			throw std::invalid_argument("Invalid extended linear color");
@@ -446,38 +441,18 @@ void GPUDrawing::fillRect(Rect rect, Color value, Points radius) {
 	color(value);
 	stana::detail::requireNonnegative(radius);
 	const Points clamped = Points{
-		std::min(
-			{radius.value(),
-				rect.size.width.value() / 2,
-				rect.size.height.value() / 2}
-		)
+		std::min({radius.value(), rect.size.width.value() / 2, rect.size.height.value() / 2})
 	};
-	append(
-		stana::rendering::detail::GPURect{
-			.bounds = rect,
-			.radius = clamped,
-			.color = value
-		}
-	);
+	append(stana::rendering::detail::GPURect{.bounds = rect, .radius = clamped, .color = value});
 }
 
 void GPUDrawing::fillRect(Rect rect, ExtendedColor value, Points radius) {
 	rectangle(rect);
 	stana::detail::requireNonnegative(radius);
 	const Points clamped = Points{
-		std::min(
-			{radius.value(),
-				rect.size.width.value() / 2,
-				rect.size.height.value() / 2}
-		)
+		std::min({radius.value(), rect.size.width.value() / 2, rect.size.height.value() / 2})
 	};
-	append(
-		stana::rendering::detail::GPURect{
-			.bounds = rect,
-			.radius = clamped,
-			.color = value
-		}
-	);
+	append(stana::rendering::detail::GPURect{.bounds = rect, .radius = clamped, .color = value});
 }
 
 void GPUDrawing::fillEllipse(Rect rect, Color value) {

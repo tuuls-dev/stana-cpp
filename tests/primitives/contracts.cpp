@@ -91,8 +91,7 @@ void literalsAndArithmetic() {
 void opacityAndLengthFactories() {
 	using stana::literals::operator""_pct;
 	using stana::literals::operator""_pt;
-	const auto faded =
-		stana::Opacity::percent(operator""_pct(static_cast<long double>(eighty)));
+	const auto faded = stana::Opacity::percent(operator""_pct(static_cast<long double>(eighty)));
 	require(near(faded.value(), fourFifths), "Opacity::percent maps percent of opaque");
 	bool rejected = false;
 	try {
@@ -110,10 +109,8 @@ void opacityAndLengthFactories() {
 		rejected = true;
 	}
 	require(rejected, "Opacity::percent rejects negative");
-	const auto absolute =
-		stana::Length::points(operator""_pt(static_cast<long double>(oneTwenty)));
-	const auto relative =
-		stana::Length::percent(operator""_pct(static_cast<long double>(fifty)));
+	const auto absolute = stana::Length::points(operator""_pt(static_cast<long double>(oneTwenty)));
+	const auto relative = stana::Length::percent(operator""_pct(static_cast<long double>(fifty)));
 	const auto fill = stana::Length::fill();
 	require(
 		absolute.kind == stana::Length::Kind::points &&
@@ -133,10 +130,7 @@ void namedQuantities() {
 		std::is_eq(stana::FontWeight::regular() <=> stana::FontWeight{}),
 		"FontWeight::regular"
 	);
-	require(
-		std::is_eq(stana::Progress{half} <=> stana::Progress{half}),
-		"Progress equality"
-	);
+	require(std::is_eq(stana::Progress{half} <=> stana::Progress{half}), "Progress equality");
 	require(
 		std::is_eq(stana::ScaleFactor{two} <=> stana::ScaleFactor{two}),
 		"ScaleFactor equality"

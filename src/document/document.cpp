@@ -334,9 +334,7 @@ void Document::setEnvironment(Environment environment) {
 	commit();
 }
 
-void Document::setTextMeasure(
-	std::function<Size(const std::string &, Font, Points)> measure
-) {
+void Document::setTextMeasure(std::function<Size(const std::string &, Font, Points)> measure) {
 	measureText_ = std::move(measure);
 	textEnvironment_ = stana::detail::nextIdentity();
 	for (const auto &[serial, node] : nodes_) {

@@ -216,9 +216,7 @@ struct Length {
 		return {.kind = Kind::points, .absolute = value};
 	}
 
-	[[nodiscard]] static constexpr auto fill() noexcept -> Length {
-		return {.kind = Kind::fill};
-	}
+	[[nodiscard]] static constexpr auto fill() noexcept -> Length { return {.kind = Kind::fill}; }
 
 	[[nodiscard]] static constexpr auto percent(Percentage value) noexcept -> Length {
 		return {.kind = Kind::percent, .relative = value};
@@ -292,17 +290,11 @@ struct Color {
 		return rgb(SdrChannel{red}, SdrChannel{green}, SdrChannel{blue}, Opacity{alpha});
 	}
 
-	[[nodiscard]] static constexpr auto white() noexcept -> Color {
-		return rgb(1, 1, 1);
-	}
+	[[nodiscard]] static constexpr auto white() noexcept -> Color { return rgb(1, 1, 1); }
 
-	[[nodiscard]] static constexpr auto black() noexcept -> Color {
-		return rgb(0, 0, 0);
-	}
+	[[nodiscard]] static constexpr auto black() noexcept -> Color { return rgb(0, 0, 0); }
 
-	[[nodiscard]] static constexpr auto clear() noexcept -> Color {
-		return rgb(0, 0, 0, 0);
-	}
+	[[nodiscard]] static constexpr auto clear() noexcept -> Color { return rgb(0, 0, 0, 0); }
 
 	[[nodiscard]] static constexpr auto accent() noexcept -> Color {
 		return {
@@ -427,7 +419,8 @@ struct AffineTransform {
 	[[nodiscard]] static constexpr auto identity() noexcept -> AffineTransform { return {}; }
 
 	/// @brief Returns a pure translation. x′=x+tx and y′=y+ty.
-	[[nodiscard]] static constexpr auto translation(Points x, Points y) noexcept -> AffineTransform {
+	[[nodiscard]] static constexpr auto translation(Points x, Points y) noexcept
+		-> AffineTransform {
 		return {.tx = x, .ty = y};
 	}
 
@@ -465,8 +458,9 @@ struct AffineTransform {
 	/// @brief Largest singular value of the linear part, or zero when that part is zero.
 	/// Used to choose symbol preparation scale. Nonfinite coefficients yield a nonfinite result.
 	[[nodiscard]] auto maximumScale() const noexcept -> ScaleFactor {
-		const double dominant =
-			std::max({std::abs(a.value()), std::abs(b.value()), std::abs(c.value()), std::abs(d.value())});
+		const double dominant = std::max(
+			{std::abs(a.value()), std::abs(b.value()), std::abs(c.value()), std::abs(d.value())}
+		);
 		if (!(dominant > 0)) {
 			return ScaleFactor{0};
 		}
@@ -478,7 +472,9 @@ struct AffineTransform {
 			horizontalY * horizontalY + verticalY * verticalY;
 		const double determinant = horizontalX * verticalY - verticalX * horizontalY;
 		const double discriminant = trace * trace - 4 * determinant * determinant;
-		return ScaleFactor{dominant * std::sqrt((trace + std::sqrt(std::max(0.0, discriminant))) / 2)};
+		return ScaleFactor{
+			dominant * std::sqrt((trace + std::sqrt(std::max(0.0, discriminant))) / 2)
+		};
 	}
 
 	[[nodiscard]] constexpr auto apply(Point point) const noexcept -> Point {
@@ -528,7 +524,7 @@ struct Environment {
 		Theme::light; ///< Light or dark scene defaults. Native sessions follow the system.
 	Direction direction =
 		Direction::leftToRight; ///< Logical direction used to resolve layout edges and row order.
-	ScaleFactor textScale{1}; ///< Nonnegative multiplier applied to requested system-font sizes.
+	ScaleFactor textScale{1};	///< Nonnegative multiplier applied to requested system-font sizes.
 	bool reducedMotion =
 		false; ///< Accessibility preference for motion consumers; does not change layout.
 	bool highContrast =

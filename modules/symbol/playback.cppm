@@ -53,9 +53,9 @@ struct Diagnostic {
 
 /// @brief One frame's paint transform relative to the fitted square. Rest is identity.
 struct EffectSample {
-	Angle rotation{};			 ///< Clockwise angle about the square center.
-	ScaleFactor scale{1};		 ///< Uniform scale about the square center.
-	Ratio verticalFraction{};	 ///< Translation as a fraction of the square side, y-down.
+	Angle rotation{};		  ///< Clockwise angle about the square center.
+	ScaleFactor scale{1};	  ///< Uniform scale about the square center.
+	Ratio verticalFraction{}; ///< Translation as a fraction of the square side, y-down.
 
 	auto operator<=>(const EffectSample &) const = default;
 
@@ -68,9 +68,9 @@ struct EffectSample {
 		const Points x = square.origin.x + square.size.width / 2;
 		const Points y = square.origin.y + square.size.height / 2;
 		return AffineTransform::translation(
-				   x,
-				   y + Points{verticalFraction.value() * square.size.height.value()}
-			)
+			x,
+			y + Points{verticalFraction.value() * square.size.height.value()}
+		)
 			.concatenating(AffineTransform::rotation(rotation))
 			.concatenating(AffineTransform::scale(scale, scale))
 			.concatenating(AffineTransform::translation(-x, -y));

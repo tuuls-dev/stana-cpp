@@ -29,7 +29,9 @@ constexpr auto timeout = std::chrono::seconds{10};
  textureStore(next, vec2<i32>(0), vec4<f32>(textureLoad(history, vec2<i32>(0), 0).x + 1.0, 0.0, 0.0, 1.0));
 }
 )");
-	const auto state = stana::rendering::GPUStateSlot::create({.width = stana::Points{1}, .height = stana::Points{1}});
+	const auto state = stana::rendering::GPUStateSlot::create(
+		{.width = stana::Points{1}, .height = stana::Points{1}}
+	);
 	if (!shader || !state) {
 		throw std::runtime_error("Invalid canvas qualification resources");
 	}
@@ -173,10 +175,14 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 
 [[nodiscard]] auto run() -> int {
 	auto scenario = std::make_shared<Scenario>();
-	scenario->document =
-		stana::document::detail::Document::create({.width = stana::Points{width}, .height = stana::Points{height}});
+	scenario->document = stana::document::detail::Document::create(
+		{.width = stana::Points{width}, .height = stana::Points{height}}
+	);
 	stana::rendering::Drawing background;
-	background.fillRect({.size = {.width = stana::Points{extent}, .height = stana::Points{extent}}}, stana::Color::accent());
+	background.fillRect(
+		{.size = {.width = stana::Points{extent}, .height = stana::Points{extent}}},
+		stana::Color::accent()
+	);
 	const stana::Frame fill{.width = stana::Length::fill(), .height = stana::Length::fill()};
 	stana::reactive::Transaction::perform([&] -> void {
 		stana::ui::MountContext context{

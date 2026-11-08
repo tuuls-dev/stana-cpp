@@ -87,16 +87,14 @@ namespace {
 				std::min(
 					left.origin.x.value() + left.size.width.value(),
 					right.origin.x.value() + right.size.width.value()
-				) -
-					x
+				) - x
 			)},
 			.height = Points{std::max(
 				0.0,
 				std::min(
 					left.origin.y.value() + left.size.height.value(),
 					right.origin.y.value() + right.size.height.value()
-				) -
-					y
+				) - y
 			)}
 		}
 	};
@@ -148,8 +146,7 @@ void eraseGeometry(
 namespace stana::document::detail {
 namespace {
 [[nodiscard]] auto symbolRectEmpty(Rect rect) -> bool {
-	return std::is_eq(rect.size.width <=> Points{}) ||
-		std::is_eq(rect.size.height <=> Points{});
+	return std::is_eq(rect.size.width <=> Points{}) || std::is_eq(rect.size.height <=> Points{});
 }
 
 [[nodiscard]] auto uniteSymbol(Rect left, Rect right) -> Rect {
@@ -191,7 +188,7 @@ auto Document::project(
 	auto context = incoming;
 	context.opacity = Opacity{
 		context.opacity.value() * node->opacity.value() *
-			(node->isEnabled ? 1 : stana::rendering::detail::disabledOpacity.value())
+		(node->isEnabled ? 1 : stana::rendering::detail::disabledOpacity.value())
 	};
 	context.visible = incoming.visible && node->visibility == Visibility::visible;
 	context.eligible = incoming.eligible && context.visible && node->isEnabled && !node->inert;
@@ -240,8 +237,7 @@ auto Document::project(
 		const auto appendShadows = [&](bool inset) -> void {
 			for (auto shadow : shadows) {
 				if (shadow.isInset == inset) {
-					shadow.color.alpha =
-						Opacity{shadow.color.alpha.value() * opacity.value()};
+					shadow.color.alpha = Opacity{shadow.color.alpha.value() * opacity.value()};
 					scene.commands.push_back(
 						{.kind = stana::rendering::PaintKind::boxShadow,
 							.bounds = shadow.ink,
@@ -616,12 +612,10 @@ void Document::reconcileSymbols() {
 			stana::layout::detail::contentRect(node->bounds, node->padding, environment_.direction);
 		const auto fitted = stana::symbol::square(symbol.size, content);
 		const auto box = symbol.asset.viewBox();
-		const double longest =
-			std::max(box.size.width.value(), box.size.height.value());
+		const double longest = std::max(box.size.width.value(), box.size.height.value());
 		const ScaleFactor fitScale{
-			fitted.size.width.value() > 0.0 && longest > 0.0
-				? fitted.size.width.value() / longest
-				: 0.0
+			fitted.size.width.value() > 0.0 && longest > 0.0 ? fitted.size.width.value() / longest
+															 : 0.0
 		};
 		const std::optional<Points> strokeKey =
 			symbol.asset.hasStroke() ? symbol.strokeWidth : std::nullopt;
@@ -629,11 +623,10 @@ void Document::reconcileSymbols() {
 		const double previousStroke = symbol.previousStroke.value_or(Points{}).value();
 		const double nextStroke = strokeKey.value_or(Points{}).value();
 		const bool strokeChanged = symbol.previousStroke.has_value() != strokeKey.has_value() ||
-			(symbol.previousStroke.has_value() &&
-				!std::is_eq(previousStroke <=> nextStroke));
+			(symbol.previousStroke.has_value() && !std::is_eq(previousStroke <=> nextStroke));
 		const double previousScale = symbol.previousScale.value_or(fitScale).value();
-		const bool scaleChanged = !symbol.previousScale.has_value() ||
-			!std::is_eq(previousScale <=> fitScale.value());
+		const bool scaleChanged =
+			!symbol.previousScale.has_value() || !std::is_eq(previousScale <=> fitScale.value());
 		if (assetChanged || strokeChanged || scaleChanged) {
 			symbol.available = true;
 			symbol.failed.clear();

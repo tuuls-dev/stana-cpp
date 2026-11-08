@@ -322,10 +322,10 @@ class ComponentContext {
 			[weak, active, scope = scope_]() -> bool {
 				return weak.lock() && scope.alive() && *active;
 			},
-			[notify = std::move(
-				 onSample
-			 )](::stana::document::detail::Document::FrameStamp stamp,
-				FrameDuration elapsed) -> void {
+			[notify = std::move(onSample)](
+				::stana::document::detail::Document::FrameStamp stamp,
+				FrameDuration elapsed
+			) -> void {
 				notify(
 					FrameTime{
 						.timestamp = stamp.timestamp,
