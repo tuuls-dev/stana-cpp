@@ -29,23 +29,23 @@ auto mixedScene(bool extended) -> std::shared_ptr<const stana::platform::detail:
 	stana::rendering::GPUDrawing picture;
 	if (extended) {
 		picture.fillRect(
-			{.size = {.width = extent, .height = extent}},
+			{.size = {.width = stana::Points{extent}, .height = stana::Points{extent}}},
 			stana::rendering::ExtendedColor{2, 0, 0}
 		);
 	} else {
-		back.fillRect({.size = {.width = extent, .height = extent}}, stana::Color::rgb(1, 0, 0));
+		back.fillRect({.size = {.width = stana::Points{extent}, .height = stana::Points{extent}}}, stana::Color::rgb(1, 0, 0));
 		picture.fillRect(
-			{.size = {.width = extent, .height = extent}},
+			{.size = {.width = stana::Points{extent}, .height = stana::Points{extent}}},
 			stana::Color::rgb(0, 1, 0, translucent)
 		);
 		front.fillRect(
-			{.origin = {.x = topOrigin, .y = topOrigin},
-				.size = {.width = topExtent, .height = topExtent}},
+			{.origin = {.x = stana::Points{topOrigin}, .y = stana::Points{topOrigin}},
+				.size = {.width = stana::Points{topExtent}, .height = stana::Points{topExtent}}},
 			stana::Color::rgb(0, 0, 1)
 		);
 	}
 	const stana::Frame fill{.width = stana::Length::fill(), .height = stana::Length::fill()};
-	auto document = stana::document::detail::Document::create({.width = extent, .height = extent});
+	auto document = stana::document::detail::Document::create({.width = stana::Points{extent}, .height = stana::Points{extent}});
 	stana::reactive::Transaction::perform([&] -> void {
 		stana::ui::MountContext context{.document = document, .parent = document->root()};
 		static_cast<void>(stana::ui::mount(
@@ -80,26 +80,26 @@ auto builtinScenes() -> std::vector<std::shared_ptr<const stana::platform::detai
 	constexpr double meshExtent = 80;
 	stana::rendering::GPUDrawing picture;
 	picture.fillRect(
-		{.origin = {.x = quarter, .y = quarter}, .size = {.width = rounded, .height = rounded}},
+		{.origin = {.x = stana::Points{quarter}, .y = stana::Points{quarter}}, .size = {.width = stana::Points{rounded}, .height = stana::Points{rounded}}},
 		stana::rendering::ExtendedColor{1, 0, 0},
 		radius
 	);
 	picture.fillEllipse(
-		{.origin = {.x = ellipseX + quarter, .y = top + quarter},
-			.size = {.width = ellipseWidth, .height = ellipseHeight}},
+		{.origin = {.x = stana::Points{ellipseX + quarter}, .y = stana::Points{top + quarter}},
+			.size = {.width = stana::Points{ellipseWidth}, .height = stana::Points{ellipseHeight}}},
 		stana::rendering::ExtendedColor{0, 1, 0}
 	);
 	const std::array vertices{
 		stana::rendering::GPUVertex{
-			.position = {.x = meshX + quarter, .y = top + quarter},
+			.position = {.x = stana::Points{meshX + quarter}, .y = stana::Points{top + quarter}},
 			.color = stana::rendering::ExtendedColor{1, 0, 0}
 		},
 		stana::rendering::GPUVertex{
-			.position = {.x = meshX + meshExtent + quarter, .y = top + quarter},
+			.position = {.x = stana::Points{meshX + meshExtent} + quarter, .y = stana::Points{top + quarter}},
 			.color = stana::rendering::ExtendedColor{0, 1, 0}
 		},
 		stana::rendering::GPUVertex{
-			.position = {.x = meshX + quarter, .y = top + meshExtent + quarter},
+			.position = {.x = stana::Points{meshX + quarter}, .y = stana::Points{top + meshExtent} + quarter},
 			.color = stana::rendering::ExtendedColor{0, 0, 1}
 		}
 	};
@@ -115,18 +115,18 @@ auto builtinScenes() -> std::vector<std::shared_ptr<const stana::platform::detai
 	constexpr double lineBottom = 90;
 	constexpr double lineWidth = 10;
 	const std::array line{
-		stana::Point{.x = lineStart, .y = lineY},
-		stana::Point{.x = lineStart, .y = lineY},
-		stana::Point{.x = lineEnd, .y = lineY},
-		stana::Point{.x = lineEnd, .y = lineBottom}
+		stana::Point{.x = stana::Points{lineStart}, .y = stana::Points{lineY}},
+		stana::Point{.x = stana::Points{lineStart}, .y = stana::Points{lineY}},
+		stana::Point{.x = stana::Points{lineEnd}, .y = stana::Points{lineY}},
+		stana::Point{.x = stana::Points{lineEnd}, .y = stana::Points{lineBottom}}
 	};
 	picture.strokePolyline(line, stana::rendering::ExtendedColor{1, 0, 1}, lineWidth);
 	constexpr double dotX = 700;
-	const std::array point{stana::Point{.x = dotX, .y = lineY}};
+	const std::array point{stana::Point{.x = stana::Points{dotX}, .y = stana::Points{lineY}}};
 	picture.strokePolyline(point, stana::rendering::ExtendedColor{0, 1, 1}, radius);
 	const stana::reactive::Signal model{picture};
 	const stana::Frame fill{.width = stana::Length::fill(), .height = stana::Length::fill()};
-	auto document = stana::document::detail::Document::create({.width = width, .height = height});
+	auto document = stana::document::detail::Document::create({.width = stana::Points{width}, .height = stana::Points{height}});
 	stana::reactive::Transaction::perform([&] -> void {
 		stana::ui::MountContext context{.document = document, .parent = document->root()};
 		static_cast<void>(stana::ui::mount(
@@ -144,8 +144,8 @@ auto builtinScenes() -> std::vector<std::shared_ptr<const stana::platform::detai
 	constexpr double changeWidth = 70;
 	constexpr double changeHeight = 30;
 	picture.fillRect(
-		{.origin = {.x = changeX, .y = changeY},
-			.size = {.width = changeWidth, .height = changeHeight}},
+		{.origin = {.x = stana::Points{changeX}, .y = stana::Points{changeY}},
+			.size = {.width = stana::Points{changeWidth}, .height = stana::Points{changeHeight}}},
 		stana::rendering::ExtendedColor{1, 1, 0}
 	);
 	model.set(picture);

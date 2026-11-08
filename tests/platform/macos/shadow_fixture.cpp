@@ -39,41 +39,41 @@ auto shadowScenes(ShadowSceneKind kind)
 	constexpr double insetX = 240.25;
 	constexpr double insetY = 30.5;
 	const stana::CornerRadii corners{
-		.topLeading = {.width = 30, .height = 20},
-		.topTrailing = {.width = 8, .height = 24},
-		.bottomTrailing = {.width = 40, .height = 12}
+		.topLeading = {.width = stana::Points{30}, .height = stana::Points{20}},
+		.topTrailing = {.width = stana::Points{8}, .height = stana::Points{24}},
+		.bottomTrailing = {.width = stana::Points{40}, .height = stana::Points{12}}
 	};
-	const stana::BorderWidths edges{.top = 3, .leading = 7, .bottom = 9, .trailing = 2};
+	const stana::BorderWidths edges{.top = stana::Points{3}, .leading = stana::Points{7}, .bottom = stana::Points{9}, .trailing = stana::Points{2}};
 	const Shadows outer{
-		{.offset = {.x = 8, .y = 6},
-			.blurRadius = changedTop,
-			.spreadRadius = 2,
+		{.offset = {.x = stana::Points{8}, .y = stana::Points{6}},
+			.blurRadius = stana::Points{changedTop},
+			.spreadRadius = stana::Points{2},
 			.color = stana::Color::rgb(0, 0, 0, shadowOpacity)}
 	};
 	const stana::reactive::Signal shadows{outer};
-	const stana::reactive::Signal padding{stana::Insets{.top = insetY, .leading = insetX}};
+	const stana::reactive::Signal padding{stana::Insets{.top = stana::Points{insetY}, .leading = stana::Points{insetX}}};
 	const stana::reactive::Signal width{stana::Frame{
-		.width = stana::Length::points(boxWidth),
-		.height = stana::Length::points(boxHeight)
+		.width = stana::Length::points(stana::Points{boxWidth}),
+		.height = stana::Length::points(stana::Points{boxHeight})
 	}};
 	auto document = stana::document::detail::Document::create(
-		{.width = viewportWidth, .height = viewportHeight}
+		{.width = stana::Points{viewportWidth}, .height = stana::Points{viewportHeight}}
 	);
 	const auto drawingFor = [&](const Shadows &list) -> stana::rendering::GPUDrawing {
 		stana::rendering::GPUDrawing drawing;
 		drawing.drawBoxShadows(
-			{.origin = {.x = insetX, .y = insetY},
-				.size = {.width = boxWidth, .height = boxHeight}},
+			{.origin = {.x = stana::Points{insetX}, .y = stana::Points{insetY}},
+				.size = {.width = stana::Points{boxWidth}, .height = stana::Points{boxHeight}}},
 			list,
 			corners,
 			edges
 		);
 		return drawing;
 	};
-	const stana::CornerRadii ancestorCorners{.topLeading = {.width = 400, .height = 150}};
+	const stana::CornerRadii ancestorCorners{.topLeading = {.width = stana::Points{400}, .height = stana::Points{150}}};
 	stana::rendering::GPUDrawing markings;
 	markings.fillRect(
-		{.origin = {.x = markingX, .y = 0}, .size = {.width = markingWidth, .height = boxHeight}},
+		{.origin = {.x = stana::Points{markingX}, .y = stana::Points{0}}, .size = {.width = stana::Points{markingWidth}, .height = stana::Points{boxHeight}}},
 		stana::Color::rgb(0, 0, 1, shadowOpacity)
 	);
 	const stana::reactive::Signal drawing{drawingFor(outer)};
@@ -99,8 +99,8 @@ auto shadowScenes(ShadowSceneKind kind)
 					.drawing = markings,
 					.layout = {
 						.frame = stana::Frame{
-							.width = stana::Length::points(boxWidth),
-							.height = stana::Length::points(boxHeight)
+							.width = stana::Length::points(stana::Points{boxWidth}),
+							.height = stana::Length::points(stana::Points{boxHeight})
 						}
 					}
 				}
@@ -141,24 +141,24 @@ auto shadowScenes(ShadowSceneKind kind)
 	auto tinted = outer;
 	tinted.front().color = stana::Color::rgb(1, 0, 0, shadowOpacity);
 	set(tinted);
-	tinted.front().offset.x = -editedOffsetMagnitude;
+	tinted.front().offset.x = stana::Points{-editedOffsetMagnitude};
 	set(tinted);
-	tinted.front().blurRadius = editedBlur;
+	tinted.front().blurRadius = stana::Points{editedBlur};
 	set(tinted);
 	tinted.push_back(
-		{.offset = {.x = -1, .y = 2},
-			.blurRadius = 3,
-			.spreadRadius = -2,
+		{.offset = {.x = stana::Points{-1}, .y = stana::Points{2}},
+			.blurRadius = stana::Points{3},
+			.spreadRadius = stana::Points{-2},
 			.color = stana::Color::rgb(0, 1, 0, insetOpacity),
 			.isInset = true}
 	);
 	set(tinted);
 	set({tinted.back(), outer.front(), tinted.front()});
-	padding.set({.top = changedTop, .leading = changedLeading});
+	padding.set({.top = stana::Points{changedTop}, .leading = stana::Points{changedLeading}});
 	capture();
 	width.set(
-		{.width = stana::Length::points(changedWidth),
-			.height = stana::Length::points(changedHeight)}
+		{.width = stana::Length::points(stana::Points{changedWidth}),
+			.height = stana::Length::points(stana::Points{changedHeight})}
 	);
 	capture();
 	set({});

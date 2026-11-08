@@ -134,7 +134,7 @@ struct WorkerScenario : std::enable_shared_from_this<WorkerScenario> {
 	const auto code = stana::application::Application::run(
 		stana::application::Window{
 			.title = "Stana thread-safe writes",
-			.size = {.width = width, .height = height},
+			.size = {.width = stana::Points{width}, .height = stana::Points{height}},
 			.content = stana::ui::Text{
 				.text = scenario->text,
 				.lifecycle = {.onMount = [scenario](const stana::document::NodeHandle &) -> void {
@@ -159,7 +159,7 @@ struct WorkerScenario : std::enable_shared_from_this<WorkerScenario> {
 	const auto code = stana::application::Application::run(
 		stana::application::Window{
 			.title = "Stana queued shutdown",
-			.size = {.width = width, .height = height},
+			.size = {.width = stana::Points{width}, .height = stana::Points{height}},
 			.content = stana::ui::Text{
 				.text = "shutdown",
 				.lifecycle = {
@@ -196,7 +196,7 @@ struct WorkerScenario : std::enable_shared_from_this<WorkerScenario> {
 	const auto code = stana::application::Application::run(
 		stana::application::Window{
 			.title = "Stana queued failure",
-			.size = {.width = width, .height = height},
+			.size = {.width = stana::Points{width}, .height = stana::Points{height}},
 			.content = stana::ui::Text{
 				.text = "failure",
 				.lifecycle = {.onMount = [value](const stana::document::NodeHandle &) -> void {

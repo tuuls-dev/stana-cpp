@@ -1,4 +1,5 @@
 #include <array>
+#include <chrono>
 #include <exception>
 #include <iostream>
 #include <limits>
@@ -15,6 +16,10 @@ void require(bool condition, const std::string &message) {
 	}
 }
 
+[[nodiscard]] auto at(double seconds) -> stana::PresentationTimePoint {
+	return stana::PresentationTimePoint{stana::PresentationDuration{seconds}};
+}
+
 /// @brief Verifies completion ordering, stale epochs and finite presentation-history admission.
 void evidenceMustJoin() {
 
@@ -25,14 +30,14 @@ void evidenceMustJoin() {
 		!tracker.reportGPU(*first, true) && !tracker.confirmed(),
 		"GPU completion is not display"
 	);
-	require(!tracker.reportPresented(*first, 0) && !tracker.confirmed(), "zero is unknown");
+	require(!tracker.reportPresented(*first, at(0)) && !tracker.confirmed(), "zero is unknown");
 	require(
-		tracker.reportPresented(*first, 1) && tracker.confirmed() == first,
+		tracker.reportPresented(*first, at(1)) && tracker.confirmed() == first,
 		"positive native evidence joins GPU success"
 	);
 	const auto second = tracker.begin(1, 2);
 	require(second.has_value(), "second attempt");
-	require(!tracker.reportPresented(*second, 1), "presentation callback may precede GPU");
+	require(!tracker.reportPresented(*second, at(1)), "presentation callback may precede GPU");
 	require(tracker.reportGPU(*second, true), "reverse callback order");
 	tracker.reset(2);
 	require(
@@ -54,7 +59,7 @@ void terminalAttemptsAndEpochs() {
 	for (int index = 0; index < beyondHistoryLimit; ++index) {
 		const auto attempt = tracker.begin(1, 1);
 		require(attempt.has_value(), "failure releases admission capacity");
-		require(!tracker.reportPresented(*attempt, 1), "presentation alone cannot confirm");
+		require(!tracker.reportPresented(*attempt, at(1)), "presentation alone cannot confirm");
 		require(!tracker.reportGPU(*attempt, false), "failed GPU cannot confirm");
 		require(!tracker.contains(*attempt) && tracker.pendingCount() == 0, "failure retires");
 		require(!tracker.reportGPU(*attempt, true), "late success cannot revive failed work");
@@ -62,11 +67,11 @@ void terminalAttemptsAndEpochs() {
 	const auto expired = tracker.begin(1, 1);
 	require(expired.has_value() && tracker.retire(*expired), "explicit deadline retirement");
 	require(!tracker.retire(*expired), "retirement is idempotent");
-	require(!tracker.reportPresented(*expired, 1), "late timestamp after deadline ignored");
+	require(!tracker.reportPresented(*expired, at(1)), "late timestamp after deadline ignored");
 	const auto valid = tracker.begin(1, 1);
 	require(valid.has_value(), "new attempt after retirement");
-	require(!tracker.reportPresented(*valid, 1), "positive timestamp retained until GPU");
-	require(!tracker.reportPresented(*valid, 0), "unknown duplicate is not confirmation");
+	require(!tracker.reportPresented(*valid, at(1)), "positive timestamp retained until GPU");
+	require(!tracker.reportPresented(*valid, at(0)), "unknown duplicate is not confirmation");
 	require(tracker.reportGPU(*valid, true), "unknown duplicate cannot erase positive evidence");
 	tracker.reset(2);
 	for (const auto invalidEpoch : {0, 1, 2}) {
@@ -87,7 +92,7 @@ void inputUsesConfirmedGeometry() {
 	stana::testing::TestHost host;
 	host.enablePresentationTesting();
 	int activations = 0;
-	const stana::reactive::Signal padding{stana::Insets::all(0)};
+	const stana::reactive::Signal padding{stana::Insets::all(stana::Points{0})};
 	host.mount(
 		stana::ui::VStack{
 			.layout = {.padding = padding},
@@ -101,27 +106,29 @@ void inputUsesConfirmedGeometry() {
 			)
 		}
 	);
-	const stana::Point oldPoint{.x = 1, .y = 1};
+	const stana::Point oldPoint{.x = stana::Points{1}, .y = stana::Points{1}};
 	host.click(oldPoint);
 	require(activations == 0, "initial geometry is not yet displayed");
 	const auto initial = host.render(false);
 	host.reportGPUCompletion(initial, true);
 	host.click(oldPoint);
 	require(activations == 0, "GPU-only input remains gated");
-	host.reportPresentation(initial, 1);
+	host.reportPresentation(initial, at(1));
 	host.click(oldPoint);
 	require(activations == 1, "confirmed first click");
 	constexpr double shiftedPadding = 100;
-	padding.set(stana::Insets::all(shiftedPadding));
+	padding.set(stana::Insets::all(stana::Points{shiftedPadding}));
 	host.click(oldPoint);
 	require(activations == 2, "pending frames keep last-confirmed location");
 	const auto shifted = host.render(false);
-	host.reportPresentation(shifted, 0);
+	host.reportPresentation(shifted, at(0));
 	host.click(oldPoint);
 	require(activations == 2, "unknown changed region blocks actions");
 	host.reportGPUCompletion(shifted, true);
-	host.reportPresentation(shifted, 2);
-	host.click({.x = shiftedPadding + 1, .y = shiftedPadding + 1});
+	host.reportPresentation(shifted, at(2));
+	host.click(
+		{.x = stana::Points{shiftedPadding + 1}, .y = stana::Points{shiftedPadding + 1}}
+	);
 	constexpr int expectedActivations = 3;
 	require(activations == expectedActivations, "newly confirmed location accepts input");
 }
@@ -132,7 +139,7 @@ void staleFeedbackAndRecovery() {
 	stana::testing::TestHost host;
 	host.enablePresentationTesting();
 	int activations = 0;
-	const stana::reactive::Signal padding{stana::Insets::all(0)};
+	const stana::reactive::Signal padding{stana::Insets::all(stana::Points{0})};
 	host.mount(
 		stana::ui::VStack{
 			.layout = {.padding = padding},
@@ -148,17 +155,20 @@ void staleFeedbackAndRecovery() {
 	);
 	static_cast<void>(host.render());
 	constexpr double shiftedPadding = 100;
-	const stana::Point oldPoint{.x = 1, .y = 1};
-	const stana::Point newPoint{.x = shiftedPadding + 1, .y = shiftedPadding + 1};
-	padding.set(stana::Insets::all(shiftedPadding));
+	const stana::Point oldPoint{.x = stana::Points{1}, .y = stana::Points{1}};
+	const stana::Point newPoint{
+		.x = stana::Points{shiftedPadding + 1},
+		.y = stana::Points{shiftedPadding + 1}
+	};
+	padding.set(stana::Insets::all(stana::Points{shiftedPadding}));
 	const auto replaced = host.render(false);
 	host.replaceSurface();
 	host.reportGPUCompletion(replaced, false);
-	host.reportPresentation(replaced, 0);
+	host.reportPresentation(replaced, at(0));
 	host.abandonPresentation(replaced);
 	host.click(oldPoint);
 	require(activations == 1, "stale negative evidence cannot poison last-known geometry");
-	host.reportPresentation(replaced, 1);
+	host.reportPresentation(replaced, at(1));
 	host.reportGPUCompletion(replaced, true);
 	host.click(newPoint);
 	require(activations == 1, "stale positive evidence cannot publish replacement geometry");
@@ -166,19 +176,19 @@ void staleFeedbackAndRecovery() {
 	auto forged = pending;
 	++forged.sequence;
 	host.reportGPUCompletion(forged, false);
-	host.reportPresentation(forged, 0);
+	host.reportPresentation(forged, at(0));
 	host.click(oldPoint);
 	require(activations == 2, "unregistered retry identity cannot change input gates");
-	host.reportPresentation(pending, std::numeric_limits<double>::quiet_NaN());
+	host.reportPresentation(pending, at(std::numeric_limits<double>::quiet_NaN()));
 	host.click(oldPoint);
 	require(activations == 2, "non-finite presentation evidence gates changed regions");
 	host.reportGPUCompletion(pending, false);
 	host.reportGPUCompletion(pending, true);
-	host.reportPresentation(pending, 1);
+	host.reportPresentation(pending, at(1));
 	host.click(newPoint);
 	require(activations == 2, "failed attempt cannot recover through late success");
 	const auto retry = host.render(false);
-	host.reportPresentation(retry, 1);
+	host.reportPresentation(retry, at(1));
 	host.reportGPUCompletion(retry, true);
 	host.click(newPoint);
 	require(activations == 3, "fresh retry recovers current geometry in reverse callback order");
@@ -191,7 +201,7 @@ void staleFeedbackAndRecovery() {
 	require(activations == 4, "expired attempts do not exhaust future admission");
 	host.close();
 	host.reportGPUCompletion(retry, false);
-	host.reportPresentation(retry, 0);
+	host.reportPresentation(retry, at(0));
 	require(host.nodes().empty(), "feedback after closure cannot resurrect content");
 }
 
@@ -210,35 +220,38 @@ void compositeEvidence() {
 	require(
 		!tracker.reportPresented(
 			*first,
-			stana::rendering::TilePresentation{.tile = tiles.front(), .timestamp = 1}
+			stana::rendering::TilePresentation{.tile = tiles.front(), .timestamp = at(1)}
 		),
 		"first tile alone"
 	);
 	require(
 		!tracker.reportPresented(
 			*first,
-			stana::rendering::TilePresentation{.tile = stana::rendering::TileId{1}, .timestamp = 1}
+			stana::rendering::TilePresentation{
+				.tile = stana::rendering::TileId{1},
+				.timestamp = at(1)
+			}
 		),
 		"unknown tile ignored"
 	);
 	require(
 		!tracker.reportPresented(
 			*first,
-			stana::rendering::TilePresentation{.tile = tiles.at(1), .timestamp = 1}
+			stana::rendering::TilePresentation{.tile = tiles.at(1), .timestamp = at(1)}
 		),
 		"missing last tile"
 	);
 	require(
 		!tracker.reportPresented(
 			*first,
-			stana::rendering::TilePresentation{.tile = tiles.front(), .timestamp = 0}
+			stana::rendering::TilePresentation{.tile = tiles.front(), .timestamp = at(0)}
 		),
 		"invalid duplicate retains positive"
 	);
 	require(
 		tracker.reportPresented(
 			*first,
-			stana::rendering::TilePresentation{.tile = tiles.back(), .timestamp = 1}
+			stana::rendering::TilePresentation{.tile = tiles.back(), .timestamp = at(1)}
 		),
 		"all required times join"
 	);
@@ -253,7 +266,7 @@ void compositeEvidence() {
 		require(
 			!tracker.reportPresented(
 				*invalidTimes,
-				stana::rendering::TilePresentation{.tile = tiles.front(), .timestamp = time}
+				stana::rendering::TilePresentation{.tile = tiles.front(), .timestamp = at(time)}
 			),
 			"invalid typed time is never evidence"
 		);
@@ -265,7 +278,7 @@ void compositeEvidence() {
 		require(
 			!tracker.reportPresented(
 				*reverse,
-				stana::rendering::TilePresentation{.tile = tile, .timestamp = 1}
+				stana::rendering::TilePresentation{.tile = tile, .timestamp = at(1)}
 			),
 			"times before GPU"
 		);
@@ -294,7 +307,7 @@ void compositeEvidence() {
 	require(
 		!tracker.reportPresented(
 			*reverse,
-			stana::rendering::TilePresentation{.tile = tiles.back(), .timestamp = 1}
+			stana::rendering::TilePresentation{.tile = tiles.back(), .timestamp = at(1)}
 		),
 		"stale tile evidence ignored"
 	);
@@ -305,7 +318,7 @@ void compositePins() {
 
 	stana::testing::TestHost host;
 	int clicks = 0;
-	const stana::reactive::Signal padding{stana::Insets::all(0)};
+	const stana::reactive::Signal padding{stana::Insets::all(stana::Points{0})};
 	const stana::reactive::Signal color{stana::Color::black()};
 	host.mount(
 		stana::ui::VStack{
@@ -323,22 +336,22 @@ void compositePins() {
 	);
 	static_cast<void>(host.render());
 	constexpr double shifted = 100;
-	padding.set(stana::Insets::all(shifted));
+	padding.set(stana::Insets::all(stana::Points{shifted}));
 	constexpr std::array tiles{stana::rendering::TileId{0}, stana::rendering::TileId{1}};
 	const auto attempt = host.renderComposite(tiles);
-	host.click({.x = 1, .y = 1});
-	host.click({.x = shifted + 1, .y = shifted + 1});
+	host.click({.x = stana::Points{1}, .y = stana::Points{1}});
+	host.click({.x = stana::Points{shifted + 1}, .y = stana::Points{shifted + 1}});
 	require(clicks == 0, "P10 old/new gated before GPU exposes pixels");
 	constexpr unsigned publications = 128;
 	for (unsigned index = 0; index < publications; ++index) {
 		color.set(index % 2 == 0 ? stana::Color::accent() : stana::Color::black());
 	}
-	host.reportTilePresentation(attempt, {.tile = stana::rendering::TileId{0}, .timestamp = 1});
+	host.reportTilePresentation(attempt, {.tile = stana::rendering::TileId{0}, .timestamp = at(1)});
 	host.reportGPUCompletion(attempt, true);
-	host.click({.x = shifted + 1, .y = shifted + 1});
+	host.click({.x = stana::Points{shifted + 1}, .y = stana::Points{shifted + 1}});
 	require(clicks == 0, "P03 missing one tile still gates");
-	host.reportTilePresentation(attempt, {.tile = stana::rendering::TileId{1}, .timestamp = 1});
-	host.click({.x = shifted + 1, .y = shifted + 1});
+	host.reportTilePresentation(attempt, {.tile = stana::rendering::TileId{1}, .timestamp = at(1)});
+	host.click({.x = stana::Points{shifted + 1}, .y = stana::Points{shifted + 1}});
 	require(clicks == 1, "P12 exact pinned geometry survives publication churn");
 	for (unsigned index = 0; index < publications; ++index) {
 		const auto next = host.renderComposite(tiles);
@@ -347,16 +360,16 @@ void compositePins() {
 	const auto recovered = host.renderComposite(tiles);
 	host.reportGPUCompletion(recovered, true);
 	for (const auto tile : tiles) {
-		host.reportTilePresentation(recovered, {.tile = tile, .timestamp = 1});
+		host.reportTilePresentation(recovered, {.tile = tile, .timestamp = at(1)});
 	}
-	host.click({.x = shifted + 1, .y = shifted + 1});
+	host.click({.x = stana::Points{shifted + 1}, .y = stana::Points{shifted + 1}});
 	require(clicks == 2, "P24 pin retirement stays bounded");
 }
 
 /// @brief P11: an older target can install its pin but cannot clear newer uncertainty.
 void olderConfirmationKeepsNewerGate() {
 
-	const stana::reactive::Signal padding{stana::Insets::all(0)};
+	const stana::reactive::Signal padding{stana::Insets::all(stana::Points{0})};
 	stana::testing::TestHost host;
 	int clicks = 0;
 	host.mount(
@@ -376,19 +389,19 @@ void olderConfirmationKeepsNewerGate() {
 	constexpr double firstShift = 50;
 	constexpr double secondShift = 100;
 	constexpr std::array tile{stana::rendering::TileId{0}};
-	padding.set(stana::Insets::all(firstShift));
+	padding.set(stana::Insets::all(stana::Points{firstShift}));
 	const auto older = host.renderComposite(tile);
-	padding.set(stana::Insets::all(secondShift));
+	padding.set(stana::Insets::all(stana::Points{secondShift}));
 	const auto newer = host.renderComposite(tile);
 	host.abandonPresentation(newer);
 	host.reportGPUCompletion(older, true);
-	host.reportTilePresentation(older, {.tile = tile.front(), .timestamp = 1});
-	host.click({.x = firstShift + 1, .y = firstShift + 1});
+	host.reportTilePresentation(older, {.tile = tile.front(), .timestamp = at(1)});
+	host.click({.x = stana::Points{firstShift + 1}, .y = stana::Points{firstShift + 1}});
 	require(clicks == 0, "older confirmation cannot clear newer gate");
 	const auto current = host.renderComposite(tile);
 	host.reportGPUCompletion(current, true);
-	host.reportTilePresentation(current, {.tile = tile.front(), .timestamp = 1});
-	host.click({.x = secondShift + 1, .y = secondShift + 1});
+	host.reportTilePresentation(current, {.tile = tile.front(), .timestamp = at(1)});
+	host.click({.x = stana::Points{secondShift + 1}, .y = stana::Points{secondShift + 1}});
 	require(clicks == 1, "newest confirmation clears its covered uncertainty");
 }
 

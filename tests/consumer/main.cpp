@@ -11,6 +11,7 @@ import stana;
 
 auto main() -> int {
 	using namespace std::string_view_literals;
+	using namespace stana::literals;
 	constexpr std::array tiles{stana::rendering::TileId{0}, stana::rendering::TileId{1}};
 	stana::rendering::PresentationTracker tracker;
 	const auto attempt = tracker.begin(1, 1, tiles);
@@ -25,10 +26,7 @@ auto main() -> int {
 		return 1;
 	}
 	stana::rendering::Drawing drawing;
-	drawing.fillRect(
-		{.size = {.width = stana::Points{1}, .height = stana::Points{1}}},
-		stana::Color::accent()
-	);
+	drawing.fillRect({.size = {.width = 1_pt, .height = 1_pt}}, stana::Color::accent());
 	const stana::reactive::Signal model{drawing};
 	const stana::ui::CPUCanvas canvas{.drawing = model, .appearance = {.clip = false}};
 	static_cast<void>(canvas);
@@ -51,17 +49,17 @@ auto main() -> int {
 	}
 	stana::rendering::GPUDrawing graphics{*program};
 	const std::vector<stana::rendering::BoxShadow> shadows{
-		{.offset = {.x = stana::Points{0}, .y = stana::Points{6}},
-			.blurRadius = stana::Points{16},
+		{.offset = {.x = 0_pt, .y = 6_pt},
+			.blurRadius = 16_pt,
 			.color = stana::Color::rgb(0, 0, 0, 0.2)}
 	};
 	const auto interpolated =
 		stana::rendering::interpolateBoxShadows({}, shadows, stana::Progress{0.5});
 	graphics.drawBoxShadows(
-		{.size = {.width = stana::Points{120}, .height = stana::Points{60}}},
+		{.size = {.width = 120_pt, .height = 60_pt}},
 		interpolated,
-		stana::CornerRadii::all(stana::Points{12}),
-		stana::BorderWidths::all(stana::Points{2})
+		stana::CornerRadii::all(12_pt),
+		stana::BorderWidths::all(2_pt)
 	);
 	const stana::reactive::Signal gpu{graphics};
 	stana::testing::TestHost host;
@@ -79,7 +77,7 @@ auto main() -> int {
 	}
 	const stana::application::Window positional{
 		std::string{"canvas"},
-		stana::Size{.width = stana::Points{1}, .height = stana::Points{1}},
+		stana::Size{.width = 1_pt, .height = 1_pt},
 		stana::ui::CPUCanvas{}
 	};
 	if (positional.renderingColorMode != stana::rendering::RenderingColorMode::automatic) {

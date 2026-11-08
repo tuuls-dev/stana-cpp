@@ -24,8 +24,8 @@ constexpr auto primaryTitle = "Stana tile qualification";
 constexpr auto secondaryTitle = "Stana independent window";
 
 constexpr stana::testing::fixtures::platform::macos::PhysicalViewport edgeViewport{
-	.width = 1025,
-	.height = 769
+	.width = stana::Points{1025},
+	.height = stana::Points{769}
 };
 enum class Stage : std::uint8_t {
 	initial,
@@ -212,7 +212,7 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 				record(current);
 				before = current;
 				constexpr stana::testing::fixtures::platform::macos::PhysicalViewport
-					restoredViewport{.width = 1200, .height = 900};
+					restoredViewport{.width = stana::Points{1200}, .height = stana::Points{900}};
 				stana::testing::fixtures::platform::macos::resizeWindow(
 					primaryTitle,
 					restoredViewport
@@ -257,13 +257,13 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 		for (unsigned column = 0; column < columns; ++column) {
 			const auto x = static_cast<double>(column) * step;
 			drawing.fill(
-				{.origin = {.x = x, .y = y},
-					.size = {.width = markerWidth, .height = markerHeight}},
+				{.origin = {.x = stana::Points{x}, .y = stana::Points{y}},
+					.size = {.width = stana::Points{markerWidth}, .height = stana::Points{markerHeight}}},
 				stana::Color::rgb(1, 0, 0)
 			);
 			drawing.fill(
-				{.origin = {.x = x + blueOffset, .y = y},
-					.size = {.width = blueExtent, .height = blueExtent}},
+				{.origin = {.x = stana::Points{x + blueOffset}, .y = stana::Points{y}},
+					.size = {.width = stana::Points{blueExtent}, .height = stana::Points{blueExtent}}},
 				stana::Color::rgb(0, 0, 1)
 			);
 		}
@@ -274,9 +274,9 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 [[nodiscard]] auto runScenario() -> int {
 	const auto scenario = std::make_shared<Scenario>();
 	scenario->document =
-		stana::document::detail::Document::create({.width = initialWidth, .height = initialHeight});
+		stana::document::detail::Document::create({.width = stana::Points{initialWidth}, .height = stana::Points{initialHeight}});
 	scenario->otherDocument =
-		stana::document::detail::Document::create({.width = smallWidth, .height = smallHeight});
+		stana::document::detail::Document::create({.width = stana::Points{smallWidth}, .height = stana::Points{smallHeight}});
 	stana::application::detail::installNativeTaskDispatcher();
 	stana::reactive::Transaction::perform([&] -> void {
 		stana::ui::MountContext mainContext{
@@ -299,7 +299,7 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 							},
 							stana::ui::VStack{
 								.layout =
-									{.padding = stana::Insets::all(padding),
+									{.padding = stana::Insets::all(stana::Points{padding}),
 										.frame =
 											stana::Frame{
 												.width = stana::Length::fill(),
@@ -332,10 +332,10 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 	scenario->queue();
 	const int status = stana::application::detail::runWindows(
 		{{.title = primaryTitle,
-			 .size = {.width = initialWidth, .height = initialHeight},
+			 .size = {.width = stana::Points{initialWidth}, .height = stana::Points{initialHeight}},
 			 .document = scenario->document},
 			{.title = secondaryTitle,
-				.size = {.width = smallWidth, .height = smallHeight},
+				.size = {.width = stana::Points{smallWidth}, .height = stana::Points{smallHeight}},
 				.document = scenario->otherDocument}}
 	);
 	require(

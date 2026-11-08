@@ -35,24 +35,26 @@ template <typename F> void rejects(F operation) {
 void values() {
 
 	stana::rendering::Drawing drawing;
-	const stana::Rect rect{.size = {.width = doubleExtent, .height = extent}};
-	drawing.fillRect(rect, stana::Color::accent(), doubleExtent);
+	const stana::Rect rect{
+		.size = {.width = stana::Points{doubleExtent}, .height = stana::Points{extent}}
+	};
+	drawing.fillRect(rect, stana::Color::accent(), stana::Points{doubleExtent});
 	require(
-		std::is_eq(drawing.commands.front().cornerRadius <=> doubleExtent),
+		std::is_eq(drawing.commands.front().cornerRadius <=> stana::Points{doubleExtent}),
 		"authored radius preserved for structural value equality"
 	);
 	stana::rendering::Drawing copy = drawing;
 	copy.commands.front().text = "ignored";
-	copy.commands.front().font.size = height;
+	copy.commands.front().font.size = stana::Points{height};
 	require(copy == drawing, "equality compares only opcode payload");
 	rejects([&] -> void {
-		drawing.strokeRect(rect, stana::Color::black(), -1);
+		drawing.strokeRect(rect, stana::Color::black(), stana::Points{-1});
 	});
 	require(drawing == copy, "failed append is atomic");
 	rejects([&] -> void {
 		drawing.fillRect(
-			{.origin = {.x = std::numeric_limits<double>::max()},
-				.size = {.width = std::numeric_limits<double>::max()}},
+			{.origin = {.x = stana::Points{std::numeric_limits<double>::max()}},
+				.size = {.width = stana::Points{std::numeric_limits<double>::max()}}},
 			stana::Color::black()
 		);
 	});
@@ -60,8 +62,8 @@ void values() {
 	line.commands.push_back(
 		{.kind = stana::rendering::PaintKind::line,
 			.bounds = {
-				.origin = {.x = doubleExtent, .y = doubleExtent},
-				.size = {.width = -extent, .height = -extent}
+				.origin = {.x = stana::Points{doubleExtent}, .y = stana::Points{doubleExtent}},
+				.size = {.width = stana::Points{-extent}, .height = stana::Points{-extent}}
 			}}
 	);
 	line.validate();
@@ -79,7 +81,7 @@ void retained() {
 
 	stana::rendering::Drawing initial;
 	initial.fillRect(
-		{.size = {.width = smallExtent, .height = smallExtent}},
+		{.size = {.width = stana::Points{smallExtent}, .height = stana::Points{smallExtent}}},
 		stana::Color::border()
 	);
 	const stana::reactive::Signal drawing{initial};
@@ -92,11 +94,16 @@ void retained() {
 			.thenContent = stana::ui::CPUCanvas{
 				.drawing = drawing,
 				.layout =
-					{.padding = stana::Insets{.top = 2, .leading = 3, .trailing = trailing},
+					{.padding =
+							stana::Insets{
+								.top = stana::Points{2},
+								.leading = stana::Points{3},
+								.trailing = stana::Points{trailing}
+							},
 						.frame =
 							stana::Frame{
-								.width = stana::Length::points(width),
-								.height = stana::Length::points(height)
+								.width = stana::Length::points(stana::Points{width}),
+								.height = stana::Length::points(stana::Points{height})
 							}},
 				.accessibility = {.label = "chart"},
 				.events = {stana::ui::on(
@@ -116,8 +123,15 @@ void retained() {
 			old->commands.back().kind == stana::rendering::PaintKind::popClip,
 		"default clipping"
 	);
-	require(old->commands.at(1).bounds.origin == stana::Point{.x = 3, .y = 2}, "padded origin");
-	initial.fillRect({.size = {.width = 1, .height = 1}}, stana::Color::black());
+	require(
+		old->commands.at(1).bounds.origin ==
+			stana::Point{.x = stana::Points{3}, .y = stana::Points{2}},
+		"padded origin"
+	);
+	initial.fillRect(
+		{.size = {.width = stana::Points{1}, .height = stana::Points{1}}},
+		stana::Color::black()
+	);
 	require(host.scene() == old, "builder independent from mounted copy");
 	drawing.set(drawing.get());
 	require(
@@ -125,7 +139,10 @@ void retained() {
 		"equal assignment no publication"
 	);
 	stana::rendering::Drawing next;
-	next.fillRect({.size = {.width = extent, .height = extent}}, stana::Color::text());
+	next.fillRect(
+		{.size = {.width = stana::Points{extent}, .height = stana::Points{extent}}},
+		stana::Color::text()
+	);
 	drawing.set(next);
 	require(
 		host.metrics().mounts == before.mounts &&
@@ -146,8 +163,8 @@ void retained() {
 	require(
 		host.scene()->commands.at(1).bounds.origin ==
 			stana::Point{
-				.x = host.nodes().back().bounds.origin.x + trailing,
-				.y = host.nodes().back().bounds.origin.y + 2
+				.x = host.nodes().back().bounds.origin.x + stana::Points{trailing},
+				.y = host.nodes().back().bounds.origin.y + stana::Points{2}
 			},
 		"RTL padded origin"
 	);
@@ -156,8 +173,8 @@ void retained() {
 		"semantic theme resolution"
 	);
 	host.click(
-		{.x = host.nodes().back().bounds.origin.x + extent,
-			.y = host.nodes().back().bounds.origin.y + extent}
+		{.x = host.nodes().back().bounds.origin.x + stana::Points{extent},
+			.y = host.nodes().back().bounds.origin.y + stana::Points{extent}}
 	);
 	require(presses == 1, "canvas pointer interaction");
 	present.set(false);
