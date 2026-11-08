@@ -68,7 +68,26 @@ namespace stana::application::detail {
 
 [[nodiscard]] inline auto convertAffine(stana::AffineTransform value)
 	-> stana::platform::detail::SymbolAffine {
-	return {.a = value.a.value(), .b = value.b.value(), .c = value.c.value(), .d = value.d.value(), .tx = value.tx.value(), .ty = value.ty.value()};
+	return {
+		.a = value.a.value(),
+		.b = value.b.value(),
+		.c = value.c.value(),
+		.d = value.d.value(),
+		.tx = value.tx.value(),
+		.ty = value.ty.value()
+	};
+}
+
+[[nodiscard]] inline auto convertAffine(stana::symbol::AssetTransform value)
+	-> stana::platform::detail::SymbolAffine {
+	return {
+		.a = value.a.value(),
+		.b = value.b.value(),
+		.c = value.c.value(),
+		.d = value.d.value(),
+		.tx = value.tx.value(),
+		.ty = value.ty.value()
+	};
 }
 
 namespace symbol_transport {
@@ -280,7 +299,7 @@ convertCommands(const std::vector<stana::symbol::PathCommand> &commands, Hasher 
 
 [[nodiscard]] inline auto visitElements(
 	const std::vector<stana::symbol::Element> &elements,
-	stana::AffineTransform parent,
+	stana::symbol::AssetTransform parent,
 	stana::Color tint,
 	Hasher &hasher,
 	bool &anyStroke
@@ -373,9 +392,8 @@ convertCommands(const std::vector<stana::symbol::PathCommand> &commands, Hasher 
 		.bounds = convertRect(leaf.bounds),
 		.ink = convertRect(leaf.ink),
 		.transform = convertAffine(presentation.transform),
-		.strokeWidth = presentation.strokeWidth
-			? std::optional{presentation.strokeWidth->value()}
-			: std::nullopt,
+		.strokeWidth = presentation.strokeWidth ? std::optional{presentation.strokeWidth->value()}
+												: std::nullopt,
 		.generation = presentation.generation,
 		.preparationLimited = presentation.preparationLimited,
 		.preparationScale = presentation.preparationScale.value(),
@@ -386,7 +404,7 @@ convertCommands(const std::vector<stana::symbol::PathCommand> &commands, Hasher 
 	bool anyStroke = false;
 	result.elements = symbol_transport::visitElements(
 		presentation.asset.elements(),
-		stana::AffineTransform::identity(),
+		stana::symbol::AssetTransform::identity(),
 		presentation.color,
 		hasher,
 		anyStroke
@@ -483,9 +501,9 @@ struct SceneConversion {
 		return result;
 	}
 
-	[[nodiscard]] auto
-	convert(const std::shared_ptr<const stana::rendering::detail::RenderSnapshot> &next)
-		-> std::shared_ptr<const stana::platform::detail::Scene> {
+	[[nodiscard]] auto convert(
+		const std::shared_ptr<const stana::rendering::detail::RenderSnapshot> &next
+	) -> std::shared_ptr<const stana::platform::detail::Scene> {
 		if (next == source) {
 			return converted;
 		}
@@ -505,7 +523,7 @@ struct SceneConversion {
 			source ? source->root : nullptr,
 			converted ? converted->root : nullptr
 		);
-		source = std::move(next);
+		source = next;
 		converted = std::move(scene);
 		return converted;
 	}

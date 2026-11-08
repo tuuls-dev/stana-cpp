@@ -18,18 +18,16 @@ auto main() -> int {
 
 		const auto window = stana::application::Window{
 			.title = "Stana Counter",
-			.size = {.width = Points{windowWidth}, .height = Points{windowHeight}},
+			.size = {.width = stana::Points{windowWidth}, .height = stana::Points{windowHeight}},
 			.content = stana::ui::VStack{
-				.spacing = stackSpacing,
-				.layout = {.padding = stana::Insets::all(contentPadding)},
+				.spacing = stana::Points{stackSpacing},
+				.layout = {.padding = stana::Insets::all(stana::Points{contentPadding})},
 				.children = stana::ui::children(
 					stana::ui::Text{
 						.text = count.map([](int value) -> std::string {
 							return "Count: " + std::to_string(value);
 						}),
-						.textStyle = {
-							.font = stana::Font::system(Points{headingSize})
-						}
+						.textStyle = {.font = stana::Font::system(stana::Points{headingSize})}
 					},
 					stana::ui::Button{
 						.text = "Increment",

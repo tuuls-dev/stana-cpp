@@ -102,27 +102,27 @@ auto graphics(const stana::rendering::GPUProgram &value) -> stana::rendering::GP
 	constexpr double triangleHeight = 100;
 	const std::array vertices{
 		stana::rendering::GPUVertex{
-			.position = {.x = Points{inset}, .y = Points{inset}},
+			.position = {.x = stana::Points{inset}, .y = stana::Points{inset}},
 			.color = stana::rendering::ExtendedColor{peak, 0, 0}
 		},
 		stana::rendering::GPUVertex{
-			.position = {.x = Points{inset + triangleWidth}, .y = Points{inset}},
+			.position = {.x = stana::Points{inset + triangleWidth}, .y = stana::Points{inset}},
 			.color = stana::rendering::ExtendedColor{0, peak, 0}
 		},
 		stana::rendering::GPUVertex{
-			.position = {.x = Points{inset}, .y = Points{inset + triangleHeight}},
+			.position = {.x = stana::Points{inset}, .y = stana::Points{inset + triangleHeight}},
 			.color = stana::rendering::ExtendedColor{0, 0, peak}
 		}
 	};
 	const std::array<std::uint32_t, 3> indices{0, 1, 2};
 	drawing.drawMesh(checked(stana::rendering::GPUMesh::create(vertices, indices)));
 	const std::array points{
-		stana::Point{.x = Points{inset}, .y = Points{canvasHeight - inset}},
-		stana::Point{.x = Points{canvasWidth / 2}, .y = Points{canvasHeight / 2}},
-		stana::Point{.x = Points{canvasWidth - inset}, .y = Points{inset}}
+		stana::Point{.x = stana::Points{inset}, .y = stana::Points{canvasHeight - inset}},
+		stana::Point{.x = stana::Points{canvasWidth / 2}, .y = stana::Points{canvasHeight / 2}},
+		stana::Point{.x = stana::Points{canvasWidth - inset}, .y = stana::Points{inset}}
 	};
 	constexpr double lineWidth = 4;
-	drawing.strokePolyline(points, stana::Color::text(), Points{lineWidth});
+	drawing.strokePolyline(points, stana::Color::text(), stana::Points{lineWidth});
 	return drawing;
 }
 
@@ -135,9 +135,12 @@ auto chart(int update) -> stana::rendering::Drawing {
 		const auto height = barHeight + static_cast<double>((update + index) % cycle) * increment;
 		drawing.fillRect(
 			{.origin =
-					{.x = Points{padding + static_cast<double>(index) * (barWidth + spacing)},
-						.y = Points{baseline - height}},
-				.size = {.width = Points{barWidth}, .height = Points{height}}},
+					{.x =
+							stana::Points{
+								padding + static_cast<double>(index) * (barWidth + spacing)
+							},
+						.y = stana::Points{baseline - height}},
+				.size = {.width = stana::Points{barWidth}, .height = stana::Points{height}}},
 			stana::Color::accent()
 		);
 	}
@@ -157,8 +160,8 @@ auto main(int argc, char **) -> int {
 		const stana::reactive::Signal gpu{graphics(initial)};
 		const auto fixed = stana::layout::LayoutProperties{
 			.frame = stana::Frame{
-				.width = stana::Length::points(canvasWidth),
-				.height = stana::Length::points(canvasHeight)
+				.width = stana::Length::points(stana::Points{canvasWidth}),
+				.height = stana::Length::points(stana::Points{canvasHeight})
 			}
 		};
 		constexpr double windowWidth = 720;
@@ -166,17 +169,18 @@ auto main(int argc, char **) -> int {
 		return stana::application::Application::run(
 			stana::application::Window{
 				.title = "Stana CPU / GPU Canvas",
-				.size = {.width = Points{windowWidth}, .height = Points{windowHeight}},
+				.size =
+					{.width = stana::Points{windowWidth}, .height = stana::Points{windowHeight}},
 				.content = stana::ui::VStack{
-					.spacing = spacing,
-					.layout = {.padding = stana::Insets::all(padding)},
+					.spacing = stana::Points{spacing},
+					.layout = {.padding = stana::Insets::all(stana::Points{padding})},
 					.children = stana::ui::children(
 						stana::ui::Text{
 							.text =
 								"Reactive CPU chart and WGSL compute → render, mesh and round line"
 						},
 						stana::ui::HStack{
-							.spacing = spacing,
+							.spacing = stana::Points{spacing},
 							.children = stana::ui::children(
 								stana::ui::CPUCanvas{
 									.drawing = updates.map(chart),

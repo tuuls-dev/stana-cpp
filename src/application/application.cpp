@@ -144,7 +144,7 @@ auto NativeExecutorSession::complete(int code) const -> int {
 
 void installNativeTaskDispatcher() {
 	stana::tasks::detail::TaskScheduler::current().dispatcher =
-		[](std::chrono::milliseconds delay, std::function<void()> callback) -> void {
+		[](std::chrono::milliseconds delay, const std::function<void()> &callback) -> void {
 		stana::platform::detail::postAfter(delay, callback);
 	};
 }
@@ -359,7 +359,9 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 								portableAttempt(frame),
 								stana::rendering::TilePresentation{
 									.tile = stana::rendering::TileId{observation.tile.value},
-									.timestamp = observation.timestamp
+									.timestamp = PresentationTimePoint{
+										PresentationDuration{observation.timestamp}
+									}
 								}
 							);
 					},
@@ -413,7 +415,10 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 						if (!document) {
 							return;
 						}
-						document->tickFrames({.timestamp = timestamp, .targetTimestamp = deadline});
+						document->tickFrames(
+							{.timestamp = FrameTimePoint{FrameDuration{timestamp}},
+								.targetTimestamp = FrameTimePoint{FrameDuration{deadline}}}
+						);
 						stana::reactive::detail::ReactiveRuntime::current().flush();
 						document->commit();
 					},
@@ -428,7 +433,7 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 					.animation = animation}
 			);
 		}
-		const auto result = stana::platform::detail::run(std::move(windows));
+		const auto result = stana::platform::detail::run(windows);
 		stana::tasks::detail::TaskScheduler::current().dispatcher = {};
 		for (const auto &session : sessions) {
 			session.document->close();
