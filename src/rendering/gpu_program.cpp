@@ -150,10 +150,11 @@ struct PassPlan {
 	}
 	if ((descriptor.outputColor != GPUColorEncoding::encodedSRGB &&
 			descriptor.outputColor != GPUColorEncoding::extendedLinear) ||
-		!std::isfinite(descriptor.sourcePeak) || descriptor.sourcePeak <= 0 ||
-		descriptor.sourcePeak > stana::gpu::detail::halfMaximum ||
+		!std::isfinite(descriptor.sourcePeak.value()) || descriptor.sourcePeak.value() <= 0 ||
+		descriptor.sourcePeak.value() > stana::gpu::detail::halfMaximum ||
 		(descriptor.samplingRadius &&
-			(!std::isfinite(*descriptor.samplingRadius) || *descriptor.samplingRadius < 0))) {
+			(!std::isfinite(descriptor.samplingRadius->value()) ||
+				descriptor.samplingRadius->value() < 0))) {
 		return invalid("Invalid program color peak or sampling radius");
 	}
 	std::size_t ownedBytes = descriptor.shader.source().size();

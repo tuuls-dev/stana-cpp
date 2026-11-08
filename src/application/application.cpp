@@ -156,12 +156,12 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 			const auto sessionDocument = session.document;
 			sessionDocument->enablePresentationTracking();
 			sessionDocument->setTextMeasure(
-				[](const std::string &text, Font font, double width) -> Size {
+				[](const std::string &text, Font font, Points width) -> Size {
 					const auto [measuredWidth, measuredHeight] =
 						stana::platform::detail::measureText(
 							text,
 							{.size = font.size, .weight = font.weight},
-							width
+							width.value()
 						);
 					return {.width = measuredWidth, .height = measuredHeight};
 				}

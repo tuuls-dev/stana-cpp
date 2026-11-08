@@ -50,7 +50,7 @@ struct RenderVersion {
 }
 
 void point(Point value) {
-	for (const double component : {value.x, value.y}) {
+	for (const double component : {value.x.value(), value.y.value()}) {
 		stana::detail::requireFinite(component);
 		if (std::abs(component) > static_cast<double>(std::numeric_limits<float>::max())) {
 			throw std::invalid_argument("GPU coordinate exceeds float range");
@@ -67,7 +67,8 @@ void rectangle(Rect rect) {
 }
 
 void color(Color value) {
-	for (const double component : {value.red, value.green, value.blue, value.alpha}) {
+	for (const double component :
+		{value.red.value(), value.green.value(), value.blue.value(), value.alpha.value()}) {
 		stana::detail::requireNonnegative(component);
 		if (component > 1) {
 			throw std::invalid_argument("GPU SDR color exceeds one");
@@ -144,13 +145,15 @@ auto GPUTexture::create(GPUTextureDescriptor descriptor) -> std::expected<GPUTex
 	if (*length != descriptor.bytes.size()) {
 		return invalid("Texture byte length must match tightly packed extent");
 	}
-	if (!std::isfinite(descriptor.sourcePeak) || descriptor.sourcePeak <= 0 ||
-		descriptor.sourcePeak > stana::gpu::detail::halfMaximum) {
+	if (!std::isfinite(descriptor.sourcePeak.value()) || descriptor.sourcePeak.value() <= 0 ||
+		descriptor.sourcePeak.value() > stana::gpu::detail::halfMaximum) {
 		return invalid("Invalid texture source peak");
 	}
 	if (descriptor.format == GPUTextureFormat::r8Unorm &&
 		(descriptor.encoding != GPUColorEncoding::encodedSRGB || !descriptor.premultiplied ||
-			std::is_neq(descriptor.sourcePeak <=> stana::gpu::detail::defaultSourcePeak))) {
+			std::is_neq(
+				descriptor.sourcePeak <=> SourcePeak{stana::gpu::detail::defaultSourcePeak}
+			))) {
 		return invalid("Scalar textures cannot carry color metadata");
 	}
 	const auto bytes = std::span<const std::byte>{descriptor.bytes};
@@ -240,20 +243,34 @@ auto GPUStateSlot::operator==(const GPUStateSlot &other) const noexcept -> bool 
 	return data_ == other.data_;
 }
 
-ExtendedColor::ExtendedColor(double red, double green, double blue, double alpha)
+ExtendedColor::ExtendedColor(
+	LinearChannel red,
+	LinearChannel green,
+	LinearChannel blue,
+	Opacity alpha
+)
 	: red_(red),
 	  green_(green),
 	  blue_(blue),
 	  alpha_(alpha) {
-	const std::array components{red, green, blue, alpha};
+	const std::array components{
+		red.value(),
+		green.value(),
+		blue.value(),
+		alpha.value()
+	};
 	for (const double component : components) {
 		if (!std::isfinite(component) || std::abs(component) > stana::gpu::detail::halfMaximum) {
 			throw std::invalid_argument("Invalid extended linear color");
 		}
 	}
-	if (components.back() < 0 || components.back() > 1) {
+	if (alpha.value() < 0 || alpha.value() > 1) {
 		throw std::invalid_argument("Invalid extended alpha");
 	}
+}
+
+ExtendedColor::ExtendedColor(double red, double green, double blue, double alpha)
+	: ExtendedColor(LinearChannel{red}, LinearChannel{green}, LinearChannel{blue}, Opacity{alpha}) {
 }
 
 struct GPUMesh::Data {
@@ -424,26 +441,40 @@ void GPUDrawing::append(stana::rendering::detail::GPUCommand command) {
 	}
 }
 
-void GPUDrawing::fillRect(Rect rect, Color value, double radius) {
+void GPUDrawing::fillRect(Rect rect, Color value, Points radius) {
 	rectangle(rect);
 	color(value);
 	stana::detail::requireNonnegative(radius);
+	const Points clamped = Points{
+		std::min(
+			{radius.value(),
+				rect.size.width.value() / 2,
+				rect.size.height.value() / 2}
+		)
+	};
 	append(
 		stana::rendering::detail::GPURect{
 			.bounds = rect,
-			.radius = std::min({radius, rect.size.width / 2, rect.size.height / 2}),
+			.radius = clamped,
 			.color = value
 		}
 	);
 }
 
-void GPUDrawing::fillRect(Rect rect, ExtendedColor value, double radius) {
+void GPUDrawing::fillRect(Rect rect, ExtendedColor value, Points radius) {
 	rectangle(rect);
 	stana::detail::requireNonnegative(radius);
+	const Points clamped = Points{
+		std::min(
+			{radius.value(),
+				rect.size.width.value() / 2,
+				rect.size.height.value() / 2}
+		)
+	};
 	append(
 		stana::rendering::detail::GPURect{
 			.bounds = rect,
-			.radius = std::min({radius, rect.size.width / 2, rect.size.height / 2}),
+			.radius = clamped,
 			.color = value
 		}
 	);
@@ -488,7 +519,7 @@ void GPUDrawing::drawMesh(GPUMesh mesh) {
 void GPUDrawing::strokePolyline(
 	std::span<const Point> points,
 	Color value,
-	double width,
+	Points width,
 	bool closed
 ) {
 	color(value);
@@ -498,7 +529,7 @@ void GPUDrawing::strokePolyline(
 void GPUDrawing::strokePolyline(
 	std::span<const Point> points,
 	ExtendedColor value,
-	double width,
+	Points width,
 	bool closed
 ) {
 	polyline(points, value, width, closed);
@@ -507,24 +538,25 @@ void GPUDrawing::strokePolyline(
 void GPUDrawing::polyline(
 	std::span<const Point> points,
 	stana::rendering::detail::GPUColor value,
-	double width,
+	Points width,
 	bool closed
 ) {
 	stana::detail::requireNonnegative(width);
 	if (points.size() > stana::gpu::detail::pointLimit) {
 		throw std::invalid_argument("Polyline point limit");
 	}
+	const double half = width.value() / 2;
 	point({.x = width, .y = width});
 	std::vector<Point> prepared;
 	for (const auto position : points) {
 		point(position);
-		point({.x = position.x - width / 2, .y = position.y - width / 2});
-		point({.x = position.x + width / 2, .y = position.y + width / 2});
+		point({.x = position.x - Points{half}, .y = position.y - Points{half}});
+		point({.x = position.x + Points{half}, .y = position.y + Points{half}});
 		if (prepared.empty() || prepared.back() != position) {
 			prepared.push_back(position);
 		}
 	}
-	if (prepared.empty() || std::is_eq(width <=> 0.0)) {
+	if (prepared.empty() || std::is_eq(width <=> Points{})) {
 		return;
 	}
 	if (closed && prepared.size() > 1 && prepared.front() == prepared.back()) {

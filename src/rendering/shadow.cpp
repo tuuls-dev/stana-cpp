@@ -17,7 +17,8 @@ import :primitives;
 namespace stana::rendering::detail {
 namespace {
 void validateColor(Color color) {
-	for (const double value : {color.red, color.green, color.blue, color.alpha}) {
+	for (const double value :
+		{color.red.value(), color.green.value(), color.blue.value(), color.alpha.value()}) {
 		stana::detail::requireNonnegative(value);
 		if (value > 1) {
 			throw std::invalid_argument("Shadow SDR color exceeds one");
@@ -28,30 +29,30 @@ void validateColor(Color color) {
 void validateRect(Rect bounds) {
 	stana::detail::requireNonnegative(bounds.size.width);
 	stana::detail::requireNonnegative(bounds.size.height);
-	stana::detail::requireFinite(bounds.origin.x);
-	stana::detail::requireFinite(bounds.origin.y);
-	stana::detail::requireFinite(bounds.origin.x + bounds.size.width);
-	stana::detail::requireFinite(bounds.origin.y + bounds.size.height);
+	stana::detail::requireFinite(bounds.origin.x.value());
+	stana::detail::requireFinite(bounds.origin.y.value());
+	stana::detail::requireFinite(bounds.origin.x.value() + bounds.size.width.value());
+	stana::detail::requireFinite(bounds.origin.y.value() + bounds.size.height.value());
 }
 
 [[nodiscard]] auto normalize(BoxContour contour) -> BoxContour {
 	const auto &r = contour.radii;
 	// Dividing before adding avoids overflow even for finite radii near DBL_MAX.
 	double factor = 1;
-	const auto limit = [&](double extent, double first, double second) -> void {
-		const double largest = std::max(first, second);
+	const auto limit = [&](double extent, Points first, Points second) -> void {
+		const double largest = std::max(first.value(), second.value());
 		if (largest > 0) {
-			factor = std::min(factor, (extent / largest) / (first / largest + second / largest));
+			factor = std::min(factor, (extent / largest) / (first.value() / largest + second.value() / largest));
 		}
 	};
-	limit(contour.bounds.size.width, r.at(0).width, r.at(1).width);
-	limit(contour.bounds.size.width, r.at(3).width, r.at(2).width);
-	limit(contour.bounds.size.height, r.at(0).height, r.at(3).height);
-	limit(contour.bounds.size.height, r.at(1).height, r.at(2).height);
+	limit(contour.bounds.size.width.value(), r.at(0).width, r.at(1).width);
+	limit(contour.bounds.size.width.value(), r.at(3).width, r.at(2).width);
+	limit(contour.bounds.size.height.value(), r.at(0).height, r.at(3).height);
+	limit(contour.bounds.size.height.value(), r.at(1).height, r.at(2).height);
 	for (auto &radius : contour.radii) {
-		radius.width *= factor;
-		radius.height *= factor;
-		if (radius.width <= 0 || radius.height <= 0) {
+		radius.width = Points{radius.width.value() * factor};
+		radius.height = Points{radius.height.value() * factor};
+		if (radius.width.value() <= 0 || radius.height.value() <= 0) {
 			radius = {};
 		}
 	}
@@ -69,15 +70,18 @@ void validateRect(Rect bounds) {
 	return result;
 }
 
-[[nodiscard]] auto spreadContour(BoxContour contour, double spread) -> BoxContour {
-	contour.bounds.origin.x -= spread;
-	contour.bounds.origin.y -= spread;
-	contour.bounds.size.width = std::max(0.0, contour.bounds.size.width + 2 * spread);
-	contour.bounds.size.height = std::max(0.0, contour.bounds.size.height + 2 * spread);
+[[nodiscard]] auto spreadContour(BoxContour contour, Points spread) -> BoxContour {
+	const double spreadValue = spread.value();
+	contour.bounds.origin.x -= Points{spreadValue};
+	contour.bounds.origin.y -= Points{spreadValue};
+	contour.bounds.size.width =
+		Points{std::max(0.0, contour.bounds.size.width.value() + 2 * spreadValue)};
+	contour.bounds.size.height =
+		Points{std::max(0.0, contour.bounds.size.height.value() + 2 * spreadValue)};
 	validateRect(contour.bounds);
 	for (auto &radius : contour.radii) {
-		radius.width = spreadRadius(radius.width, spread);
-		radius.height = spreadRadius(radius.height, spread);
+		radius.width = Points{spreadRadius(radius.width.value(), spreadValue)};
+		radius.height = Points{spreadRadius(radius.height.value(), spreadValue)};
 	}
 	return normalize(contour);
 }
@@ -92,7 +96,7 @@ void validateCornerRadii(CornerRadii radii) {
 }
 
 void validateBorderWidths(BorderWidths widths) {
-	for (const double width : {widths.top, widths.leading, widths.bottom, widths.trailing}) {
+	for (const Points width : {widths.top, widths.leading, widths.bottom, widths.trailing}) {
 		stana::detail::requireNonnegative(width);
 	}
 }
@@ -102,9 +106,9 @@ void validateBoxShadows(std::span<const BoxShadow> shadows) {
 		throw std::invalid_argument("Box shadow list exceeds command budget");
 	}
 	for (const auto &shadow : shadows) {
-		stana::detail::requireFinite(shadow.offset.x);
-		stana::detail::requireFinite(shadow.offset.y);
-		stana::detail::requireFinite(shadow.spreadRadius);
+		stana::detail::requireFinite(shadow.offset.x.value());
+		stana::detail::requireFinite(shadow.offset.y.value());
+		stana::detail::requireFinite(shadow.spreadRadius.value());
 		stana::detail::requireNonnegative(shadow.blurRadius);
 		if (shadow.color) {
 			validateColor(*shadow.color);
@@ -128,22 +132,33 @@ auto boxGeometry(Rect bounds, CornerRadii radii, BorderWidths widths, Direction 
 		}
 	};
 	outer = normalize(outer);
-	const double left = std::min(bounds.size.width, rtl ? widths.trailing : widths.leading);
-	const double right = std::min(bounds.size.width - left, rtl ? widths.leading : widths.trailing);
-	const double top = std::min(bounds.size.height, widths.top);
-	const double bottom = std::min(bounds.size.height - top, widths.bottom);
+	const double left = std::min(
+		bounds.size.width.value(),
+		(rtl ? widths.trailing : widths.leading).value()
+	);
+	const double right = std::min(
+		bounds.size.width.value() - left,
+		(rtl ? widths.leading : widths.trailing).value()
+	);
+	const double top = std::min(bounds.size.height.value(), widths.top.value());
+	const double bottom = std::min(bounds.size.height.value() - top, widths.bottom.value());
 	BoxContour padding{
 		.bounds =
-			{.origin = {.x = bounds.origin.x + left, .y = bounds.origin.y + top},
+			{.origin =
+				 {.x = bounds.origin.x + Points{left},
+						.y = bounds.origin.y + Points{top}},
 				.size =
-					{.width = bounds.size.width - left - right,
-						.height = bounds.size.height - top - bottom}},
+					{.width = Points{bounds.size.width.value() - left - right},
+						.height = Points{bounds.size.height.value() - top - bottom}}},
 		.radii = outer.radii
 	};
 	for (std::size_t index = 0; index < padding.radii.size(); ++index) {
 		auto &radius = padding.radii.at(index);
-		radius.width = std::max(0.0, radius.width - ((index == 0 || index == 3) ? left : right));
-		radius.height = std::max(0.0, radius.height - (index < 2 ? top : bottom));
+		radius.width = Points{
+			std::max(0.0, radius.width.value() - ((index == 0 || index == 3) ? left : right))
+		};
+		radius.height =
+			Points{std::max(0.0, radius.height.value() - (index < 2 ? top : bottom))};
 	}
 	return {.outer = outer, .padding = normalize(padding)};
 }
@@ -165,29 +180,37 @@ auto prepareBoxShadows(
 	for (const auto &shadow : std::views::reverse(shadows)) {
 		const auto color =
 			shadow.color.value_or(foreground).resolved(environment.theme, environment.highContrast);
-		if (color.alpha <= 0) {
+		if (color.alpha.value() <= 0) {
 			continue;
 		}
 		const auto clip = shadow.isInset ? geometry.padding : geometry.outer;
-		const auto caster =
-			spreadContour(clip, shadow.isInset ? -shadow.spreadRadius : shadow.spreadRadius);
-		if ((shadow.isInset && (clip.bounds.size.width <= 0 || clip.bounds.size.height <= 0)) ||
+		const auto caster = spreadContour(
+			clip,
+			shadow.isInset ? Points{-shadow.spreadRadius.value()} : shadow.spreadRadius
+		);
+		if ((shadow.isInset &&
+				(clip.bounds.size.width.value() <= 0 || clip.bounds.size.height.value() <= 0)) ||
 			(!shadow.isInset &&
-				(caster.bounds.size.width <= 0 || caster.bounds.size.height <= 0))) {
+				(caster.bounds.size.width.value() <= 0 ||
+					caster.bounds.size.height.value() <= 0))) {
 			continue;
 		}
 		Rect ink = clip.bounds;
 		if (!shadow.isInset) {
-			const double support = shadow.blurRadius * (shadowSigmaSupport / 2);
+			const double support = shadow.blurRadius.value() * (shadowSigmaSupport / 2);
 			ink = caster.bounds;
-			ink.origin.x += shadow.offset.x - support;
-			ink.origin.y += shadow.offset.y - support;
-			ink.size.width += 2 * support;
-			ink.size.height += 2 * support;
+			ink.origin.x += shadow.offset.x - Points{support};
+			ink.origin.y += shadow.offset.y - Points{support};
+			ink.size.width += Points{2 * support};
+			ink.size.height += Points{2 * support};
 		}
 		validateRect(ink);
-		stana::detail::requireFinite(caster.bounds.origin.x + shadow.offset.x);
-		stana::detail::requireFinite(caster.bounds.origin.y + shadow.offset.y);
+		stana::detail::requireFinite(
+			caster.bounds.origin.x.value() + shadow.offset.x.value()
+		);
+		stana::detail::requireFinite(
+			caster.bounds.origin.y.value() + shadow.offset.y.value()
+		);
 		result.push_back(
 			{.clip = clip,
 				.caster = caster,
@@ -206,14 +229,15 @@ namespace stana::rendering {
 auto interpolateBoxShadows(
 	std::span<const BoxShadow> from,
 	std::span<const BoxShadow> to,
-	double progress,
+	Progress progress,
 	Color foreground,
 	Environment environment
 ) -> std::vector<BoxShadow> {
-	stana::detail::requireNonnegative(progress);
-	if (progress > 1) {
+	stana::detail::requireNonnegative(progress.value());
+	if (progress.value() > 1) {
 		throw std::invalid_argument("Shadow interpolation progress exceeds one");
 	}
+	const double progressValue = progress.value();
 	detail::validateBoxShadows(from);
 	detail::validateBoxShadows(to);
 	const std::array foregroundShadow{BoxShadow{.color = foreground}};
@@ -225,7 +249,7 @@ auto interpolateBoxShadows(
 	};
 	for (std::size_t index = 0; index < std::min(from.size(), to.size()); ++index) {
 		if (from.subspan(index, 1).front().isInset != to.subspan(index, 1).front().isInset) {
-			const auto selected = progress < 0.5 ? from : to;
+			const auto selected = progressValue < 0.5 ? from : to;
 			std::vector<BoxShadow> result;
 			result.reserve(selected.size());
 			for (auto shadow : selected) {
@@ -244,41 +268,57 @@ auto interpolateBoxShadows(
 		const auto end = resolve(index < to.size() ? to.subspan(index, 1).front() : zero);
 		const auto a = start.color.value_or(Color::clear());
 		const auto b = end.color.value_or(Color::clear());
-		const double alpha = std::lerp(a.alpha, b.alpha, progress);
-		const auto channel = [&](double first, double second) -> double {
+		const double alpha = std::lerp(a.alpha.value(), b.alpha.value(), progressValue);
+		const auto channel = [&](double first, double second) -> SdrChannel {
 			if (alpha <= 0) {
-				return 0;
+				return SdrChannel{0};
 			}
-			if (std::is_eq(first <=> second) || std::is_eq(progress <=> 0.0)) {
-				return first;
+			if (std::is_eq(first <=> second) || std::is_eq(progressValue <=> 0.0)) {
+				return SdrChannel{first};
 			}
-			if (std::is_eq(progress <=> 1.0)) {
-				return second;
+			if (std::is_eq(progressValue <=> 1.0)) {
+				return SdrChannel{second};
 			}
-			return std::clamp(
+			return SdrChannel{std::clamp(
 				stana::gpu::detail::encodeSRGB(
 					std::lerp(
-						stana::gpu::detail::decodeSRGB(first) * a.alpha,
-						stana::gpu::detail::decodeSRGB(second) * b.alpha,
-						progress
+						stana::gpu::detail::decodeSRGB(first) * a.alpha.value(),
+						stana::gpu::detail::decodeSRGB(second) * b.alpha.value(),
+						progressValue
 					) /
 					alpha
 				),
 				0.0,
 				1.0
-			);
+			)};
 		};
 		result.push_back(
 			{.offset =
-					{.x = std::lerp(start.offset.x, end.offset.x, progress),
-						.y = std::lerp(start.offset.y, end.offset.y, progress)},
-				.blurRadius = std::lerp(start.blurRadius, end.blurRadius, progress),
-				.spreadRadius = std::lerp(start.spreadRadius, end.spreadRadius, progress),
+					{.x = Points{
+						 std::lerp(start.offset.x.value(), end.offset.x.value(), progressValue)
+					 },
+						.y = Points{
+						 std::lerp(start.offset.y.value(), end.offset.y.value(), progressValue)
+					 }},
+				.blurRadius = Points{
+					std::lerp(
+						start.blurRadius.value(),
+						end.blurRadius.value(),
+						progressValue
+					)
+				},
+				.spreadRadius = Points{
+					std::lerp(
+						start.spreadRadius.value(),
+						end.spreadRadius.value(),
+						progressValue
+					)
+				},
 				.color = Color::rgb(
-					channel(a.red, b.red),
-					channel(a.green, b.green),
-					channel(a.blue, b.blue),
-					alpha
+					channel(a.red.value(), b.red.value()),
+					channel(a.green.value(), b.green.value()),
+					channel(a.blue.value(), b.blue.value()),
+					Opacity{alpha}
 				),
 				.isInset = inset}
 		);

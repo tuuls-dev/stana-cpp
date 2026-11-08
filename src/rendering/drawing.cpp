@@ -23,13 +23,13 @@ void validateCommand(const PaintCommand &command) {
 		return;
 	}
 	const auto &rect = command.bounds;
-	stana::detail::requireFinite(rect.origin.x);
-	stana::detail::requireFinite(rect.origin.y);
-	stana::detail::requireFinite(rect.origin.x + rect.size.width);
-	stana::detail::requireFinite(rect.origin.y + rect.size.height);
+	stana::detail::requireFinite(rect.origin.x.value());
+	stana::detail::requireFinite(rect.origin.y.value());
+	stana::detail::requireFinite(rect.origin.x.value() + rect.size.width.value());
+	stana::detail::requireFinite(rect.origin.y.value() + rect.size.height.value());
 	if (command.kind == line) {
-		stana::detail::requireFinite(rect.size.width);
-		stana::detail::requireFinite(rect.size.height);
+		stana::detail::requireFinite(rect.size.width.value());
+		stana::detail::requireFinite(rect.size.height.value());
 	} else {
 		stana::detail::requireNonnegative(rect.size.width);
 		stana::detail::requireNonnegative(rect.size.height);
@@ -38,14 +38,18 @@ void validateCommand(const PaintCommand &command) {
 	case strokeRect:
 	case line: {
 		stana::detail::requireNonnegative(command.lineWidth);
-		stana::detail::requireFinite(std::abs(rect.size.width) + command.lineWidth);
-		stana::detail::requireFinite(std::abs(rect.size.height) + command.lineWidth);
-		const double half = command.lineWidth / 2;
+		stana::detail::requireFinite(
+			std::abs(rect.size.width.value()) + command.lineWidth.value()
+		);
+		stana::detail::requireFinite(
+			std::abs(rect.size.height.value()) + command.lineWidth.value()
+		);
+		const double half = command.lineWidth.value() / 2;
 		for (const double endpoint :
-			{rect.origin.x,
-				rect.origin.y,
-				rect.origin.x + rect.size.width,
-				rect.origin.y + rect.size.height}) {
+			{rect.origin.x.value(),
+				rect.origin.y.value(),
+				rect.origin.x.value() + rect.size.width.value(),
+				rect.origin.y.value() + rect.size.height.value()}) {
 			stana::detail::requireFinite(endpoint - half);
 			stana::detail::requireFinite(endpoint + half);
 		}
@@ -64,11 +68,15 @@ void validateCommand(const PaintCommand &command) {
 	}
 	if (command.kind == text) {
 		stana::detail::requireNonnegative(command.font.size);
-		stana::detail::requireFinite(command.font.weight);
+		stana::detail::requireFinite(command.font.weight.value());
 	}
 	if (command.kind != pushClip) {
-		for (const double component :
-			{command.color.red, command.color.green, command.color.blue, command.color.alpha}) {
+		for (const double component : {
+				 command.color.red.value(),
+				 command.color.green.value(),
+				 command.color.blue.value(),
+				 command.color.alpha.value()
+			 }) {
 			stana::detail::requireNonnegative(component);
 			if (component > 1) {
 				throw std::invalid_argument("Drawing SDR color exceeds one");
@@ -131,7 +139,7 @@ void Drawing::validate() const {
 	}
 }
 
-void Drawing::fillRect(Rect bounds, Color color, double radius) {
+void Drawing::fillRect(Rect bounds, Color color, Points radius) {
 	PaintCommand command{
 		.kind = PaintKind::fillRect,
 		.bounds = bounds,
@@ -143,7 +151,7 @@ void Drawing::fillRect(Rect bounds, Color color, double radius) {
 	commands.push_back(std::move(command));
 }
 
-void Drawing::strokeRect(Rect bounds, Color color, double width, double radius) {
+void Drawing::strokeRect(Rect bounds, Color color, Points width, Points radius) {
 	PaintCommand command{
 		.kind = PaintKind::strokeRect,
 		.bounds = bounds,

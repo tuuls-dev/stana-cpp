@@ -12,30 +12,52 @@ module;
 export module stana:symbol_geometry;
 export import :symbol_asset;
 export import :symbol_playback;
+export import :symbol_units;
 import :primitives;
 
 export namespace stana::symbol {
 namespace detail {
-[[nodiscard]] inline auto emptyRect(Rect rect) noexcept -> bool {
-	return std::is_eq(rect.size.width <=> 0.0) || std::is_eq(rect.size.height <=> 0.0);
+[[nodiscard]] constexpr auto toRect(AssetRect rect) noexcept -> Rect {
+	return {
+		.origin =
+			{.x = Points{rect.origin.x.value()}, .y = Points{rect.origin.y.value()}},
+		.size =
+			{.width = Points{rect.size.width.value()},
+				.height = Points{rect.size.height.value()}}
+	};
 }
 
-[[nodiscard]] inline auto unite(Rect left, Rect right) noexcept -> Rect {
+[[nodiscard]] inline auto emptyRect(AssetRect rect) noexcept -> bool {
+	return std::is_eq(rect.size.width <=> AssetUnits{}) ||
+		std::is_eq(rect.size.height <=> AssetUnits{});
+}
+
+[[nodiscard]] inline auto unite(AssetRect left, AssetRect right) noexcept -> AssetRect {
 	if (emptyRect(left)) {
 		return right;
 	}
 	if (emptyRect(right)) {
 		return left;
 	}
-	const double x = std::min(left.origin.x, right.origin.x);
-	const double y = std::min(left.origin.y, right.origin.y);
+	const AssetUnits x{std::min(left.origin.x.value(), right.origin.x.value())};
+	const AssetUnits y{std::min(left.origin.y.value(), right.origin.y.value())};
 	return {
 		.origin = {.x = x, .y = y},
 		.size = {
-			.width =
-				std::max(left.origin.x + left.size.width, right.origin.x + right.size.width) - x,
-			.height =
-				std::max(left.origin.y + left.size.height, right.origin.y + right.size.height) - y
+			.width = AssetUnits{
+				std::max(
+					left.origin.x.value() + left.size.width.value(),
+					right.origin.x.value() + right.size.width.value()
+				) -
+					x.value()
+			},
+			.height = AssetUnits{
+				std::max(
+					left.origin.y.value() + left.size.height.value(),
+					right.origin.y.value() + right.size.height.value()
+				) -
+					y.value()
+			}
 		}
 	};
 }
@@ -43,19 +65,23 @@ namespace detail {
 
 /// @brief Centered square of side min(size, content width, content height).
 /// A zero side still reports the center of the content box. textScale is not an input.
-[[nodiscard]] inline auto square(double size, Rect content) noexcept -> Rect {
-	const double side = std::min({size, content.size.width, content.size.height});
+[[nodiscard]] inline auto square(Points size, Rect content) noexcept -> Rect {
+	const double side = std::min(
+		{size.value(), content.size.width.value(), content.size.height.value()}
+	);
 	return {
 		.origin =
-			{.x = content.origin.x + (content.size.width - side) / 2,
-				.y = content.origin.y + (content.size.height - side) / 2},
-		.size = {.width = side, .height = side}
+			{.x = Points{
+				 content.origin.x.value() + (content.size.width.value() - side) / 2
+			 },
+				.y = Points{
+				 content.origin.y.value() + (content.size.height.value() - side) / 2
+			 }},
+		.size = {.width = Points{side}, .height = Points{side}}
 	};
 }
 
-/// @brief Axis-aligned hull of a transformed rectangle.
-/// A singular transform returns a zero rectangle. Nonfinite corners return no value so the
-/// caller can report a resource diagnostic instead of painting an overflow.
+/// @brief Axis-aligned hull of a transformed logical rectangle.
 [[nodiscard]] inline auto enclosing(const AffineTransform &transform, Rect rect)
 	-> std::optional<Rect> {
 	if (!transform.inverse()) {
@@ -69,15 +95,15 @@ namespace detail {
 			{.x = rect.origin.x + rect.size.width, .y = rect.origin.y + rect.size.height}
 		)
 	};
-	double minX = corners.front().x;
-	double minY = corners.front().y;
-	double maxX = corners.front().x;
-	double maxY = corners.front().y;
+	double minX = corners.front().x.value();
+	double minY = corners.front().y.value();
+	double maxX = corners.front().x.value();
+	double maxY = corners.front().y.value();
 	for (const Point corner : corners) {
-		minX = std::min(minX, corner.x);
-		minY = std::min(minY, corner.y);
-		maxX = std::max(maxX, corner.x);
-		maxY = std::max(maxY, corner.y);
+		minX = std::min(minX, corner.x.value());
+		minY = std::min(minY, corner.y.value());
+		maxX = std::max(maxX, corner.x.value());
+		maxY = std::max(maxY, corner.y.value());
 	}
 	const double width = maxX - minX;
 	const double height = maxY - minY;
@@ -85,21 +111,67 @@ namespace detail {
 		!std::isfinite(maxY) || !std::isfinite(width) || !std::isfinite(height)) {
 		return std::nullopt;
 	}
-	return Rect{.origin = {.x = minX, .y = minY}, .size = {.width = width, .height = height}};
+	return Rect{
+		.origin = {.x = Points{minX}, .y = Points{minY}},
+		.size = {.width = Points{width}, .height = Points{height}}
+	};
+}
+
+/// @brief Axis-aligned hull of a transformed rectangle in asset space.
+/// A singular transform returns a zero rectangle. Nonfinite corners return no value so the
+/// caller can report a resource diagnostic instead of painting an overflow.
+[[nodiscard]] inline auto enclosing(const AssetTransform &transform, AssetRect rect)
+	-> std::optional<AssetRect> {
+	if (!transform.inverse()) {
+		return AssetRect{};
+	}
+	const std::array<AssetPoint, 4> corners = {
+		transform.apply({.x = rect.origin.x, .y = rect.origin.y}),
+		transform.apply(
+			{.x = rect.origin.x + rect.size.width, .y = rect.origin.y}
+		),
+		transform.apply(
+			{.x = rect.origin.x, .y = rect.origin.y + rect.size.height}
+		),
+		transform.apply(
+			{.x = rect.origin.x + rect.size.width,
+				.y = rect.origin.y + rect.size.height}
+		)
+	};
+	double minX = corners.front().x.value();
+	double minY = corners.front().y.value();
+	double maxX = corners.front().x.value();
+	double maxY = corners.front().y.value();
+	for (const AssetPoint corner : corners) {
+		minX = std::min(minX, corner.x.value());
+		minY = std::min(minY, corner.y.value());
+		maxX = std::max(maxX, corner.x.value());
+		maxY = std::max(maxY, corner.y.value());
+	}
+	const double width = maxX - minX;
+	const double height = maxY - minY;
+	if (!std::isfinite(minX) || !std::isfinite(minY) || !std::isfinite(maxX) ||
+		!std::isfinite(maxY) || !std::isfinite(width) || !std::isfinite(height)) {
+		return std::nullopt;
+	}
+	return AssetRect{
+		.origin = {.x = AssetUnits{minX}, .y = AssetUnits{minY}},
+		.size = {.width = AssetUnits{width}, .height = AssetUnits{height}}
+	};
 }
 
 /// @brief Conservative local ink hull, including stroke caps, joins, and control points.
 /// No value means a nonfinite bound. Empty or fully transparent artwork returns a zero rect.
-[[nodiscard]] inline auto inkBounds(const Asset &asset, std::optional<double> strokeOverride)
+[[nodiscard]] inline auto inkBounds(const Asset &asset, std::optional<Points> strokeOverride)
 	-> std::optional<Rect> {
 	constexpr double squareCapFactor = std::numbers::sqrt2;
 	const auto visit = [&](const auto &self,
 						   const std::vector<Element> &elements,
-						   AffineTransform parent) -> std::optional<Rect> {
-		Rect result;
+						   AssetTransform parent) -> std::optional<AssetRect> {
+		AssetRect result;
 		for (const Element &element : elements) {
 			if (const auto *group = std::get_if<Element::Group>(&element.value)) {
-				if (group->opacity > 0) {
+				if (group->opacity.value() > 0) {
 					const auto bounds =
 						self(self, group->children, parent.concatenating(group->transform));
 					if (!bounds) {
@@ -110,14 +182,16 @@ namespace detail {
 				continue;
 			}
 			const auto &path = std::get<Element::Path>(element.value);
-			if (!(path.opacity > 0)) {
+			if (!(path.opacity.value() > 0)) {
 				continue;
 			}
 			const bool hasFill =
-				!std::holds_alternative<NoPaint>(path.fill) && path.fillOpacity > 0;
-			const double width = strokeOverride.value_or(path.strokeWidth);
+				!std::holds_alternative<NoPaint>(path.fill) && path.fillOpacity.value() > 0;
+			const AssetUnits width = strokeOverride
+				? AssetUnits{strokeOverride->value()}
+				: path.strokeWidth;
 			const bool hasStroke = !std::holds_alternative<NoPaint>(path.stroke) &&
-				path.strokeOpacity > 0 && width > 0;
+				path.strokeOpacity.value() > 0 && width.value() > 0;
 			if (!hasFill && !hasStroke) {
 				continue;
 			}
@@ -126,17 +200,19 @@ namespace detail {
 			double minY = 0;
 			double maxX = 0;
 			double maxY = 0;
-			const auto include = [&](double x, double y) -> void {
+			const auto include = [&](AssetUnits x, AssetUnits y) -> void {
+				const double px = x.value();
+				const double py = y.value();
 				if (!any) {
-					minX = maxX = x;
-					minY = maxY = y;
+					minX = maxX = px;
+					minY = maxY = py;
 					any = true;
 					return;
 				}
-				minX = std::min(minX, x);
-				minY = std::min(minY, y);
-				maxX = std::max(maxX, x);
-				maxY = std::max(maxY, y);
+				minX = std::min(minX, px);
+				minY = std::min(minY, py);
+				maxX = std::max(maxX, px);
+				maxY = std::max(maxY, py);
 			};
 			for (const PathCommand &command : path.commands) {
 				if (const auto *move = std::get_if<MoveTo>(&command)) {
@@ -151,38 +227,50 @@ namespace detail {
 					include(cubic->control2X, cubic->control2Y);
 					include(cubic->x, cubic->y);
 				} else if (const auto *arc = std::get_if<ArcTo>(&command)) {
+					const double rotation = arc->rotation.radians();
 					const double dx = std::hypot(
-						arc->radiusX * std::cos(arc->rotation),
-						arc->radiusY * std::sin(arc->rotation)
+						arc->radiusX.value() * std::cos(rotation),
+						arc->radiusY.value() * std::sin(rotation)
 					);
 					const double dy = std::hypot(
-						arc->radiusX * std::sin(arc->rotation),
-						arc->radiusY * std::cos(arc->rotation)
+						arc->radiusX.value() * std::sin(rotation),
+						arc->radiusY.value() * std::cos(rotation)
 					);
-					include(arc->centerX - dx, arc->centerY - dy);
-					include(arc->centerX + dx, arc->centerY + dy);
+					include(
+						AssetUnits{arc->centerX.value() - dx},
+						AssetUnits{arc->centerY.value() - dy}
+					);
+					include(
+						AssetUnits{arc->centerX.value() + dx},
+						AssetUnits{arc->centerY.value() + dy}
+					);
 				}
 			}
 			if (!any) {
 				continue;
 			}
-			const double joinFactor = path.lineJoin == LineJoin::miter ? path.miterLimit : 1;
+			const double joinFactor =
+				path.lineJoin == LineJoin::miter ? path.miterLimit.value() : 1;
 			const double capFactor = path.lineCap == LineCap::square ? squareCapFactor : 1;
-			const double margin = hasStroke ? width / 2 * std::max(joinFactor, capFactor) : 0;
-			const double left = minX - margin;
-			const double top = minY - margin;
-			const double right = maxX + margin;
-			const double bottom = maxY + margin;
-			if (!std::isfinite(left) || !std::isfinite(top) || !std::isfinite(right) ||
-				!std::isfinite(bottom) || !std::isfinite(right - left) ||
-				!std::isfinite(bottom - top)) {
+			const double margin =
+				hasStroke ? width.value() / 2 * std::max(joinFactor, capFactor) : 0;
+			const AssetUnits left{minX - margin};
+			const AssetUnits top{minY - margin};
+			const AssetUnits right{maxX + margin};
+			const AssetUnits bottom{maxY + margin};
+			if (!std::isfinite(left.value()) || !std::isfinite(top.value()) ||
+				!std::isfinite(right.value()) || !std::isfinite(bottom.value()) ||
+				!std::isfinite(right.value() - left.value()) ||
+				!std::isfinite(bottom.value() - top.value())) {
 				return std::nullopt;
 			}
 			const auto bounds = enclosing(
 				parent.concatenating(path.transform),
-				Rect{
+				AssetRect{
 					.origin = {.x = left, .y = top},
-					.size = {.width = right - left, .height = bottom - top}
+					.size =
+						{.width = AssetUnits{right.value() - left.value()},
+							.height = AssetUnits{bottom.value() - top.value()}}
 				}
 			);
 			if (!bounds) {
@@ -192,7 +280,11 @@ namespace detail {
 		}
 		return result;
 	};
-	return visit(visit, asset.elements(), AffineTransform::identity());
+	const auto assetBounds = visit(visit, asset.elements(), AssetTransform::identity());
+	if (!assetBounds) {
+		return std::nullopt;
+	}
+	return detail::toRect(*assetBounds);
 }
 
 /// @brief Paint-only placement of one symbol. Layout bounds stay on the node.
@@ -204,10 +296,10 @@ struct Presentation {
 	Asset asset{};
 	AffineTransform transform{};
 	Color color{};
-	std::optional<double> strokeWidth{};
+	std::optional<Points> strokeWidth{};
 	std::uint64_t generation = 0;
 	bool preparationLimited = false;
-	double preparationScale = 1;
+	ScaleFactor preparationScale{1};
 
 	[[nodiscard]] auto operator==(const Presentation &other) const -> bool {
 		return asset == other.asset && transform == other.transform && color == other.color &&
@@ -222,12 +314,12 @@ struct Presentation {
 /// unavailable symbol omits the leaf.
 [[nodiscard]] inline auto presentationFor(
 	const Asset &asset,
-	double size,
+	Points size,
 	Rect content,
 	Direction direction,
 	const EffectSample &effect,
 	Color color,
-	std::optional<double> strokeWidth,
+	std::optional<Points> strokeWidth,
 	std::uint64_t generation,
 	bool available,
 	const std::optional<Rect> &ink
@@ -236,28 +328,42 @@ struct Presentation {
 		return std::nullopt;
 	}
 	const Rect fitted = square(size, content);
-	if (!(fitted.size.width > 0)) {
+	if (!(fitted.size.width.value() > 0)) {
 		return std::nullopt;
 	}
-	const Rect box = asset.viewBox();
-	const double fitScale = fitted.size.width / std::max(box.size.width, box.size.height);
-	const double centerX = fitted.origin.x + fitted.size.width / 2;
-	const double centerY = fitted.origin.y + fitted.size.height / 2;
-	const double boxCenterX = box.origin.x + box.size.width / 2;
-	const double boxCenterY = box.origin.y + box.size.height / 2;
+	const AssetRect box = asset.viewBox();
+	const double boxLongest =
+		std::max(box.size.width.value(), box.size.height.value());
+	const ScaleFactor fitScale{boxLongest > 0
+			? fitted.size.width.value() / boxLongest
+			: 0};
+	const Points centerX =
+		fitted.origin.x + Points{fitted.size.width.value() / 2};
+	const Points centerY =
+		fitted.origin.y + Points{fitted.size.height.value() / 2};
+	const AssetUnits boxCenterX =
+		AssetUnits{box.origin.x.value() + box.size.width.value() / 2};
+	const AssetUnits boxCenterY =
+		AssetUnits{box.origin.y.value() + box.size.height.value() / 2};
 	const double mirror = asset.mirrorsInRTL() && direction == Direction::rightToLeft ? -1.0 : 1.0;
-	const double cosine = std::cos(effect.rotation) * effect.scale * fitScale;
-	const double sine = std::sin(effect.rotation) * effect.scale * fitScale;
-	const double horizontal = cosine * mirror;
-	const double vertical = sine * mirror;
-	const double skew = -sine;
-	const double verticalScale = cosine;
-	const double translateX = centerX - cosine * mirror * boxCenterX + sine * boxCenterY;
-	const double translateY = centerY + effect.verticalFraction * fitted.size.height -
-		sine * mirror * boxCenterX - cosine * boxCenterY;
-	const bool finite = std::isfinite(horizontal) && std::isfinite(vertical) &&
-		std::isfinite(skew) && std::isfinite(verticalScale) && std::isfinite(translateX) &&
-		std::isfinite(translateY);
+	const double cosine =
+		std::cos(effect.rotation.radians()) * effect.scale.value() * fitScale.value();
+	const double sine =
+		std::sin(effect.rotation.radians()) * effect.scale.value() * fitScale.value();
+	const ScaleFactor horizontal{cosine * mirror};
+	const ScaleFactor vertical{sine * mirror};
+	const ScaleFactor skew{-sine};
+	const ScaleFactor verticalScale{cosine};
+	const Points translateX{
+		centerX.value() - cosine * mirror * boxCenterX.value() + sine * boxCenterY.value()
+	};
+	const Points translateY{
+		centerY.value() + effect.verticalFraction.value() * fitted.size.height.value() -
+			sine * mirror * boxCenterX.value() - cosine * boxCenterY.value()
+	};
+	const bool finite = std::isfinite(horizontal.value()) && std::isfinite(vertical.value()) &&
+		std::isfinite(skew.value()) && std::isfinite(verticalScale.value()) &&
+		std::isfinite(translateX.value()) && std::isfinite(translateY.value());
 	const bool limited = !ink || !finite;
 	Presentation result{
 		.asset = asset,
@@ -265,7 +371,7 @@ struct Presentation {
 		.strokeWidth = strokeWidth,
 		.generation = generation,
 		.preparationLimited = limited,
-		.preparationScale = limited ? 1.0 : fitScale * effect.scale
+		.preparationScale = limited ? ScaleFactor{1} : ScaleFactor{fitScale.value() * effect.scale.value()}
 	};
 	if (!limited) {
 		result.transform = {
