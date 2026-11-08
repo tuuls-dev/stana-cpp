@@ -49,13 +49,13 @@ struct AppearanceProperties {
 	/// @brief Optional reactive fill behind this node and its children.
 	std::optional<::stana::reactive::Property<Color>> background{};
 	/// @brief Optional reactive subtree opacity in [0, 1]; zero opacity does not dispose state.
-	std::optional<::stana::reactive::Property<double>> opacity{};
+	std::optional<::stana::reactive::Property<Opacity>> opacity{};
 	/// @brief Optional reactive outline color used when borderWidth is positive.
 	std::optional<::stana::reactive::Property<Color>> borderColor{};
 	/// @brief Optional reactive outline thickness in finite, nonnegative logical points.
-	std::optional<::stana::reactive::Property<double>> borderWidth{};
+	std::optional<::stana::reactive::Property<Points>> borderWidth{};
 	/// @brief Optional reactive rounding radius used by background and clip geometry.
-	std::optional<::stana::reactive::Property<double>> cornerRadius{};
+	std::optional<::stana::reactive::Property<Points>> cornerRadius{};
 	/// @brief Independent elliptical radii; when supplied, take precedence over cornerRadius.
 	std::optional<::stana::reactive::Property<CornerRadii>> cornerRadii{};
 	/// @brief Inward per-edge widths; when supplied, take precedence over borderWidth.
@@ -255,10 +255,11 @@ struct MountContext {
 };
 
 /// @brief One display-link sample delivered to ComponentContext::onFrame.
+/// Timestamps use FrameClock and are not interchangeable with PresentationClock.
 struct FrameTime {
-	double timestamp = 0;		///< Host time of this sample, in seconds.
-	double targetTimestamp = 0; ///< Expected time of the next sample, in seconds.
-	double elapsed = 0; ///< Seconds since the previous delivered sample. Zero after a reset.
+	FrameTimePoint timestamp{};		  ///< Host FrameClock time of this sample.
+	FrameTimePoint targetTimestamp{}; ///< Expected FrameClock time of the next sample.
+	FrameDuration elapsed{}; ///< Duration since the previous delivered sample. Zero after a reset.
 };
 
 /// @brief Mount-local state and external resources live as long as this occurrence, not
@@ -323,7 +324,8 @@ class ComponentContext {
 			},
 			[notify = std::move(
 				 onSample
-			 )](::stana::document::detail::Document::FrameStamp stamp, double elapsed) -> void {
+			 )](::stana::document::detail::Document::FrameStamp stamp,
+				FrameDuration elapsed) -> void {
 				notify(
 					FrameTime{
 						.timestamp = stamp.timestamp,
@@ -500,7 +502,7 @@ struct GPUCanvas {
 /// property changes do not reconstruct this tuple or remount its descendants.
 template <typename Children> struct VStack {
 	/// @brief Reactive finite, nonnegative gap between participating children in logical points.
-	::stana::reactive::Property<double> spacing = 0;
+	::stana::reactive::Property<Points> spacing = Points{};
 	/// @brief Logical horizontal alignment resolved against document direction during placement.
 	Alignment alignment = Alignment::leading;
 	/// @brief Shared box-model overrides applied to this component at mount and on reactive
@@ -527,7 +529,7 @@ template <typename Children> struct VStack {
 /// frames and shared layout properties determine the measured row dimensions.
 template <typename Children> struct HStack {
 	/// @brief Reactive finite, nonnegative gap between participating children in logical points.
-	::stana::reactive::Property<double> spacing = 0;
+	::stana::reactive::Property<Points> spacing = Points{};
 	/// @brief Logical horizontal alignment resolved against document direction during placement.
 	Alignment alignment = Alignment::leading;
 	/// @brief Shared box-model overrides applied to this component at mount and on reactive
@@ -1004,17 +1006,17 @@ template <Component... Children> [[nodiscard]] constexpr auto children(Children 
 } // namespace stana::ui
 
 export namespace stana::symbol {
-inline constexpr double defaultSize = 24;
+inline constexpr Points defaultSize{24};
 
 /// @brief Retained vector artwork. The field is asset so it does not collide with this type.
-/// Default size is 24. Themed text is currentColor. Clipping is off unless appearance sets it.
-/// Symbols are not buttons. textScale does not change measurement.
+/// Default size is 24 logical points. Themed text is currentColor. Clipping is off unless
+/// appearance sets it. Symbols are not buttons. textScale does not change measurement.
 struct Symbol {
 	::stana::reactive::Property<Asset> asset{};
-	::stana::reactive::Property<double> size = defaultSize;
+	::stana::reactive::Property<Points> size = defaultSize;
 	::stana::reactive::Property<Color> color = Color::text();
 	::stana::reactive::Property<Playback> animation = Playback::none();
-	::stana::reactive::Property<std::optional<double>> strokeWidth{};
+	::stana::reactive::Property<std::optional<Points>> strokeWidth{};
 	::stana::layout::LayoutProperties layout{};
 	::stana::ui::AppearanceProperties appearance{};
 	::stana::ui::InteractionProperties interaction{};

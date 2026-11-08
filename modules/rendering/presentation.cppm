@@ -34,9 +34,10 @@ struct TileId {
 };
 
 /// @brief One exact tile's native display observation; invalid time is not proof.
+/// Timestamps use PresentationClock and are not interchangeable with FrameClock.
 struct TilePresentation {
 	TileId tile{};
-	double timestamp = 0;
+	PresentationTimePoint timestamp{};
 };
 
 /// @brief Joins GPU completion with positive native presentation evidence.
@@ -105,7 +106,8 @@ class PresentationTracker {
 	}
 
 	/// @brief Supplies the native drawable's timestamp; zero means unconfirmed/dropped.
-	[[nodiscard]] auto reportPresented(PresentationAttempt attempt, double timestamp) -> bool {
+	[[nodiscard]] auto
+	reportPresented(PresentationAttempt attempt, PresentationTimePoint timestamp) -> bool {
 		return reportPresented(
 			attempt,
 			TilePresentation{.tile = TileId{0}, .timestamp = timestamp}
@@ -116,7 +118,8 @@ class PresentationTracker {
 	[[nodiscard]] auto reportPresented(PresentationAttempt attempt, TilePresentation observation)
 		-> bool {
 		if (auto *state = find(attempt); state != nullptr && contains(attempt, observation.tile)) {
-			if (std::isfinite(observation.timestamp) && observation.timestamp > 0) {
+			const double seconds = observation.timestamp.time_since_epoch().count();
+			if (std::isfinite(seconds) && seconds > 0) {
 				state->presented.set(observation.tile.value);
 			}
 			return confirm(*state);

@@ -14,25 +14,32 @@ import :primitives;
 
 export namespace stana::rendering {
 /// @brief Straight scene-linear extended-sRGB, bounded to finite binary16 color range.
+/// Channels are LinearChannel; alpha uses Opacity and is not premultiplied here.
 class ExtendedColor {
   public:
+	ExtendedColor(
+		LinearChannel red,
+		LinearChannel green,
+		LinearChannel blue,
+		Opacity alpha = Opacity{1}
+	);
 	ExtendedColor(double red, double green, double blue, double alpha = 1);
 
-	[[nodiscard]] auto red() const noexcept -> double { return red_; }
+	[[nodiscard]] auto red() const noexcept -> LinearChannel { return red_; }
 
-	[[nodiscard]] auto green() const noexcept -> double { return green_; }
+	[[nodiscard]] auto green() const noexcept -> LinearChannel { return green_; }
 
-	[[nodiscard]] auto blue() const noexcept -> double { return blue_; }
+	[[nodiscard]] auto blue() const noexcept -> LinearChannel { return blue_; }
 
-	[[nodiscard]] auto alpha() const noexcept -> double { return alpha_; }
+	[[nodiscard]] auto alpha() const noexcept -> Opacity { return alpha_; }
 
 	auto operator<=>(const ExtendedColor &) const = default;
 
   private:
-	double red_;
-	double green_;
-	double blue_;
-	double alpha_;
+	LinearChannel red_;
+	LinearChannel green_;
+	LinearChannel blue_;
+	Opacity alpha_;
 };
 
 struct GPUVertex {
@@ -61,7 +68,7 @@ using GPUColor = std::variant<Color, ExtendedColor>;
 
 struct GPURect {
 	Rect bounds;
-	double radius;
+	Points radius;
 	GPUColor color;
 };
 
@@ -72,7 +79,7 @@ struct GPUEllipse {
 
 struct GPUPolyline {
 	std::vector<Point> points;
-	double width;
+	Points width;
 	GPUColor color;
 	bool closed;
 };
@@ -99,8 +106,8 @@ class GPUDrawing {
 	GPUDrawing(GPUDrawing &&) noexcept;
 	auto operator=(GPUDrawing &&) noexcept -> GPUDrawing &;
 	~GPUDrawing();
-	void fillRect(Rect, Color, double cornerRadius = 0);
-	void fillRect(Rect, ExtendedColor, double cornerRadius = 0);
+	void fillRect(Rect, Color, Points cornerRadius = Points{});
+	void fillRect(Rect, ExtendedColor, Points cornerRadius = Points{});
 	void fillEllipse(Rect, Color);
 	void fillEllipse(Rect, ExtendedColor);
 	/// @brief Records owning shadow data at this painter position; no caller span is retained.
@@ -114,9 +121,18 @@ class GPUDrawing {
 		BorderWidths borderWidths = {}
 	);
 	void drawMesh(GPUMesh);
-	void strokePolyline(std::span<const Point>, Color, double width = 1, bool closed = false);
-	void
-	strokePolyline(std::span<const Point>, ExtendedColor, double width = 1, bool closed = false);
+	void strokePolyline(
+		std::span<const Point>,
+		Color,
+		Points width = Points{1},
+		bool closed = false
+	);
+	void strokePolyline(
+		std::span<const Point>,
+		ExtendedColor,
+		Points width = Points{1},
+		bool closed = false
+	);
 	[[nodiscard]] auto operator==(const GPUDrawing &) const noexcept -> bool;
 	[[nodiscard]] auto version() const noexcept -> std::uint64_t;
 	[[nodiscard]] auto requiresExtended() const -> bool;
@@ -126,7 +142,7 @@ class GPUDrawing {
 	struct Data;
 	std::shared_ptr<Data> data_;
 	void append(::stana::rendering::detail::GPUCommand);
-	void polyline(std::span<const Point>, ::stana::rendering::detail::GPUColor, double, bool);
+	void polyline(std::span<const Point>, ::stana::rendering::detail::GPUColor, Points, bool);
 };
 
 namespace detail {

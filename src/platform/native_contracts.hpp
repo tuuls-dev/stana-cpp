@@ -394,11 +394,11 @@ struct WindowStatistics {
 
 /// @brief Runs native windows until the final window closes or stop() is called.
 /// @return Exit status, or a diagnostic if required native rendering is unavailable.
-[[nodiscard]] auto run(std::vector<Window> windows) -> std::expected<int, std::string>;
+[[nodiscard]] auto run(const std::vector<Window> &windows) -> std::expected<int, std::string>;
 /// @brief Requests event-loop shutdown without creating NSApplication on its own.
 void stop();
 /// @brief Schedules an owning callback on the UI queue after a nonnegative delay.
-void postAfter(std::chrono::milliseconds delay, std::function<void()> callback);
+void postAfter(std::chrono::milliseconds delay, const std::function<void()> &callback);
 
 /// @brief Thread-safe native mailbox wakeup; notify stays valid until close/destruction.
 struct MailboxWakeup {
@@ -407,7 +407,7 @@ struct MailboxWakeup {
 };
 
 /// @brief Creates an owning main-queue data-add source for portable mailbox turns.
-[[nodiscard]] auto createMailboxWakeup(std::function<void()> onWake)
+[[nodiscard]] auto createMailboxWakeup(const std::function<void()> &onWake)
 	-> std::expected<MailboxWakeup, std::string>;
 
 /// @brief Native system-font parameters, grouped to prevent swapping size and weight.

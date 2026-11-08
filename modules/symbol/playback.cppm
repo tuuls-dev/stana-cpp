@@ -53,9 +53,9 @@ struct Diagnostic {
 
 /// @brief One frame's paint transform relative to the fitted square. Rest is identity.
 struct EffectSample {
-	double rotation = 0;		 ///< Clockwise radians about the square center.
-	double scale = 1;			 ///< Uniform scale about the square center.
-	double verticalFraction = 0; ///< Translation as a fraction of the square side, y-down.
+	Angle rotation{};			 ///< Clockwise angle about the square center.
+	ScaleFactor scale{1};		 ///< Uniform scale about the square center.
+	Ratio verticalFraction{};	 ///< Translation as a fraction of the square side, y-down.
 
 	auto operator<=>(const EffectSample &) const = default;
 
@@ -65,9 +65,12 @@ struct EffectSample {
 
 	/// @brief Maps square-local artwork around its center. Layout geometry is unchanged.
 	[[nodiscard]] auto transform(Rect square) const -> AffineTransform {
-		const double x = square.origin.x + square.size.width / 2;
-		const double y = square.origin.y + square.size.height / 2;
-		return AffineTransform::translation(x, y + verticalFraction * square.size.height)
+		const Points x = square.origin.x + square.size.width / 2;
+		const Points y = square.origin.y + square.size.height / 2;
+		return AffineTransform::translation(
+				   x,
+				   y + Points{verticalFraction.value() * square.size.height.value()}
+			)
 			.concatenating(AffineTransform::rotation(rotation))
 			.concatenating(AffineTransform::scale(scale, scale))
 			.concatenating(AffineTransform::translation(-x, -y));
@@ -78,7 +81,7 @@ struct EffectSample {
 /// Hidden, reduced-motion, and unavailable symbols release frame demand without catch-up.
 class PlaybackState {
   public:
-	[[nodiscard]] auto elapsed() const noexcept -> double { return elapsed_; }
+	[[nodiscard]] auto elapsed() const noexcept -> FrameDuration { return elapsed_; }
 
 	[[nodiscard]] auto active() const noexcept -> std::optional<Effect> { return active_; }
 
@@ -99,15 +102,15 @@ class PlaybackState {
 		bool visible,
 		bool available = true
 	);
-	void advance(double delta);
+	void advance(FrameDuration delta);
 	[[nodiscard]] auto sample() const -> EffectSample;
-	[[nodiscard]] static auto sample(Effect effect, double phase) -> EffectSample;
+	[[nodiscard]] static auto sample(Effect effect, Progress phase) -> EffectSample;
 
   private:
 	void start(Effect effect, bool looping);
 	void stop();
 
-	double elapsed_ = 0;
+	FrameDuration elapsed_{};
 	std::optional<Effect> active_{};
 	bool looping_ = false;
 	std::optional<std::uint64_t> lastRequest_{};

@@ -50,8 +50,14 @@ struct ArrangeKey {
 					(direction == Direction::leftToRight ? padding.leading : padding.trailing),
 				.y = outer.origin.y + padding.top},
 		.size = {
-			.width = std::max(0.0, outer.size.width - padding.leading - padding.trailing),
-			.height = std::max(0.0, outer.size.height - padding.top - padding.bottom)
+			.width = Points{std::max(
+				0.0,
+				outer.size.width.value() - padding.leading.value() - padding.trailing.value()
+			)},
+			.height = Points{std::max(
+				0.0,
+				outer.size.height.value() - padding.top.value() - padding.bottom.value()
+			)}
 		}
 	};
 }

@@ -541,21 +541,21 @@ svgScalar(std::string_view raw, const Context &context, std::size_t origin) -> d
 }
 
 [[nodiscard]] constexpr auto
-checkedTransform(AffineTransform transform, const Context &context, std::size_t index)
-	-> AffineTransform {
-	transform.a = context.checked(transform.a, index);
-	transform.b = context.checked(transform.b, index);
-	transform.c = context.checked(transform.c, index);
-	transform.d = context.checked(transform.d, index);
-	transform.tx = context.checked(transform.tx, index);
-	transform.ty = context.checked(transform.ty, index);
+checkedTransform(AssetTransform transform, const Context &context, std::size_t index)
+	-> AssetTransform {
+	transform.a = ScaleFactor{context.checked(transform.a.value(), index)};
+	transform.b = ScaleFactor{context.checked(transform.b.value(), index)};
+	transform.c = ScaleFactor{context.checked(transform.c.value(), index)};
+	transform.d = ScaleFactor{context.checked(transform.d.value(), index)};
+	transform.tx = AssetUnits{context.checked(transform.tx.value(), index)};
+	transform.ty = AssetUnits{context.checked(transform.ty.value(), index)};
 	return transform;
 }
 
 [[nodiscard]] constexpr auto
-svgTransform(std::string_view raw, const Context &context, std::size_t origin) -> AffineTransform {
+svgTransform(std::string_view raw, const Context &context, std::size_t origin) -> AssetTransform {
 	Scanner scanner = makeScanner(raw, context, origin);
-	AffineTransform result{};
+	AssetTransform result{};
 	int count = 0;
 	scanner.spaces();
 	while (scanner.index < scanner.text.size()) {
@@ -603,34 +603,43 @@ svgTransform(std::string_view raw, const Context &context, std::size_t origin) -
 			);
 		}
 		++scanner.index;
-		AffineTransform next{};
+		AssetTransform next{};
 		const int argumentCount = static_cast<int>(arguments.size());
 		if (name == "matrix" && argumentCount == transformArgumentLimit) {
 			next = {
-				.a = arguments.at(0),
-				.b = arguments.at(1),
-				.c = arguments.at(2),
-				.d = arguments.at(3),
-				.tx = arguments.at(4),
-				.ty = arguments.at(static_cast<std::size_t>(transformArgumentLimit - 1))
+				.a = ScaleFactor{arguments.at(0)},
+				.b = ScaleFactor{arguments.at(1)},
+				.c = ScaleFactor{arguments.at(2)},
+				.d = ScaleFactor{arguments.at(3)},
+				.tx = AssetUnits{arguments.at(4)},
+				.ty = AssetUnits{arguments.at(static_cast<std::size_t>(transformArgumentLimit - 1))}
 			};
 		} else if (name == "translate" && (argumentCount == 1 || argumentCount == 2)) {
 			const double vertical = argumentCount == 2 ? arguments.at(1) : 0.0;
-			next = AffineTransform::translation(arguments.at(0), vertical);
+			next = AssetTransform::translation(AssetUnits{arguments.at(0)}, AssetUnits{vertical});
 		} else if (name == "scale" && (argumentCount == 1 || argumentCount == 2)) {
 			const double vertical = argumentCount == 2 ? arguments.at(1) : arguments.at(0);
-			next = AffineTransform::scale(arguments.at(0), vertical);
+			next = AssetTransform::scale(ScaleFactor{arguments.at(0)}, ScaleFactor{vertical});
 		} else if (name == "rotate" && (argumentCount == 1 || argumentCount == rgbChannelCount)) {
 			const double radians = truncatingRemainder(arguments.at(0), fullCircleDegrees) *
 				std::numbers::pi / straightDegrees;
 			const double sine = sineOf(radians);
 			const double cosine = cosineOf(radians);
-			const AffineTransform rotation{.a = cosine, .b = sine, .c = -sine, .d = cosine};
+			const AssetTransform rotation{
+				.a = ScaleFactor{cosine},
+				.b = ScaleFactor{sine},
+				.c = ScaleFactor{-sine},
+				.d = ScaleFactor{cosine}
+			};
 			if (argumentCount == rgbChannelCount) {
-				const AffineTransform around =
-					AffineTransform::translation(arguments.at(1), arguments.at(2));
-				const AffineTransform back =
-					AffineTransform::translation(-arguments.at(1), -arguments.at(2));
+				const AssetTransform around = AssetTransform::translation(
+					AssetUnits{arguments.at(1)},
+					AssetUnits{arguments.at(2)}
+				);
+				const AssetTransform back = AssetTransform::translation(
+					AssetUnits{-arguments.at(1)},
+					AssetUnits{-arguments.at(2)}
+				);
 				next = around.concatenating(rotation).concatenating(back);
 			} else {
 				next = rotation;
@@ -638,11 +647,17 @@ svgTransform(std::string_view raw, const Context &context, std::size_t origin) -
 		} else if (name == "skewX" && argumentCount == 1) {
 			const double radians = truncatingRemainder(arguments.at(0), fullCircleDegrees) *
 				std::numbers::pi / straightDegrees;
-			next = {.a = 1, .c = context.checked(tangentOf(radians), scanner.position())};
+			next = {
+				.a = ScaleFactor{1},
+				.c = ScaleFactor{context.checked(tangentOf(radians), scanner.position())}
+			};
 		} else if (name == "skewY" && argumentCount == 1) {
 			const double radians = truncatingRemainder(arguments.at(0), fullCircleDegrees) *
 				std::numbers::pi / straightDegrees;
-			next = {.a = 1, .b = context.checked(tangentOf(radians), scanner.position())};
+			next = {
+				.a = ScaleFactor{1},
+				.b = ScaleFactor{context.checked(tangentOf(radians), scanner.position())}
+			};
 		} else {
 			std::string explanation = "Unsupported transform or invalid argument count: ";
 			explanation.append(name);
@@ -935,12 +950,12 @@ struct Style {
 	Paint fill = RgbaColor{};
 	Paint stroke = NoPaint{};
 	FillRule fillRule = FillRule::nonzero;
-	double fillOpacity = 1;
-	double strokeOpacity = 1;
-	double strokeWidth = 1;
+	Opacity fillOpacity{1};
+	Opacity strokeOpacity{1};
+	AssetUnits strokeWidth{1};
 	LineCap lineCap = LineCap::butt;
 	LineJoin lineJoin = LineJoin::miter;
-	double miterLimit = defaultMiter;
+	Ratio miterLimit{defaultMiter};
 };
 
 struct Attribute {
@@ -957,9 +972,9 @@ struct Frame {
 	std::string name;
 	Dictionary namespaces;
 	Style style{};
-	AffineTransform transform{};
-	AffineTransform cumulative{};
-	double opacity = 1;
+	AssetTransform transform{};
+	AssetTransform cumulative{};
+	Opacity opacity{1};
 	std::vector<Element> children;
 	std::optional<std::vector<PathCommand>> commands;
 };

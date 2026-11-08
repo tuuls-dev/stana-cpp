@@ -166,7 +166,7 @@ struct FocusEvent {
 /// A zero delta still dispatches and does not move content.
 struct ScrollEvent {
 	Point position{};			   ///< Document-relative pointer position in logical points.
-	double delta = 0;			   ///< Logical vertical delta passed to scroll().
+	Points delta{};				   ///< Logical vertical delta passed to scroll().
 	Phase phase = Phase::bubble;   ///< Capture while walking toward the target, then bubble.
 	NodeId target{};			   ///< Hit target under the gesture.
 	NodeId current{};			   ///< Occurrence whose registrations are running.
@@ -258,7 +258,7 @@ struct SymbolLeaf {
 	Rect bounds{};
 	Rect ink{};
 	::stana::symbol::Presentation presentation{};
-	double opacity = 1;
+	Opacity opacity{1};
 };
 
 struct GPUCanvasLeaf {
@@ -266,7 +266,7 @@ struct GPUCanvasLeaf {
 	Rect bounds;
 	GPUDrawing drawing;
 	Environment environment;
-	double opacity = 1;
+	Opacity opacity{1};
 };
 
 /// @brief Local painter segments; the suffix restores the node clip before its outline.
@@ -284,7 +284,7 @@ struct ProjectionContext {
 	std::uint64_t parentRoute =
 		0; ///< Acknowledged hit-route lineage, independent of paint identity.
 	std::size_t siblingOrder = 0; ///< Reordering overlapping siblings changes interaction routing.
-	double opacity = 1;
+	Opacity opacity{1};
 	bool visible = true;
 	bool eligible = true;
 	Rect rectangularClip{};
@@ -385,24 +385,24 @@ struct Metrics {
 };
 
 namespace detail {
-inline constexpr double defaultSymbolSize = 24;
+inline constexpr Points defaultSymbolSize{24};
 
 /// @brief Retained symbol occurrence. Layout reads size; paint reads the effect sample.
 struct SymbolState {
 	::stana::symbol::Asset asset{};
-	double size = defaultSymbolSize;
+	Points size = defaultSymbolSize;
 	Color color = Color::text();
-	std::optional<double> strokeWidth{};
+	std::optional<Points> strokeWidth{};
 	::stana::symbol::Playback playback = ::stana::symbol::Playback::none();
 	::stana::symbol::PlaybackState playbackState{};
 	::stana::symbol::EffectSample effect{};
 	std::uint64_t generation = 0;
 	bool available = true;
 	std::optional<Rect> ink{};
-	double baseline = 0;
+	Points baseline{};
 	::stana::symbol::Asset previousAsset{};
-	std::optional<double> previousStroke{};
-	std::optional<double> previousScale{};
+	std::optional<Points> previousStroke{};
+	std::optional<ScaleFactor> previousScale{};
 	std::uint64_t epoch = 0;
 	std::set<::stana::symbol::Diagnostic::Code> failed{};
 	std::uint64_t frameRegistration = 0;
@@ -435,16 +435,15 @@ struct Node {
 	Color foreground = Color::black();	///< Text color used when isForegroundExplicit is set.
 	Color background = Color::clear();	///< Resolved fill behind this occurrence and descendants.
 	Color borderColor = Color::clear(); ///< Resolved outline color when borderWidth is positive.
-	double borderWidth = 0;				///< Nonnegative outline width in logical points.
-	double cornerRadius = 0; ///< Rounding radius shared by fill, outline and clip projection.
+	Points borderWidth{};				///< Nonnegative outline width in logical points.
+	Points cornerRadius{}; ///< Rounding radius shared by fill, outline and clip projection.
 	std::optional<CornerRadii>
 		cornerRadii{}; ///< Opt-in outer contour; scalar fallback is preserved.
 	std::optional<BorderWidths> borderWidths{}; ///< Opt-in inward edges; never layout insets.
 	std::vector<::stana::rendering::BoxShadow> boxShadows{}; ///< Local, non-inherited paint layers.
-	double opacity = 1; ///< Local alpha multiplied into descendant paint opacity.
-	double spacing = 0; ///< Gap used by sequential child layout.
-	double scrollOffset =
-		0; ///< Retained vertical viewport displacement, clamped during arrangement.
+	Opacity opacity{1}; ///< Local alpha multiplied into descendant paint opacity.
+	Points spacing{};	///< Gap used by sequential child layout.
+	Points scrollOffset{}; ///< Retained vertical viewport displacement, clamped during arrangement.
 	Alignment alignment =
 		Alignment::leading; ///< Logical horizontal placement policy for child content.
 	Visibility visibility =
@@ -536,13 +535,13 @@ class Document : public std::enable_shared_from_this<Document> {
 	void pointerMove(Point point);
 	void pointerLeave();
 	void cancelPointer();
-	void scroll(Point point, double delta);
+	void scroll(Point point, Points delta);
 	void keyActivate();
 	/// @brief Routes a key press, then runs Tab, Space, or Return defaults unless prevented.
 	void keyDown(Key key, bool backwards = false);
 	/// @brief Routes a key release. Release has no built-in default.
 	void keyUp(Key key, bool backwards = false);
-	void setTextMeasure(std::function<Size(const std::string &, Font, double)> measure);
+	void setTextMeasure(std::function<Size(const std::string &, Font, Points)> measure);
 	void setOnPublish(std::function<void()> callback);
 	/// @brief Uses last-confirmed immutable geometry for coordinate-driven input.
 	/// Native hosts enable this before presentation; default headless tests use
@@ -556,7 +555,10 @@ class Document : public std::enable_shared_from_this<Document> {
 	reportGPUCompletion(::stana::rendering::PresentationAttempt attempt, bool success) -> bool;
 	/// @brief Joins finite positive display evidence; stale feedback cannot gate current input.
 	[[nodiscard]] auto
-	reportPresentation(::stana::rendering::PresentationAttempt attempt, double timestamp) -> bool;
+	reportPresentation(
+		::stana::rendering::PresentationAttempt attempt,
+		PresentationTimePoint timestamp
+	) -> bool;
 	/// @brief Expires one submission, gating its changed geometry and freeing history admission.
 	void abandonPresentation(::stana::rendering::PresentationAttempt attempt);
 	/// @brief Invalidates submission identities after surface/attachment replacement.
@@ -570,15 +572,16 @@ class Document : public std::enable_shared_from_this<Document> {
 		std::uint64_t epoch
 	);
 
-	/// @brief One display-link sample. The first sample after a reset reports zero elapsed.
+	/// @brief One display-link sample on FrameClock. The first sample after a reset
+	/// reports zero elapsed. Not interchangeable with PresentationClock timestamps.
 	struct FrameStamp {
-		double timestamp = 0;
-		double targetTimestamp = 0;
+		FrameTimePoint timestamp{};
+		FrameTimePoint targetTimestamp{};
 	};
 
 	[[nodiscard]] auto addFrameRegistration(
 		std::function<bool()> active,
-		std::function<void(FrameStamp, double elapsed)> callback
+		std::function<void(FrameStamp, FrameDuration elapsed)> callback
 	) -> std::uint64_t;
 	void cancelFrameRegistration(std::uint64_t registration);
 	void resetFrameTimestamp(std::uint64_t registration);
@@ -675,7 +678,7 @@ class Document : public std::enable_shared_from_this<Document> {
 	std::optional<NodeId> hovered_; ///< Deepest occurrence under the pointer, if any.
 	Point pointerPosition_{};		///< Last routed pointer position, used when the pointer leaves.
 	bool updatingHover_ = false;	///< Prevents re-entrant enter/leave routing.
-	std::function<Size(const std::string &, Font, double)> measureText_;
+	std::function<Size(const std::string &, Font, Points)> measureText_;
 	std::function<void()> onPublish_;
 	bool usesPresentationGeometry_ = false; ///< Selects acknowledged geometry for location input.
 	::stana::rendering::PresentationTracker
@@ -708,8 +711,8 @@ class Document : public std::enable_shared_from_this<Document> {
 	struct FrameRegistration {
 		std::uint64_t id = 0;
 		std::function<bool()> active;
-		std::function<void(FrameStamp, double elapsed)> callback;
-		std::optional<double> lastTimestamp;
+		std::function<void(FrameStamp, FrameDuration elapsed)> callback;
+		std::optional<FrameTimePoint> lastTimestamp;
 		bool cancelled = false;
 	};
 

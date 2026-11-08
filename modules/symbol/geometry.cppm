@@ -4,6 +4,7 @@ module;
 #include <array>
 #include <cmath>
 #include <compare>
+#include <cstdint>
 #include <numbers>
 #include <optional>
 #include <variant>
