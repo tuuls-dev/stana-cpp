@@ -49,43 +49,47 @@ void retained() {
 	using namespace stana;
 	using Shadows = std::vector<rendering::BoxShadow>;
 	const reactive::Signal shadows{Shadows{
-		{.offset = {.x = 8, .y = 6}, .blurRadius = 12},
-		{.offset = {.x = -2, .y = 1}, .color = Color::accent(), .isInset = true}
+		{.offset = {.x = Points{8}, .y = Points{6}}, .blurRadius = Points{12}},
+		{.offset = {.x = Points{-2}, .y = Points{1}},
+			.color = Color::accent(),
+			.isInset = true}
 	}};
 	const auto computedShadows = shadows.map([](const Shadows &value) -> Shadows {
 		return value;
 	});
 	const reactive::Signal foreground{Color::rgb(1, 0, 0)};
 	const reactive::Signal radii{
-		CornerRadii{.topLeading = {.width = horizontalRadius, .height = verticalRadius}}
+		CornerRadii{
+			.topLeading =
+				{.width = Points{horizontalRadius}, .height = Points{verticalRadius}}
+		}
 	};
-	const reactive::Signal widths{BorderWidths{.leading = 4, .trailing = 8}};
-	const reactive::Signal opacity{1.0};
+	const reactive::Signal widths{BorderWidths{.leading = Points{4}, .trailing = Points{8}}};
+	const reactive::Signal opacity{Opacity{1}};
 	const reactive::Signal visibility{Visibility::visible};
 	int clicks = 0;
-	testing::TestHost host{{.width = hostExtent, .height = hostExtent}};
+	testing::TestHost host{{.width = Points{hostExtent}, .height = Points{hostExtent}}};
 	const auto button = ui::Button{
 		.text = "shadow",
-		.onClick = [&] -> void {
-			++clicks;
-		},
 		.layout =
 			{.frame =
 					stana::Frame{
-						.width = Length::points(controlWidth),
-						.height = Length::points(controlHeight)
+						.width = Length::points(Points{controlWidth}),
+						.height = Length::points(Points{controlHeight})
 					}},
 		.textStyle = {.foreground = foreground},
-		.appearance = {
-			.opacity = opacity,
-			.borderWidth = scalarOverride,
-			.cornerRadius = scalarOverride,
-			.cornerRadii = radii,
-			.borderWidths = widths,
-			.boxShadows = computedShadows,
-			.visibility = visibility,
-			.clip = true
-		}
+		.appearance =
+			{.opacity = opacity,
+				.borderWidth = Points{scalarOverride},
+				.cornerRadius = Points{scalarOverride},
+				.cornerRadii = radii,
+				.borderWidths = widths,
+				.boxShadows = computedShadows,
+				.visibility = visibility,
+				.clip = true},
+		.events = {ui::on(ui::Event::click, [&] -> void {
+			++clicks;
+		})}
 	};
 	host.mount(ui::VStack{.children = ui::children(button)});
 	const auto nodes = host.nodes();
@@ -109,8 +113,8 @@ void retained() {
 	require(
 		background != initial->commands.end() && background->boxGeometry &&
 			background->boxGeometry->outer.radii.front() ==
-				Size{.width = horizontalRadius, .height = verticalRadius} &&
-			std::is_eq(background->boxGeometry->padding.bounds.size.width <=> paddingWidth),
+				Size{.width = Points{horizontalRadius}, .height = Points{verticalRadius}} &&
+			std::is_eq(background->boxGeometry->padding.bounds.size.width <=> Points{paddingWidth}),
 		"rich geometry takes precedence"
 	);
 	shadows.set(shadows.get());
@@ -123,9 +127,9 @@ void retained() {
 		shadow(shadowCommands(host).front()).color == Color::rgb(0, 1, 0),
 		"foreground invalidates shadows"
 	);
-	opacity.set(halfOpacity);
+	opacity.set(Opacity{halfOpacity});
 	require(
-		shadow(shadowCommands(host).front()).color.alpha <= halfOpacity,
+		shadow(shadowCommands(host).front()).color.alpha <= Opacity{halfOpacity},
 		"opacity multiplies shadow alpha"
 	);
 	const auto current = host.metrics();
@@ -136,12 +140,12 @@ void retained() {
 			host.nodes().back().bounds == nodes.back().bounds,
 		"shadow/foreground/opacity updates do not remount or relayout"
 	);
-	host.click({.x = outsideX, .y = outsideY});
+	host.click({.x = Points{outsideX}, .y = Points{outsideY}});
 	require(clicks == 0, "overflow shadow does not expand hit area");
 	host.setEnvironment({.theme = Theme::dark, .direction = Direction::rightToLeft});
 	require(
 		shadow(shadowCommands(host).front()).clip.radii.at(1) ==
-			Size{.width = horizontalRadius, .height = verticalRadius},
+			Size{.width = Points{horizontalRadius}, .height = Points{verticalRadius}},
 		"direction resolves rich corners"
 	);
 	visibility.set(Visibility::hidden);
@@ -160,14 +164,14 @@ void retained() {
 
 void theme() {
 	using namespace stana;
-	testing::TestHost host{{.width = smallHostExtent, .height = smallHostExtent}};
+	testing::TestHost host{{.width = Points{smallHostExtent}, .height = Points{smallHostExtent}}};
 	host.mount(
 		ui::Box{
 			.layout =
 				{.frame =
 						stana::Frame{
-							.width = Length::points(horizontalRadius),
-							.height = Length::points(horizontalRadius)
+							.width = Length::points(Points{horizontalRadius}),
+							.height = Length::points(Points{horizontalRadius})
 						}},
 			.appearance = {.boxShadows = std::vector<rendering::BoxShadow>{{}}},
 			.children = ui::children()
