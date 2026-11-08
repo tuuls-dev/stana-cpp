@@ -18,7 +18,7 @@ auto main() -> int {
 
 		const auto window = stana::application::Window{
 			.title = "Stana Counter",
-			.size = {.width = windowWidth, .height = windowHeight},
+			.size = {.width = Points{windowWidth}, .height = Points{windowHeight}},
 			.content = stana::ui::VStack{
 				.spacing = stackSpacing,
 				.layout = {.padding = stana::Insets::all(contentPadding)},
@@ -27,7 +27,9 @@ auto main() -> int {
 						.text = count.map([](int value) -> std::string {
 							return "Count: " + std::to_string(value);
 						}),
-						.textStyle = {.font = stana::Font::system(headingSize)}
+						.textStyle = {
+							.font = stana::Font::system(Points{headingSize})
+						}
 					},
 					stana::ui::Button{
 						.text = "Increment",

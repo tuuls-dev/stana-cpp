@@ -33,19 +33,19 @@ namespace stana::application::detail {
 	}
 	stana::platform::detail::Command result{
 		.operation = operation,
-		.x = command.bounds.origin.x,
-		.y = command.bounds.origin.y,
-		.width = command.bounds.size.width,
-		.height = command.bounds.size.height,
-		.red = command.color.red,
-		.green = command.color.green,
-		.blue = command.color.blue,
-		.alpha = command.color.alpha,
-		.radius = command.cornerRadius,
-		.lineWidth = command.lineWidth,
+		.x = command.bounds.origin.x.value(),
+		.y = command.bounds.origin.y.value(),
+		.width = command.bounds.size.width.value(),
+		.height = command.bounds.size.height.value(),
+		.red = command.color.red.value(),
+		.green = command.color.green.value(),
+		.blue = command.color.blue.value(),
+		.alpha = command.color.alpha.value(),
+		.radius = command.cornerRadius.value(),
+		.lineWidth = command.lineWidth.value(),
 		.text = command.text,
-		.fontSize = command.font.size,
-		.fontWeight = command.font.weight
+		.fontSize = command.font.size.value(),
+		.fontWeight = command.font.weight.value()
 	};
 	if (command.boxGeometry) {
 		result.boxGeometry = stana::gpu::detail::BoxGeometry{
@@ -61,14 +61,14 @@ namespace stana::application::detail {
 
 [[nodiscard]] inline auto convertRect(Rect rect) -> stana::platform::detail::LogicalRect {
 	return {
-		.origin = {.x = rect.origin.x, .y = rect.origin.y},
-		.size = {.width = rect.size.width, .height = rect.size.height}
+		.origin = {.x = rect.origin.x.value(), .y = rect.origin.y.value()},
+		.size = {.width = rect.size.width.value(), .height = rect.size.height.value()}
 	};
 }
 
 [[nodiscard]] inline auto convertAffine(stana::AffineTransform value)
 	-> stana::platform::detail::SymbolAffine {
-	return {.a = value.a, .b = value.b, .c = value.c, .d = value.d, .tx = value.tx, .ty = value.ty};
+	return {.a = value.a.value(), .b = value.b.value(), .c = value.c.value(), .d = value.d.value(), .tx = value.tx.value(), .ty = value.ty.value()};
 }
 
 namespace symbol_transport {
@@ -146,18 +146,18 @@ resolvePaint(const stana::symbol::Paint &paint, stana::Color tint, double opacit
 				return std::nullopt;
 			} else if constexpr (std::is_same_v<Paint, stana::symbol::CurrentColor>) {
 				return stana::platform::detail::SceneColor{
-					.red = tint.red,
-					.green = tint.green,
-					.blue = tint.blue,
-					.alpha = tint.alpha * opacity
+					.red = tint.red.value(),
+					.green = tint.green.value(),
+					.blue = tint.blue.value(),
+					.alpha = tint.alpha.value() * opacity
 				};
 			} else {
 				static_assert(std::is_same_v<Paint, stana::symbol::RgbaColor>);
 				return stana::platform::detail::SceneColor{
-					.red = value.red,
-					.green = value.green,
-					.blue = value.blue,
-					.alpha = value.alpha * opacity
+					.red = value.red.value(),
+					.green = value.green.value(),
+					.blue = value.blue.value(),
+					.alpha = value.alpha.value() * opacity
 				};
 			}
 		},
@@ -227,43 +227,43 @@ convertCommands(const std::vector<stana::symbol::PathCommand> &commands, Hasher 
 				if constexpr (std::is_same_v<Verb, stana::symbol::MoveTo>) {
 					data = {
 						.kind = stana::platform::detail::SymbolVerb::move,
-						.x = verb.x,
-						.y = verb.y
+						.x = verb.x.value(),
+						.y = verb.y.value()
 					};
 				} else if constexpr (std::is_same_v<Verb, stana::symbol::LineTo>) {
 					data = {
 						.kind = stana::platform::detail::SymbolVerb::line,
-						.x = verb.x,
-						.y = verb.y
+						.x = verb.x.value(),
+						.y = verb.y.value()
 					};
 				} else if constexpr (std::is_same_v<Verb, stana::symbol::QuadraticTo>) {
 					data = {
 						.kind = stana::platform::detail::SymbolVerb::quadratic,
-						.x = verb.x,
-						.y = verb.y,
-						.c1x = verb.controlX,
-						.c1y = verb.controlY
+						.x = verb.x.value(),
+						.y = verb.y.value(),
+						.c1x = verb.controlX.value(),
+						.c1y = verb.controlY.value()
 					};
 				} else if constexpr (std::is_same_v<Verb, stana::symbol::CubicTo>) {
 					data = {
 						.kind = stana::platform::detail::SymbolVerb::cubic,
-						.x = verb.x,
-						.y = verb.y,
-						.c1x = verb.control1X,
-						.c1y = verb.control1Y,
-						.c2x = verb.control2X,
-						.c2y = verb.control2Y
+						.x = verb.x.value(),
+						.y = verb.y.value(),
+						.c1x = verb.control1X.value(),
+						.c1y = verb.control1Y.value(),
+						.c2x = verb.control2X.value(),
+						.c2y = verb.control2Y.value()
 					};
 				} else if constexpr (std::is_same_v<Verb, stana::symbol::ArcTo>) {
 					data = {
 						.kind = stana::platform::detail::SymbolVerb::arc,
-						.x = verb.centerX,
-						.y = verb.centerY,
-						.c1x = verb.radiusX,
-						.c1y = verb.radiusY,
-						.c2x = verb.startAngle,
-						.rotation = verb.rotation,
-						.sweep = verb.sweepAngle
+						.x = verb.centerX.value(),
+						.y = verb.centerY.value(),
+						.c1x = verb.radiusX.value(),
+						.c1y = verb.radiusY.value(),
+						.c2x = verb.startAngle.radians(),
+						.rotation = verb.rotation.radians(),
+						.sweep = verb.sweepAngle.radians()
 					};
 				} else {
 					static_assert(std::is_same_v<Verb, stana::symbol::ClosePath>);
@@ -291,7 +291,7 @@ convertCommands(const std::vector<stana::symbol::PathCommand> &commands, Hasher 
 		if (const auto *group = std::get_if<stana::symbol::Element::Group>(&element.value)) {
 			hasher.mixContent(groupTag);
 			mixAffine(hasher, convertAffine(group->transform));
-			hasher.mixContent(group->opacity);
+			hasher.mixContent(group->opacity.value());
 			auto children = visitElements(
 				group->children,
 				parent.concatenating(group->transform),
@@ -302,7 +302,7 @@ convertCommands(const std::vector<stana::symbol::PathCommand> &commands, Hasher 
 			nodes.push_back(
 				{.value = stana::platform::detail::SymbolNode::Group{
 					 .transform = convertAffine(group->transform),
-					 .opacity = group->opacity,
+					 .opacity = group->opacity.value(),
 					 .children = std::move(children)
 				 }}
 			);
@@ -313,22 +313,22 @@ convertCommands(const std::vector<stana::symbol::PathCommand> &commands, Hasher 
 		const auto fillRule = convertRule(path.fillRule);
 		const auto lineCap = convertCap(path.lineCap);
 		const auto lineJoin = convertJoin(path.lineJoin);
-		const auto fill = resolvePaint(path.fill, tint, path.fillOpacity);
-		const auto stroke = resolvePaint(path.stroke, tint, path.strokeOpacity);
+		const auto fill = resolvePaint(path.fill, tint, path.fillOpacity.value());
+		const auto stroke = resolvePaint(path.stroke, tint, path.strokeOpacity.value());
 		hasher.mixCommand(pathTag);
 		auto commands = convertCommands(path.commands, hasher);
-		hasher.mixCommand(cumulative.maximumScale());
+		hasher.mixCommand(cumulative.maximumScale().value());
 		if (stroke) {
 			anyStroke = true;
 			hasher.mixStroke(presentTag);
-			hasher.mixStroke(path.strokeWidth);
+			hasher.mixStroke(path.strokeWidth.value());
 			hasher.mixStroke(discriminant(lineCap));
 			hasher.mixStroke(discriminant(lineJoin));
-			hasher.mixStroke(path.miterLimit);
+			hasher.mixStroke(path.miterLimit.value());
 		}
-		hasher.mixContent(path.opacity);
-		hasher.mixContent(path.fillOpacity);
-		hasher.mixContent(path.strokeOpacity);
+		hasher.mixContent(path.opacity.value());
+		hasher.mixContent(path.fillOpacity.value());
+		hasher.mixContent(path.strokeOpacity.value());
 		hasher.mixContent(discriminant(fillRule));
 		mixAffine(hasher, convertAffine(path.transform));
 		if (fill) {
@@ -347,17 +347,17 @@ convertCommands(const std::vector<stana::symbol::PathCommand> &commands, Hasher 
 			{.value = stana::platform::detail::SymbolNode::Path{
 				 .commands = std::move(commands),
 				 .transform = convertAffine(path.transform),
-				 .localMaximumScale = cumulative.maximumScale(),
+				 .localMaximumScale = cumulative.maximumScale().value(),
 				 .fill = fill,
 				 .fillRule = fillRule,
-				 .fillOpacity = path.fillOpacity,
+				 .fillOpacity = path.fillOpacity.value(),
 				 .stroke = stroke,
-				 .strokeOpacity = path.strokeOpacity,
-				 .strokeWidth = path.strokeWidth,
+				 .strokeOpacity = path.strokeOpacity.value(),
+				 .strokeWidth = path.strokeWidth.value(),
 				 .lineCap = lineCap,
 				 .lineJoin = lineJoin,
-				 .miterLimit = path.miterLimit,
-				 .opacity = path.opacity
+				 .miterLimit = path.miterLimit.value(),
+				 .opacity = path.opacity.value()
 			 }}
 		);
 	}
@@ -373,11 +373,13 @@ convertCommands(const std::vector<stana::symbol::PathCommand> &commands, Hasher 
 		.bounds = convertRect(leaf.bounds),
 		.ink = convertRect(leaf.ink),
 		.transform = convertAffine(presentation.transform),
-		.strokeWidth = presentation.strokeWidth,
+		.strokeWidth = presentation.strokeWidth
+			? std::optional{presentation.strokeWidth->value()}
+			: std::nullopt,
 		.generation = presentation.generation,
 		.preparationLimited = presentation.preparationLimited,
-		.preparationScale = presentation.preparationScale,
-		.opacity = leaf.opacity,
+		.preparationScale = presentation.preparationScale.value(),
+		.opacity = leaf.opacity.value(),
 		.estimatedBytes = presentation.asset.estimatedBytes()
 	};
 	symbol_transport::Hasher hasher;
@@ -453,7 +455,7 @@ struct SceneConversion {
 						{.document = gpu->instance.document, .serial = gpu->instance.serial},
 					.bounds = convertRect(gpu->bounds),
 					.drawing = gpuConversion.drawing(gpu->drawing, gpu->environment),
-					.opacity = gpu->opacity
+					.opacity = gpu->opacity.value()
 				};
 			}
 			if (const auto &symbol = next->paint->symbol) {
@@ -481,19 +483,20 @@ struct SceneConversion {
 		return result;
 	}
 
-	[[nodiscard]] auto convert(std::shared_ptr<const stana::rendering::detail::RenderSnapshot> next)
+	[[nodiscard]] auto
+	convert(const std::shared_ptr<const stana::rendering::detail::RenderSnapshot> &next)
 		-> std::shared_ptr<const stana::platform::detail::Scene> {
 		if (next == source) {
 			return converted;
 		}
 		auto scene = std::make_shared<stana::platform::detail::Scene>();
 		scene->revision = next->revision;
-		scene->size = {.width = next->size.width, .height = next->size.height};
+		scene->size = {.width = next->size.width.value(), .height = next->size.height.value()};
 		scene->background = {
-			.red = next->background.red,
-			.green = next->background.green,
-			.blue = next->background.blue,
-			.alpha = next->background.alpha
+			.red = next->background.red.value(),
+			.green = next->background.green.value(),
+			.blue = next->background.blue.value(),
+			.alpha = next->background.alpha.value()
 		};
 		scene->textEnvironment = next->textEnvironment;
 		scene->symbolError = symbolError;

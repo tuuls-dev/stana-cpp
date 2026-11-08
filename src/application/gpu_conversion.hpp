@@ -74,14 +74,17 @@ namespace stana::application::detail {
 	-> stana::gpu::detail::BoxContour {
 	stana::gpu::detail::BoxContour result{
 		.bounds = {
-			value.bounds.origin.x,
-			value.bounds.origin.y,
-			value.bounds.size.width,
-			value.bounds.size.height
+			value.bounds.origin.x.value(),
+			value.bounds.origin.y.value(),
+			value.bounds.size.width.value(),
+			value.bounds.size.height.value()
 		}
 	};
 	for (std::size_t index = 0; index < value.radii.size(); ++index) {
-		result.radii.at(index) = {value.radii.at(index).width, value.radii.at(index).height};
+		result.radii.at(index) = {
+			value.radii.at(index).width.value(),
+			value.radii.at(index).height.value()
+		};
 	}
 	return result;
 }
@@ -91,11 +94,19 @@ namespace stana::application::detail {
 	return {
 		.clip = convertContour(value.clip),
 		.caster = convertContour(value.caster),
-		.offset = {value.offset.x, value.offset.y},
-		.color = {value.color.red, value.color.green, value.color.blue, value.color.alpha},
-		.blurRadius = value.blurRadius,
+		.offset = {value.offset.x.value(), value.offset.y.value()},
+		.color =
+			{value.color.red.value(),
+				value.color.green.value(),
+				value.color.blue.value(),
+				value.color.alpha.value()},
+		.blurRadius = value.blurRadius.value(),
 		.isInset = value.isInset,
-		.ink = {value.ink.origin.x, value.ink.origin.y, value.ink.size.width, value.ink.size.height}
+		.ink =
+			{value.ink.origin.x.value(),
+				value.ink.origin.y.value(),
+				value.ink.size.width.value(),
+				value.ink.size.height.value()}
 	};
 }
 
@@ -121,7 +132,7 @@ struct GPUConversion {
 		result->source = stana::rendering::detail::GPUAccess::sourceOwner(descriptor.shader);
 		result->output = descriptor.output;
 		result->outputColor = convertEncoding(descriptor.outputColor);
-		result->sourcePeak = descriptor.sourcePeak;
+		result->sourcePeak = descriptor.sourcePeak.value();
 		result->constants = descriptor.constants;
 		result->order.assign(value.executionOrder().begin(), value.executionOrder().end());
 		for (const auto &[name, resource] : descriptor.resources) {
@@ -147,7 +158,7 @@ struct GPUConversion {
 								.bytes = stana::rendering::detail::GPUAccess::bytesOwner(input),
 								.encoding = convertEncoding(desc.encoding),
 								.premultiplied = desc.premultiplied,
-								.sourcePeak = desc.sourcePeak
+								.sourcePeak = desc.sourcePeak.value()
 							};
 						} else if constexpr (std::is_same_v<T, stana::rendering::GPUTarget>) {
 							return stana::gpu::detail::Target{
@@ -233,13 +244,13 @@ struct GPUConversion {
 			const auto &color = vertex.color;
 			result->vertices.push_back(
 				{.position =
-						{static_cast<float>(vertex.position.x),
-							static_cast<float>(vertex.position.y)},
+						{static_cast<float>(vertex.position.x.value()),
+							static_cast<float>(vertex.position.y.value())},
 					.color = {
-						static_cast<float>(color.red() * color.alpha()),
-						static_cast<float>(color.green() * color.alpha()),
-						static_cast<float>(color.blue() * color.alpha()),
-						static_cast<float>(color.alpha())
+						static_cast<float>(color.red().value() * color.alpha().value()),
+						static_cast<float>(color.green().value() * color.alpha().value()),
+						static_cast<float>(color.blue().value() * color.alpha().value()),
+						static_cast<float>(color.alpha().value())
 					}}
 			);
 		}
@@ -260,12 +271,20 @@ struct GPUConversion {
 					const auto resolved =
 						input.resolved(environment.theme, environment.highContrast);
 					return {
-						.rgba = {resolved.red, resolved.green, resolved.blue, resolved.alpha},
+						.rgba =
+							{resolved.red.value(),
+								resolved.green.value(),
+								resolved.blue.value(),
+								resolved.alpha.value()},
 						.linear = false
 					};
 				} else {
 					return {
-						.rgba = {input.red(), input.green(), input.blue(), input.alpha()},
+						.rgba =
+							{input.red().value(),
+								input.green().value(),
+								input.blue().value(),
+								input.alpha().value()},
 						.linear = true
 					};
 				}
@@ -276,9 +295,9 @@ struct GPUConversion {
 
 	[[nodiscard]] static auto rect(Rect bounds) -> stana::gpu::detail::Rect {
 		return {
-			.origin = {.x = bounds.origin.x, .y = bounds.origin.y},
-			.width = bounds.size.width,
-			.height = bounds.size.height
+			.origin = {.x = bounds.origin.x.value(), .y = bounds.origin.y.value()},
+			.width = bounds.size.width.value(),
+			.height = bounds.size.height.value()
 		};
 	}
 
@@ -306,7 +325,7 @@ struct GPUConversion {
 						if constexpr (std::is_same_v<T, stana::rendering::detail::GPURect>) {
 							return stana::gpu::detail::Shape{
 								.bounds = rect(input.bounds),
-								.radius = input.radius,
+								.radius = input.radius.value(),
 								.color = color(input.color, environment)
 							};
 						} else if constexpr (std::is_same_v<
@@ -340,13 +359,15 @@ struct GPUConversion {
 												 T,
 												 stana::rendering::detail::GPUPolyline>) {
 							stana::gpu::detail::Polyline line{
-								.width = input.width,
+								.width = input.width.value(),
 								.color = color(input.color, environment),
 								.closed = input.closed
 							};
 							line.points.reserve(input.points.size());
 							for (const auto point : input.points) {
-								line.points.push_back({.x = point.x, .y = point.y});
+								line.points.push_back(
+									{.x = point.x.value(), .y = point.y.value()}
+								);
 							}
 							return line;
 						} else {

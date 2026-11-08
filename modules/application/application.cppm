@@ -125,7 +125,8 @@ class Application {
 	/// @param delay The time duration to wait before executing the callback.
 	/// @param callback The function to execute on the UI thread.
 	/// @note Capture state handles by value; use a request token if a component may disappear.
-	static void postAfter(std::chrono::milliseconds delay, std::function<void()> callback);
+	static void
+	postAfter(std::chrono::milliseconds delay, const std::function<void()> &callback);
 
   private:
 	/// @template Content The root component type.

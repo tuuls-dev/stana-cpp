@@ -145,7 +145,7 @@ auto NativeExecutorSession::complete(int code) const -> int {
 void installNativeTaskDispatcher() {
 	stana::tasks::detail::TaskScheduler::current().dispatcher =
 		[](std::chrono::milliseconds delay, std::function<void()> callback) -> void {
-		stana::platform::detail::postAfter(delay, std::move(callback));
+		stana::platform::detail::postAfter(delay, callback);
 	};
 }
 
@@ -160,10 +160,10 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 					const auto [measuredWidth, measuredHeight] =
 						stana::platform::detail::measureText(
 							text,
-							{.size = font.size, .weight = font.weight},
+							{.size = font.size.value(), .weight = font.weight.value()},
 							width.value()
 						);
-					return {.width = measuredWidth, .height = measuredHeight};
+					return {.width = Points{measuredWidth}, .height = Points{measuredHeight}};
 				}
 			);
 			sessionDocument->commit();
@@ -194,8 +194,8 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 			};
 			windows.push_back(
 				{.title = session.title,
-					.width = session.size.width,
-					.height = session.size.height,
+					.width = session.size.width.value(),
+					.height = session.size.height.value(),
 					.colorMode = convertMode(session.renderingColorMode),
 					.gpuError = [weakDocument](stana::gpu::detail::Diagnostic diagnostic) -> void {
 						if (const auto owner = weakDocument.lock()) {
@@ -226,7 +226,7 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 						if (!document) {
 							return;
 						}
-						document->resize({.width = width, .height = height});
+						document->resize({.width = Points{width}, .height = Points{height}});
 					},
 					.appearance = [weakDocument](bool isDark) -> void {
 						const auto document = weakDocument.lock();
@@ -246,21 +246,21 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 						if (!document) {
 							return;
 						}
-						document->pointerDown({.x = x, .y = y});
+						document->pointerDown({.x = Points{x}, .y = Points{y}});
 					},
 					.pointerUp = [weakDocument](double x, double y) -> void {
 						const auto document = weakDocument.lock();
 						if (!document) {
 							return;
 						}
-						document->pointerUp({.x = x, .y = y});
+						document->pointerUp({.x = Points{x}, .y = Points{y}});
 					},
 					.pointerMove = [weakDocument](double x, double y) -> void {
 						const auto document = weakDocument.lock();
 						if (!document) {
 							return;
 						}
-						document->pointerMove({.x = x, .y = y});
+						document->pointerMove({.x = Points{x}, .y = Points{y}});
 					},
 					.pointerLeave = [weakDocument]() -> void {
 						const auto document = weakDocument.lock();
@@ -274,7 +274,7 @@ auto runWindows(const std::vector<WindowSession> &sessions) -> int {
 						if (!document) {
 							return;
 						}
-						document->scroll({.x = x, .y = y}, delta);
+						document->scroll({.x = Points{x}, .y = Points{y}}, Points{delta});
 					},
 					.key = [weakDocument](
 							   stana::platform::detail::KeyAction action,
@@ -504,7 +504,10 @@ void Application::stop() {
 	stana::platform::detail::stop();
 }
 
-void Application::postAfter(std::chrono::milliseconds delay, std::function<void()> callback) {
-	stana::platform::detail::postAfter(delay, std::move(callback));
+void Application::postAfter(
+	std::chrono::milliseconds delay,
+	const std::function<void()> &callback
+) {
+	stana::platform::detail::postAfter(delay, callback);
 }
 } // namespace stana::application

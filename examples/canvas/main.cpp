@@ -102,27 +102,27 @@ auto graphics(const stana::rendering::GPUProgram &value) -> stana::rendering::GP
 	constexpr double triangleHeight = 100;
 	const std::array vertices{
 		stana::rendering::GPUVertex{
-			.position = {.x = inset, .y = inset},
+			.position = {.x = Points{inset}, .y = Points{inset}},
 			.color = stana::rendering::ExtendedColor{peak, 0, 0}
 		},
 		stana::rendering::GPUVertex{
-			.position = {.x = inset + triangleWidth, .y = inset},
+			.position = {.x = Points{inset + triangleWidth}, .y = Points{inset}},
 			.color = stana::rendering::ExtendedColor{0, peak, 0}
 		},
 		stana::rendering::GPUVertex{
-			.position = {.x = inset, .y = inset + triangleHeight},
+			.position = {.x = Points{inset}, .y = Points{inset + triangleHeight}},
 			.color = stana::rendering::ExtendedColor{0, 0, peak}
 		}
 	};
 	const std::array<std::uint32_t, 3> indices{0, 1, 2};
 	drawing.drawMesh(checked(stana::rendering::GPUMesh::create(vertices, indices)));
 	const std::array points{
-		stana::Point{.x = inset, .y = canvasHeight - inset},
-		stana::Point{.x = canvasWidth / 2, .y = canvasHeight / 2},
-		stana::Point{.x = canvasWidth - inset, .y = inset}
+		stana::Point{.x = Points{inset}, .y = Points{canvasHeight - inset}},
+		stana::Point{.x = Points{canvasWidth / 2}, .y = Points{canvasHeight / 2}},
+		stana::Point{.x = Points{canvasWidth - inset}, .y = Points{inset}}
 	};
 	constexpr double lineWidth = 4;
-	drawing.strokePolyline(points, stana::Color::text(), lineWidth);
+	drawing.strokePolyline(points, stana::Color::text(), Points{lineWidth});
 	return drawing;
 }
 
@@ -135,9 +135,9 @@ auto chart(int update) -> stana::rendering::Drawing {
 		const auto height = barHeight + static_cast<double>((update + index) % cycle) * increment;
 		drawing.fillRect(
 			{.origin =
-					{.x = padding + static_cast<double>(index) * (barWidth + spacing),
-						.y = baseline - height},
-				.size = {.width = barWidth, .height = height}},
+					{.x = Points{padding + static_cast<double>(index) * (barWidth + spacing)},
+						.y = Points{baseline - height}},
+				.size = {.width = Points{barWidth}, .height = Points{height}}},
 			stana::Color::accent()
 		);
 	}
@@ -166,7 +166,7 @@ auto main(int argc, char **) -> int {
 		return stana::application::Application::run(
 			stana::application::Window{
 				.title = "Stana CPU / GPU Canvas",
-				.size = {.width = windowWidth, .height = windowHeight},
+				.size = {.width = Points{windowWidth}, .height = Points{windowHeight}},
 				.content = stana::ui::VStack{
 					.spacing = spacing,
 					.layout = {.padding = stana::Insets::all(padding)},

@@ -167,14 +167,14 @@ auto reportSymbol(const stana::symbol::Diagnostic &diagnostic) -> void {
 		.appearance =
 			{.background = cardColor,
 				.borderColor = cardBorder,
-				.borderWidth = borderWidth,
-				.cornerRadius = cornerRadius,
+				.borderWidth = Points{borderWidth},
+				.cornerRadius = Points{cornerRadius},
 				.boxShadows =
 					std::vector<stana::rendering::BoxShadow>{
-						{.offset = {.x = 0, .y = shadowOffset},
-							.blurRadius = shadowBlur,
+						{.offset = {.x = Points{}, .y = Points{shadowOffset}},
+							.blurRadius = Points{shadowBlur},
 							.color = stana::Color::rgb(0, 0, 0, shadowOpacity)},
-						{.offset = {.x = 0, .y = 1},
+						{.offset = {.x = Points{}, .y = Points{1}},
 							.color = stana::Color::rgb(1, 1, 1, insetHighlightOpacity),
 							.isInset = true}
 					}},
@@ -190,7 +190,8 @@ auto reportSymbol(const stana::symbol::Diagnostic &diagnostic) -> void {
 			stana::ui::Text{
 				.text = std::move(name),
 				.textStyle =
-					{.font = stana::Font::system(labelSize, mediumWeight), .foreground = labelColor}
+					{.font = stana::Font::system(Points{labelSize}, FontWeight{mediumWeight}),
+						.foreground = labelColor}
 			}
 		)
 	};
@@ -204,7 +205,7 @@ auto main() -> int {
 		const auto window =
 			stana::application::Window{
 				.title = "Stana · Lucide icons",
-				.size = {.width = windowWidth, .height = windowHeight},
+				.size = {.width = Points{windowWidth}, .height = Points{windowHeight}},
 				.content = stana::ui::VStack{
 					.spacing = sectionSpacing,
 					.alignment = stana::Alignment::center,
@@ -218,14 +219,17 @@ auto main() -> int {
 								stana::ui::Text{
 									.text = "Lucide, rendered by Stana",
 									.textStyle =
-										{.font = stana::Font::system(titleSize, semiboldWeight),
+										{.font = stana::Font::system(
+												Points{titleSize},
+												FontWeight{semiboldWeight}
+											),
 											.foreground = stana::Color::white()}
 								},
 								stana::ui::Text{
 									.text = "Ten SVG symbols. Compile-time geometry. Native macOS "
 											"rendering.",
 									.textStyle =
-										{.font = stana::Font::system(subtitleSize),
+										{.font = stana::Font::system(Points{subtitleSize}),
 											.foreground = subtitleColor}
 								}
 							)
@@ -260,7 +264,8 @@ auto main() -> int {
 								"STNSymbol  ·  36 pt  ·  currentColor     /     Artwork: Lucide",
 							.layout = {.frame = footerFrame},
 							.textStyle =
-								{.font = stana::Font::system(footerSize), .foreground = footerColor}
+								{.font = stana::Font::system(Points{footerSize}),
+									.foreground = footerColor}
 						}
 					)
 				}
