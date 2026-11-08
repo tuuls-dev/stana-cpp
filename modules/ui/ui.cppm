@@ -781,7 +781,7 @@ template <typename Description>
 			identity,
 			description.spacing,
 			[](::stana::document::detail::Node &node,
-				double value) -> ::stana::document::detail::Dirty {
+				Points value) -> ::stana::document::detail::Dirty {
 				::stana::detail::requireNonnegative(value);
 				return assignRetained(
 					node.spacing,

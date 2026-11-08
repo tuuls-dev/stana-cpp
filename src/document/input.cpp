@@ -455,13 +455,13 @@ auto Document::reportGPUCompletion(stana::rendering::PresentationAttempt attempt
 
 auto Document::reportPresentation(
 	stana::rendering::PresentationAttempt attempt,
-	double timestamp
+	PresentationTimePoint timestamp
 ) -> bool {
 	return reportPresentation(
 		attempt,
 		stana::rendering::TilePresentation{
 			.tile = stana::rendering::TileId{0},
-			.timestamp = PresentationTimePoint{PresentationClock::duration{timestamp}}
+			.timestamp = timestamp
 		}
 	);
 }

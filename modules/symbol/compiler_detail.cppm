@@ -2115,7 +2115,7 @@ constexpr void requireCommandsMapped(
 [[nodiscard]] constexpr auto finishFrame(Frame frame) -> std::vector<Element> {
 	if (frame.commands.has_value()) {
 		Element::Path path;
-		path.commands = frame.commands.value_or({});
+		path.commands = frame.commands.value_or(std::vector<PathCommand>{});
 		path.transform = frame.transform;
 		path.fill = frame.style.fill;
 		path.fillRule = frame.style.fillRule;
@@ -2351,8 +2351,14 @@ constexpr void openElement(
 	if (isGeometryElement(name)) {
 		const int remaining = commandLimit - parser.commandCount;
 		commands = svgShape(name, attributes, remaining > 0 ? remaining : 0, *parser.context);
-		requireCommandsMapped(commands.value_or({}), cumulative, *parser.context, position);
-		parser.commandCount += static_cast<int>(commands.value_or({}).size());
+		requireCommandsMapped(
+			commands.value_or(std::vector<PathCommand>{}),
+			cumulative,
+			*parser.context,
+			position
+		);
+		parser.commandCount +=
+			static_cast<int>(commands.value_or(std::vector<PathCommand>{}).size());
 		if (parser.commandCount > commandLimit) {
 			parser.context->fail(
 				{.code = "budgetExceeded", .explanation = "Normalized SVG command limit exceeded"},

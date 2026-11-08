@@ -500,7 +500,11 @@ void Document::tickFrames(FrameStamp stamp) {
 			continue;
 		}
 		const FrameDuration elapsed = frame->lastTimestamp
-			? std::max(FrameDuration{}, stamp.timestamp - *frame->lastTimestamp)
+			? FrameDuration{std::max(
+				  0.0,
+				  stamp.timestamp.time_since_epoch().count() -
+					  frame->lastTimestamp->time_since_epoch().count()
+			  )}
 			: FrameDuration{};
 		frame->lastTimestamp = stamp.timestamp;
 		const auto callback = frame->callback;
