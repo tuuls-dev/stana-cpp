@@ -77,9 +77,10 @@ auto main() -> int {
 	}
 	const stana::application::Window positional{
 		.content = stana::ui::CPUCanvas{},
-		.options =
-			{.geometry = {.contentSize = stana::Size{.width = 1_pt, .height = 1_pt}},
-				.appearance = {.title = std::string{"canvas"}}}
+		.options = {
+			.geometry = {.contentSize = stana::Size{.width = 1_pt, .height = 1_pt}},
+			.appearance = {.title = std::string{"canvas"}}
+		}
 	};
 	if (positional.options.creation.renderingColorMode !=
 			stana::rendering::RenderingColorMode::automatic ||

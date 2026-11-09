@@ -33,72 +33,87 @@ import :primitives;
 /// ### Appearance
 /// | Facility | Abstraction | macOS | Windows | Linux (Wayland/X11) | C/L/A/O |
 /// |---|---|---|---|---|---|
-/// | Title | portable `appearance.title` | `NSWindow.title` | `SetWindowText` | xdg-toplevel title / `_NET_WM_NAME` | L, O |
-/// | Native chrome | portable `appearance.decorations` | titled/borderless style mask | WS_CAPTION / chrome | SSD vs CSD; compositor may override | C/L, O |
-/// | Background | portable `appearance.background` | opaque/clear window + layer | DWM/backdrop brush | surface opaque region | L, O |
-/// | Opacity | portable `appearance.opacity` | `alphaValue` | layered alpha | alpha in surface/compositor | L, O |
-/// | Theme | portable `appearance.theme` | appearance override | immersive dark mode | portal/settings; often app-side | L, O |
-/// | Shadow | portable `appearance.hasShadow` | `hasShadow` | DWM shadow | compositor decoration | L; unsupported when CSD |
-/// | Title-bar integration | **extension** macOS | transparent titlebar / full-size content | n/a portable | n/a | C/L |
-/// | Material/backdrop | **extension** (future) | vibrancy/NSVisualEffect | Acrylic/Mica | blur protocols vary | L |
+/// | Title | portable `appearance.title` | `NSWindow.title` | `SetWindowText` | xdg-toplevel title
+/// / `_NET_WM_NAME` | L, O | | Native chrome | portable `appearance.decorations` |
+/// titled/borderless style mask | WS_CAPTION / chrome | SSD vs CSD; compositor may override | C/L,
+/// O | | Background | portable `appearance.background` | opaque/clear window + layer | DWM/backdrop
+/// brush | surface opaque region | L, O | | Opacity | portable `appearance.opacity` | `alphaValue`
+/// | layered alpha | alpha in surface/compositor | L, O | | Theme | portable `appearance.theme` |
+/// appearance override | immersive dark mode | portal/settings; often app-side | L, O | | Shadow |
+/// portable `appearance.hasShadow` | `hasShadow` | DWM shadow | compositor decoration | L;
+/// unsupported when CSD | | Title-bar integration | **extension** macOS | transparent titlebar /
+/// full-size content | n/a portable | n/a | C/L | | Material/backdrop | **extension** (future) |
+/// vibrancy/NSVisualEffect | Acrylic/Mica | blur protocols vary | L |
 ///
 /// ### Geometry and placement
 /// | Facility | Abstraction | macOS | Windows | Linux | C/L/A/O |
 /// |---|---|---|---|---|---|
-/// | Content size | portable `geometry.contentSize` | content layout size | client rect | window geometry; Wayland may adjust | L, O |
-/// | Placement | portable `geometry.placement` | cascade/center/frame origin | `ShowWindow`/placement | xdg positioner / X11 gravity | C/L, O |
-/// | Screen selection | portable `Screen`/`ScreenId` | `NSScreen` | monitor handle | wl_output / Xinerama | C/L, O |
-/// | Min/max content size | portable constraints | `contentMin/MaxSize` | min/max track | xdg min/max; may be ignored | L, O |
-/// | Aspect ratio | portable `geometry.aspectRatio` | content aspect | aspect hints | size hints; compositor override | L, O |
-/// | Resize increment | portable `geometry.resizeIncrement` | resize increments | uncommon | size hints | L |
-/// | Interactive move/resize | portable actions | performWindowDrag | `WM_SYSCOMMAND` | xdg move/resize | A, O |
+/// | Content size | portable `geometry.contentSize` | content layout size | client rect | window
+/// geometry; Wayland may adjust | L, O | | Placement | portable `geometry.placement` |
+/// cascade/center/frame origin | `ShowWindow`/placement | xdg positioner / X11 gravity | C/L, O |
+/// | Screen selection | portable `Screen`/`ScreenId` | `NSScreen` | monitor handle | wl_output /
+/// Xinerama | C/L, O | | Min/max content size | portable constraints | `contentMin/MaxSize` |
+/// min/max track | xdg min/max; may be ignored | L, O | | Aspect ratio | portable
+/// `geometry.aspectRatio` | content aspect | aspect hints | size hints; compositor override | L, O
+/// | | Resize increment | portable `geometry.resizeIncrement` | resize increments | uncommon | size
+/// hints | L | | Interactive move/resize | portable actions | performWindowDrag | `WM_SYSCOMMAND` |
+/// xdg move/resize | A, O |
 ///
 /// ### State, visibility, and focus
 /// | Facility | Abstraction | macOS | Windows | Linux | C/L/A/O |
 /// |---|---|---|---|---|---|
-/// | Window state | portable `behavior.state` | miniaturize/zoom/fullscreen | min/max/fullscreen | xdg states | L/A, O |
-/// | Visibility | portable `behavior.isVisible` | `orderOut`/`makeKeyAndOrderFront` | Show/Hide | map/unmap | L, O |
-/// | Enabled | portable `behavior.isEnabled` | ignore mouse + key | `EnableWindow` | input inhibit patterns | L, O |
-/// | Accepts focus | portable `behavior.acceptsFocus` | `canBecomeKey` | WS_EX_NOACTIVATE | activation policy | C/L, O |
-/// | Activation policy | portable `behavior.activation` | activate vs order front | flash/foreground rules | xdg activation token | C/L/A, O |
-/// | Resizable | portable `behavior.isResizable` | style mask | thickframe | resize edges | L, O |
-/// | Controls | portable `behavior.controls` | traffic lights / collection | system menu buttons | SSD buttons / CSD | C/L, O |
-/// | Pointer policy | portable `behavior.pointerPolicy` | ignoresMouseEvents | WS_EX_TRANSPARENT | input region | L, O |
+/// | Window state | portable `behavior.state` | miniaturize/zoom/fullscreen | min/max/fullscreen |
+/// xdg states | L/A, O | | Visibility | portable `behavior.isVisible` |
+/// `orderOut`/`makeKeyAndOrderFront` | Show/Hide | map/unmap | L, O | | Enabled | portable
+/// `behavior.isEnabled` | ignore mouse + key | `EnableWindow` | input inhibit patterns | L, O | |
+/// Accepts focus | portable `behavior.acceptsFocus` | `canBecomeKey` | WS_EX_NOACTIVATE |
+/// activation policy | C/L, O | | Activation policy | portable `behavior.activation` | activate vs
+/// order front | flash/foreground rules | xdg activation token | C/L/A, O | | Resizable | portable
+/// `behavior.isResizable` | style mask | thickframe | resize edges | L, O | | Controls | portable
+/// `behavior.controls` | traffic lights / collection | system menu buttons | SSD buttons / CSD |
+/// C/L, O | | Pointer policy | portable `behavior.pointerPolicy` | ignoresMouseEvents |
+/// WS_EX_TRANSPARENT | input region | L, O |
 ///
 /// ### Desktop integration
 /// | Facility | Abstraction | macOS | Windows | Linux | C/L/A/O |
 /// |---|---|---|---|---|---|
-/// | Level (portable) | `desktop.level` normal/floating | floating panel intent | TOPMOST intent | above layer intent | L, O |
-/// | Native levels | **extension** macOS | `NSWindow.Level` | Win32 HWND_z | stacking; limited Wayland | L |
-/// | Task switcher | portable `desktop.taskSwitcher` | policy / LSUIElement limits | WS_EX_TOOLWINDOW | skip-taskbar; often global | L; may be unsupported per-window |
-/// | Spaces / virtual desktop | **extension** | collectionBehavior / Spaces | virtual desktop APIs | xdg workspace protocols | C/L, O |
-/// | Fullscreen Spaces | **extension** macOS | fullscreen behaviors | n/a same form | n/a | C/L, O |
-/// | Tabbing | **extension** macOS | `NSWindowTabbing*` | n/a | n/a | C/L, O |
+/// | Level (portable) | `desktop.level` normal/floating | floating panel intent | TOPMOST intent |
+/// above layer intent | L, O | | Native levels | **extension** macOS | `NSWindow.Level` | Win32
+/// HWND_z | stacking; limited Wayland | L | | Task switcher | portable `desktop.taskSwitcher` |
+/// policy / LSUIElement limits | WS_EX_TOOLWINDOW | skip-taskbar; often global | L; may be
+/// unsupported per-window | | Spaces / virtual desktop | **extension** | collectionBehavior /
+/// Spaces | virtual desktop APIs | xdg workspace protocols | C/L, O | | Fullscreen Spaces |
+/// **extension** macOS | fullscreen behaviors | n/a same form | n/a | C/L, O | | Tabbing |
+/// **extension** macOS | `NSWindowTabbing*` | n/a | n/a | C/L, O |
 ///
 /// ### Roles, ownership, modality
 /// | Facility | Abstraction | macOS | Windows | Linux | C/L/A/O |
 /// |---|---|---|---|---|---|
-/// | Standard window | `StandardWindow` | `NSWindow` / `NSPanel` standard | overlapped | toplevel | C |
-/// | Dialog | `DialogWindow` owner/modality | sheet/modal session | owner + modal loop | xdg dialog / transient | C, O |
-/// | Utility | `UtilityWindow` | utility / nonactivating panel | tool window | utility type | C |
-/// | Popup | `PopupWindow` anchor/owner | child window / anchoring | owned popup | xdg popup/positioner | C, O |
-/// | Panel behaviors | **extension** macOS | becomesKeyOnlyIfNeeded, worksWhenModal | n/a | n/a | C/L |
+/// | Standard window | `StandardWindow` | `NSWindow` / `NSPanel` standard | overlapped | toplevel |
+/// C | | Dialog | `DialogWindow` owner/modality | sheet/modal session | owner + modal loop | xdg
+/// dialog / transient | C, O | | Utility | `UtilityWindow` | utility / nonactivating panel | tool
+/// window | utility type | C | | Popup | `PopupWindow` anchor/owner | child window / anchoring |
+/// owned popup | xdg popup/positioner | C, O | | Panel behaviors | **extension** macOS |
+/// becomesKeyOnlyIfNeeded, worksWhenModal | n/a | n/a | C/L |
 ///
 /// ### Toolbars, documents, drag-and-drop, restoration
 /// | Facility | Abstraction | macOS | Windows | Linux | C/L/A/O |
 /// |---|---|---|---|---|---|
-/// | Toolbar | portable `facilities.toolbar` | `NSToolbar` mapping | toolbar host | app chrome | L, O |
-/// | Represented document | portable `facilities.document` | represented file + edited | AppUserModelID / title | portal document state | L, O |
-/// | Drag and drop | portable `facilities.dragAndDrop` | NSDragging* | OLE/DragDrop | xdnd / data-device | L/A, O |
-/// | State restoration | portable `facilities.restoration` | restorable identifier | session APIs | compositor-dependent | C + hooks |
+/// | Toolbar | portable `facilities.toolbar` | `NSToolbar` mapping | toolbar host | app chrome | L,
+/// O | | Represented document | portable `facilities.document` | represented file + edited |
+/// AppUserModelID / title | portal document state | L, O | | Drag and drop | portable
+/// `facilities.dragAndDrop` | NSDragging* | OLE/DragDrop | xdnd / data-device | L/A, O | | State
+/// restoration | portable `facilities.restoration` | restorable identifier | session APIs |
+/// compositor-dependent | C + hooks |
 ///
 /// ### Capture, printing, menus
 /// | Facility | Abstraction | macOS | Windows | Linux | C/L/A/O |
 /// |---|---|---|---|---|---|
 /// | Window menu | portable action | system window menu | system menu | window menu protocols | A |
-/// | Capture | portable action; owns pixels | window snapshot APIs | PrintWindow/DXGI | screencopy; permissioned | A, O |
-/// | Printing | portable action | `NSPrintOperation` bridge | print dialog | print portals | A, O |
-/// | Close request | portable close + `CloseDecision` | `windowShouldClose` | `WM_CLOSE` | close request | A/O |
+/// | Capture | portable action; owns pixels | window snapshot APIs | PrintWindow/DXGI | screencopy;
+/// permissioned | A, O | | Printing | portable action | `NSPrintOperation` bridge | print dialog |
+/// print portals | A, O | | Close request | portable close + `CloseDecision` | `windowShouldClose`
+/// | `WM_CLOSE` | close request | A/O |
 ///
 /// ### Restrictions and verification
 /// - Compositors (especially Wayland) may adjust or ignore size, maximization, and
@@ -141,12 +156,12 @@ struct ScreenId {
 /// Coordinates use Stana's top-left, y-down convention. Native adapters convert
 /// to bottom-left or physical pixel spaces. `backingScale` is observational.
 struct Screen {
-	ScreenId id{};			///< Stable while the display remains attached.
-	std::string name{};		///< Owning UTF-8 label; empty when the host has none.
-	Rect bounds{};			///< Full display bounds in global logical points.
-	Rect workArea{};		///< Usable area excluding system chrome where known.
+	ScreenId id{};				 ///< Stable while the display remains attached.
+	std::string name{};			 ///< Owning UTF-8 label; empty when the host has none.
+	Rect bounds{};				 ///< Full display bounds in global logical points.
+	Rect workArea{};			 ///< Usable area excluding system chrome where known.
 	ScaleFactor backingScale{1}; ///< Logical-to-device scale reported by the host.
-	bool isPrimary = false; ///< True when this display is the platform primary.
+	bool isPrimary = false;		 ///< True when this display is the platform primary.
 	[[nodiscard]] auto operator<=>(const Screen &) const = default;
 };
 
@@ -225,7 +240,8 @@ struct CenteredPlacement {
 /// @brief Places the content top-left at an explicit global logical point.
 struct ExplicitPlacement {
 	Point origin{}; ///< Global top-left of the content area in logical points.
-	ScreenSelection screen = AutomaticScreen{}; ///< Preferred display; origin remains authoritative.
+	ScreenSelection screen =
+		AutomaticScreen{}; ///< Preferred display; origin remains authoritative.
 	[[nodiscard]] auto operator<=>(const ExplicitPlacement &) const = default;
 };
 
@@ -275,10 +291,10 @@ struct WindowControls {
 
 /// @brief Portable high-level window state.
 enum class WindowState : std::uint8_t {
-	normal,		///< Restored non-minimized content state.
-	minimized,	///< Iconified / dock-collapsed.
-	maximized,	///< Zoomed or maximized within the work area.
-	fullscreen	///< Occupies a fullscreen space or exclusive fullscreen.
+	normal,	   ///< Restored non-minimized content state.
+	minimized, ///< Iconified / dock-collapsed.
+	maximized, ///< Zoomed or maximized within the work area.
+	fullscreen ///< Occupies a fullscreen space or exclusive fullscreen.
 };
 
 /// @brief Uses the platform default activation policy when ordering front.
@@ -332,7 +348,7 @@ struct WindowToolbarItem {
 struct WindowToolbar {
 	std::string identifier{}; ///< Restoration/identity key for the toolbar configuration.
 	std::vector<WindowToolbarItem> items{}; ///< Ordered toolbar items; owns strings.
-	bool visible = true; ///< Whether the toolbar chrome is shown.
+	bool visible = true;					///< Whether the toolbar chrome is shown.
 	[[nodiscard]] auto operator<=>(const WindowToolbar &) const = default;
 };
 
@@ -360,7 +376,7 @@ struct DragFormat {
 /// @brief Snapshot of an inbound drag session without borrowed native objects.
 struct DragInfo {
 	std::vector<DragFormat> formats{}; ///< Formats offered by the drag source.
-	Point location{}; ///< Location in window content coordinates.
+	Point location{};				   ///< Location in window content coordinates.
 	DragOperation proposedOperation = DragOperation::copy; ///< Source-proposed default.
 };
 
@@ -368,8 +384,8 @@ struct DragInfo {
 ///
 /// Handlers run on the UI executor. They must not retain native drag objects.
 struct WindowDragAndDrop {
-	std::vector<DragFormat> acceptedFormats{}; ///< Formats this window can accept.
-	DragOperation permittedOperations = DragOperation::copy; ///< Operations the target allows.
+	std::vector<DragFormat> acceptedFormats{};				  ///< Formats this window can accept.
+	DragOperation permittedOperations = DragOperation::copy;  ///< Operations the target allows.
 	std::function<DragOperation(const DragInfo &)> onEnter{}; ///< Updates the proposed operation.
 	std::function<DragOperation(const DragInfo &)> onMove{};  ///< Called as the drag moves.
 	std::function<void()> onLeave{};						  ///< Clears transient drag feedback.
@@ -457,9 +473,9 @@ enum class WindowFeature : std::uint16_t {
 
 /// @brief Whether a feature can be satisfied on the current host.
 enum class FeatureSupport : std::uint8_t {
-	supported,	 ///< Fully available for the current role/backend.
-	partial,	 ///< Available with documented limitations.
-	unsupported	 ///< Not available; preferences report unsupported outcomes.
+	supported,	///< Fully available for the current role/backend.
+	partial,	///< Available with documented limitations.
+	unsupported ///< Not available; preferences report unsupported outcomes.
 };
 
 /// @brief Whether a feature is fixed at creation or mutable afterward.
@@ -470,8 +486,8 @@ enum class FeatureMutability : std::uint8_t {
 
 /// @brief One capability row for `WindowCapabilities`.
 struct WindowFeatureCapability {
-	WindowFeature feature = WindowFeature::contentSize; ///< Feature being described.
-	FeatureSupport support = FeatureSupport::supported; ///< Host support classification.
+	WindowFeature feature = WindowFeature::contentSize;		   ///< Feature being described.
+	FeatureSupport support = FeatureSupport::supported;		   ///< Host support classification.
 	FeatureMutability mutability = FeatureMutability::runtime; ///< Creation-only vs live.
 	[[nodiscard]] auto operator<=>(const WindowFeatureCapability &) const = default;
 };

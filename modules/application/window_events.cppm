@@ -27,14 +27,14 @@ enum class WindowLifecycle : std::uint8_t {
 struct WindowSnapshot {
 	WindowId id{}; ///< Window identity assigned at declaration time.
 	WindowLifecycle lifecycle = WindowLifecycle::closed; ///< Open versus closed.
-	Rect contentBounds{}; ///< Global content bounds excluding native chrome when known.
-	Size contentSize{};	  ///< Actual content dimensions in logical points.
+	Rect contentBounds{};			  ///< Global content bounds excluding native chrome when known.
+	Size contentSize{};				  ///< Actual content dimensions in logical points.
 	std::optional<ScreenId> screen{}; ///< Current display; absent when unknown/invalidated.
 	WindowState state = WindowState::normal; ///< Actual high-level state.
 	bool isVisible = false;					 ///< Actual visibility, not the requested property.
 	bool isKey = false;						 ///< Whether the window currently accepts key focus.
-	bool isActive = false; ///< Whether the window is active in the desktop sense.
-	ScaleFactor backingScale{1}; ///< Actual surface scale used by the host.
+	bool isActive = false;					 ///< Whether the window is active in the desktop sense.
+	ScaleFactor backingScale{1};			 ///< Actual surface scale used by the host.
 	[[nodiscard]] auto operator<=>(const WindowSnapshot &) const = default;
 };
 
@@ -80,14 +80,14 @@ struct WindowFeatureResult {
 
 /// @brief Aggregated result of applying a configuration transaction.
 struct WindowConfigurationResult {
-	ConfigurationRevision revision{}; ///< Identity of the applied transaction attempt.
-	std::vector<WindowFeature> changed{}; ///< Features touched by the transaction.
+	ConfigurationRevision revision{};			///< Identity of the applied transaction attempt.
+	std::vector<WindowFeature> changed{};		///< Features touched by the transaction.
 	std::vector<WindowFeatureResult> results{}; ///< Per-feature outcomes and effective values.
 };
 
 /// @brief Native window finished construction and published initial observation.
 struct WindowReady {
-	WindowSnapshot snapshot{};			 ///< Actual initial state.
+	WindowSnapshot snapshot{};		   ///< Actual initial state.
 	WindowCapabilities capabilities{}; ///< Initial capability matrix.
 };
 

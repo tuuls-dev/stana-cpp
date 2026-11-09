@@ -426,9 +426,9 @@ struct WindowHostControl {
 /// Native hosts own this value until closure. Callback captures must not borrow
 /// component descriptions, because descriptions are already destroyed after mounting.
 struct Window {
-	std::string title{}; ///< Initial UTF-8 native title.
-	double width = 0;	 ///< Initial content width in logical points.
-	double height = 0;	 ///< Initial content height in logical points.
+	std::string title{};				 ///< Initial UTF-8 native title.
+	double width = 0;					 ///< Initial content width in logical points.
+	double height = 0;					 ///< Initial content height in logical points.
 	WindowConfiguration configuration{}; ///< Full creation/update configuration payload.
 	std::shared_ptr<WindowHostControl>
 		hostControl{}; ///< Filled by the host; portable code pushes updates through it.

@@ -37,7 +37,9 @@ struct TitleBarOptions {
 	::stana::reactive::Property<TitleBarContentIntegration> contentIntegration{
 		TitleBarContentIntegration::separated
 	}; ///< Content versus title-bar geometry relationship.
-	::stana::reactive::Property<bool> transparentTitleBar{false}; ///< Transparent title-bar material.
+	::stana::reactive::Property<bool> transparentTitleBar{
+		false
+	};													  ///< Transparent title-bar material.
 	::stana::reactive::Property<bool> titleVisible{true}; ///< Whether the title text is shown.
 	::stana::reactive::Property<TitleBarControlVisibility> controls{
 		TitleBarControlVisibility::visible
@@ -53,27 +55,32 @@ enum class TabbingMode : std::uint8_t {
 
 /// @brief macOS window tabbing preferences.
 struct TabbingOptions {
-	::stana::reactive::Property<TabbingMode> mode{TabbingMode::automatic}; ///< Tabbing participation.
-	::stana::reactive::Property<std::optional<std::string>> tabbingIdentifier{}; ///< Group identity.
+	::stana::reactive::Property<TabbingMode> mode{
+		TabbingMode::automatic
+	}; ///< Tabbing participation.
+	::stana::reactive::Property<std::optional<std::string>>
+		tabbingIdentifier{}; ///< Group identity.
 };
 
 /// @brief Spaces / Mission Control collection behaviors that are macOS-specific.
 enum class SpacesBehavior : std::uint8_t {
-	managed,		 ///< Default Spaces participation.
+	managed,		  ///< Default Spaces participation.
 	canJoinAllSpaces, ///< Visible across Spaces when supported.
 	moveToActiveSpace ///< Moves with the active Space when ordered front.
 };
 
 /// @brief Fullscreen participation relative to Spaces.
 enum class FullscreenBehavior : std::uint8_t {
-	primary,		///< Ordinary fullscreen Space.
-	auxiliary,		///< Auxiliary fullscreen behavior where supported.
-	disallowed		///< Reject fullscreen entry for this window.
+	primary,   ///< Ordinary fullscreen Space.
+	auxiliary, ///< Auxiliary fullscreen behavior where supported.
+	disallowed ///< Reject fullscreen entry for this window.
 };
 
 /// @brief macOS Spaces and fullscreen participation preferences.
 struct SpacesOptions {
-	::stana::reactive::Property<SpacesBehavior> behavior{SpacesBehavior::managed}; ///< Spaces policy.
+	::stana::reactive::Property<SpacesBehavior> behavior{
+		SpacesBehavior::managed
+	}; ///< Spaces policy.
 	::stana::reactive::Property<FullscreenBehavior> fullscreen{
 		FullscreenBehavior::primary
 	}; ///< Fullscreen Space participation.
@@ -81,27 +88,33 @@ struct SpacesOptions {
 
 /// @brief Panel-specific activation and modality interaction rules.
 struct PanelOptions {
-	::stana::reactive::Property<bool> becomesKeyOnlyIfNeeded{false}; ///< Nonactivating until needed.
-	::stana::reactive::Property<bool> worksWhenModal{false}; ///< Receives events during app modality.
+	::stana::reactive::Property<bool> becomesKeyOnlyIfNeeded{
+		false
+	}; ///< Nonactivating until needed.
+	::stana::reactive::Property<bool> worksWhenModal{
+		false
+	}; ///< Receives events during app modality.
 	::stana::reactive::Property<bool> floatingPanel{false}; ///< Panel floating collection behavior.
 };
 
 /// @brief Native AppKit window levels expressed without integer masks.
 enum class NativeWindowLevel : std::uint8_t {
-	normal,			///< `NSNormalWindowLevel` intent.
-	floating,		///< `NSFloatingWindowLevel` intent.
-	submenu,		///< `NSSubmenuWindowLevel` intent.
-	tornOffMenu,	///< `NSTornOffMenuWindowLevel` intent.
-	mainMenu,		///< `NSMainMenuWindowLevel` intent.
-	statusBar,		///< `NSStatusWindowLevel` intent.
-	modalPanel,		///< `NSModalPanelWindowLevel` intent.
-	popUpMenu,		///< `NSPopUpMenuWindowLevel` intent.
-	screenSaver		///< `NSScreenSaverWindowLevel` intent.
+	normal,		 ///< `NSNormalWindowLevel` intent.
+	floating,	 ///< `NSFloatingWindowLevel` intent.
+	submenu,	 ///< `NSSubmenuWindowLevel` intent.
+	tornOffMenu, ///< `NSTornOffMenuWindowLevel` intent.
+	mainMenu,	 ///< `NSMainMenuWindowLevel` intent.
+	statusBar,	 ///< `NSStatusWindowLevel` intent.
+	modalPanel,	 ///< `NSModalPanelWindowLevel` intent.
+	popUpMenu,	 ///< `NSPopUpMenuWindowLevel` intent.
+	screenSaver	 ///< `NSScreenSaverWindowLevel` intent.
 };
 
 /// @brief macOS-only native stacking level preference.
 struct NativeLevelOptions {
-	::stana::reactive::Property<NativeWindowLevel> level{NativeWindowLevel::normal}; ///< Native level.
+	::stana::reactive::Property<NativeWindowLevel> level{
+		NativeWindowLevel::normal
+	}; ///< Native level.
 };
 
 /// @brief Typed macOS window extension groups; default requests no overrides beyond defaults.
@@ -109,10 +122,10 @@ struct NativeLevelOptions {
 /// Portable consumers need not instantiate this type. Construction into
 /// `PlatformWindowOptions` fails compilation on non-Apple targets.
 struct WindowOptions {
-	TitleBarOptions titleBar{};		///< Title-bar / content integration.
-	TabbingOptions tabbing{};		///< Native tabbing.
-	SpacesOptions spaces{};			///< Spaces and fullscreen participation.
-	PanelOptions panel{};			///< Panel activation behaviors.
+	TitleBarOptions titleBar{};		  ///< Title-bar / content integration.
+	TabbingOptions tabbing{};		  ///< Native tabbing.
+	SpacesOptions spaces{};			  ///< Spaces and fullscreen participation.
+	PanelOptions panel{};			  ///< Panel activation behaviors.
 	NativeLevelOptions nativeLevel{}; ///< Native window levels.
 };
 

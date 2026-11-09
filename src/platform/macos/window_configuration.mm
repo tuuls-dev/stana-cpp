@@ -36,10 +36,8 @@ namespace {
 	return NSMakePoint(point.x, height - point.y);
 }
 
-[[nodiscard]] auto configurationChanged(
-	const WindowConfiguration &previous,
-	const WindowConfiguration &next
-) -> bool {
+[[nodiscard]] auto
+configurationChanged(const WindowConfiguration &previous, const WindowConfiguration &next) -> bool {
 	return previous.title != next.title || previous.contentWidth != next.contentWidth ||
 		previous.contentHeight != next.contentHeight || previous.opacity != next.opacity ||
 		previous.hasShadow != next.hasShadow || previous.isVisible != next.isVisible ||
@@ -56,7 +54,8 @@ namespace {
 		previous.minimumContentSize != next.minimumContentSize ||
 		previous.maximumContentSize != next.maximumContentSize ||
 		previous.aspectRatio != next.aspectRatio ||
-		previous.resizeIncrement != next.resizeIncrement || previous.macos.present != next.macos.present ||
+		previous.resizeIncrement != next.resizeIncrement ||
+		previous.macos.present != next.macos.present ||
 		previous.macos.fullSizeContentView != next.macos.fullSizeContentView ||
 		previous.macos.transparentTitleBar != next.macos.transparentTitleBar ||
 		previous.macos.titleVisible != next.macos.titleVisible ||
@@ -166,8 +165,7 @@ void applyMacosExtensions(NSWindow *window, const WindowConfiguration &configura
 
 void applyPlacement(NSWindow *window, const WindowConfiguration &configuration) {
 	NSScreen *const screen = window.screen != nil ? window.screen : NSScreen.mainScreen;
-	const NSSize contentSize =
-		NSMakeSize(configuration.contentWidth, configuration.contentHeight);
+	const NSSize contentSize = NSMakeSize(configuration.contentWidth, configuration.contentHeight);
 	[window setContentSize:contentSize];
 	switch (configuration.placement) {
 	case NativePlacementKind::system:
@@ -181,11 +179,11 @@ void applyPlacement(NSWindow *window, const WindowConfiguration &configuration) 
 			screen
 		);
 		const NSRect frame = [window frameRectForContentRect:NSMakeRect(
-														  appKitOrigin.x,
-														  appKitOrigin.y,
-														  configuration.contentWidth,
-														  configuration.contentHeight
-													  )];
+																 appKitOrigin.x,
+																 appKitOrigin.y,
+																 configuration.contentWidth,
+																 configuration.contentHeight
+															 )];
 		[window setFrame:frame display:YES];
 		break;
 	}
@@ -296,10 +294,8 @@ auto createConfiguredWindow(const WindowConfiguration &configuration) -> NSWindo
 		window.contentAspectRatio = NSMakeSize(*configuration.aspectRatio, 1.0);
 	}
 	if (configuration.resizeIncrement) {
-		window.contentResizeIncrements = NSMakeSize(
-			configuration.resizeIncrement->width,
-			configuration.resizeIncrement->height
-		);
+		window.contentResizeIncrements =
+			NSMakeSize(configuration.resizeIncrement->width, configuration.resizeIncrement->height);
 	}
 	applyMacosExtensions(window, configuration);
 	applyCollectionBehavior(window, configuration);
@@ -337,10 +333,8 @@ void applyWindowConfiguration(
 		window.contentAspectRatio = NSMakeSize(*requested.aspectRatio, 1.0);
 	}
 	if (requested.resizeIncrement) {
-		window.contentResizeIncrements = NSMakeSize(
-			requested.resizeIncrement->width,
-			requested.resizeIncrement->height
-		);
+		window.contentResizeIncrements =
+			NSMakeSize(requested.resizeIncrement->width, requested.resizeIncrement->height);
 	}
 	applyMacosExtensions(window, requested);
 	applyCollectionBehavior(window, requested);
@@ -419,12 +413,11 @@ void installWindowHostControl(
 	control->observe = [window] -> NativeWindowObservation {
 		return observeNativeWindow(window);
 	};
-	control->dispatchAction =
-		[window, applied, weakState](
-			NativeWindowActionKind kind,
-			NativeWindowState stateValue,
-			std::uint64_t token
-		) -> NativeWindowOutcome {
+	control->dispatchAction = [window, applied, weakState](
+								  NativeWindowActionKind kind,
+								  NativeWindowState stateValue,
+								  std::uint64_t token
+							  ) -> NativeWindowOutcome {
 		if (const auto owner = weakState.lock(); !owner || owner->isClosed) {
 			return NativeWindowOutcome::cancelled;
 		}

@@ -12,7 +12,6 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <cstdint>
 #include <cmath>
 #include <compare>
 #include <cstddef>
@@ -793,8 +792,12 @@ auto run(std::vector<Window> windows) -> std::expected<int, std::string> {
 			state->nativeWindow = window;
 			state->appliedConfiguration->requested = configuration;
 			state->appliedConfiguration->hasApplied = true;
-			STANAView *const view = [[STANAView alloc]
-				initWithFrame:NSMakeRect(0, 0, configuration.contentWidth, configuration.contentHeight)];
+			STANAView *const view = [[STANAView alloc] initWithFrame:NSMakeRect(
+																		 0,
+																		 0,
+																		 configuration.contentWidth,
+																		 configuration.contentHeight
+																	 )];
 			view->state_ = state;
 			state->view = view;
 			view.wantsLayer = YES;

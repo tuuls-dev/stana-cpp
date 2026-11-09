@@ -299,11 +299,10 @@ auto runWindows(std::vector<WindowSession> &sessions) -> int {
 					}
 					document->scroll({.x = Points{x}, .y = Points{y}}, Points{delta});
 				},
-				.key =
-					[weakDocument](
-						stana::platform::detail::KeyAction action,
-						stana::platform::detail::KeyPhase phase
-					) -> void {
+				.key = [weakDocument](
+						   stana::platform::detail::KeyAction action,
+						   stana::platform::detail::KeyPhase phase
+					   ) -> void {
 					const auto document = weakDocument.lock();
 					if (!document) {
 						return;
@@ -344,8 +343,9 @@ auto runWindows(std::vector<WindowSession> &sessions) -> int {
 					}
 				},
 				.beginPresentation =
-					[weakDocument](const stana::platform::detail::PresentationRequest &request)
-					-> std::expected<stana::platform::detail::FrameIdentity, std::string> {
+					[weakDocument](
+						const stana::platform::detail::PresentationRequest &request
+					) -> std::expected<stana::platform::detail::FrameIdentity, std::string> {
 					const auto owner = weakDocument.lock();
 					if (!owner) {
 						return std::unexpected("Window document closed");
@@ -366,17 +366,17 @@ auto runWindows(std::vector<WindowSession> &sessions) -> int {
 						.sceneRevision = attempt->sceneRevision
 					};
 				},
-				.gpuCompleted =
-					[weakDocument](stana::platform::detail::FrameIdentity frame, bool success)
-					-> bool {
+				.gpuCompleted = [weakDocument](
+									stana::platform::detail::FrameIdentity frame,
+									bool success
+								) -> bool {
 					const auto owner = weakDocument.lock();
 					return owner && owner->reportGPUCompletion(portableAttempt(frame), success);
 				},
-				.drawablePresented =
-					[weakDocument](
-						stana::platform::detail::FrameIdentity frame,
-						stana::platform::detail::TilePresentation observation
-					) -> bool {
+				.drawablePresented = [weakDocument](
+										 stana::platform::detail::FrameIdentity frame,
+										 stana::platform::detail::TilePresentation observation
+									 ) -> bool {
 					const auto owner = weakDocument.lock();
 					return owner &&
 						owner->reportPresentation(

@@ -43,9 +43,12 @@ void validation() {
 		"bad opacity"
 	);
 
-	snapshot = stana::application::detail::sampleConfiguration(stana::application::WindowId{}, options);
-	snapshot.minimumContentSize = stana::Size{.width = stana::Points{200}, .height = stana::Points{200}};
-	snapshot.maximumContentSize = stana::Size{.width = stana::Points{100}, .height = stana::Points{100}};
+	snapshot =
+		stana::application::detail::sampleConfiguration(stana::application::WindowId{}, options);
+	snapshot.minimumContentSize =
+		stana::Size{.width = stana::Points{200}, .height = stana::Points{200}};
+	snapshot.maximumContentSize =
+		stana::Size{.width = stana::Points{100}, .height = stana::Points{100}};
 	require(
 		!stana::application::detail::validateConfiguration(snapshot) &&
 			stana::application::detail::validateConfiguration(snapshot).error() ==
@@ -53,7 +56,8 @@ void validation() {
 		"min greater than max"
 	);
 
-	snapshot = stana::application::detail::sampleConfiguration(stana::application::WindowId{}, options);
+	snapshot =
+		stana::application::detail::sampleConfiguration(stana::application::WindowId{}, options);
 	snapshot.role = stana::application::PopupWindow{};
 	require(
 		!stana::application::detail::validateConfiguration(snapshot) &&
@@ -62,7 +66,8 @@ void validation() {
 		"popup without owner"
 	);
 
-	snapshot = stana::application::detail::sampleConfiguration(stana::application::WindowId{}, options);
+	snapshot =
+		stana::application::detail::sampleConfiguration(stana::application::WindowId{}, options);
 	snapshot.placement = stana::application::ExplicitPlacement{
 		.origin = {.x = stana::Points{10}, .y = stana::Points{20}},
 		.screen = stana::application::SpecificScreen{}
@@ -125,10 +130,12 @@ void requestStreamContracts() {
 	);
 	require(
 		!source
-			 .emit(stana::application::BeginInteractiveMove{
-				 .interaction = stana::application::InteractionToken{}
-			 })
-			 .has_value(),
+			.emit(
+				stana::application::BeginInteractiveMove{
+					.interaction = stana::application::InteractionToken{}
+				}
+			)
+			.has_value(),
 		"invalid token fails"
 	);
 	stana::application::WindowRequestSource deferred;
@@ -136,16 +143,19 @@ void requestStreamContracts() {
 	require(stana::application::detail::attachRequestStream(deferredStream).has_value());
 	require(
 		!deferred
-			 .emit(stana::application::RespondDeferredClose{
-				 .request = stana::application::CloseRequestId{.value = 1},
-				 .decision = stana::application::CloseDecision::defer
-			 })
-			 .has_value() &&
-			deferred
-					.emit(stana::application::RespondDeferredClose{
+				.emit(
+					stana::application::RespondDeferredClose{
 						.request = stana::application::CloseRequestId{.value = 1},
 						.decision = stana::application::CloseDecision::defer
-					})
+					}
+				)
+				.has_value() &&
+			deferred.emit(
+						stana::application::RespondDeferredClose{
+							.request = stana::application::CloseRequestId{.value = 1},
+							.decision = stana::application::CloseDecision::defer
+						}
+			)
 					.error() == stana::application::WindowRequestError::invalidAction,
 		"RespondDeferredClose with defer invalid"
 	);

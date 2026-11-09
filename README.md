@@ -58,29 +58,23 @@ label stays reactive.
 import stana;
 
 using namespace stana::application;
+using namespace stana::literals;
 using namespace stana::ui;
 
 auto main() -> int {
 	try {
 		const stana::reactive::Signal count{0};
-		constexpr double windowWidth = 480;
-		constexpr double windowHeight = 320;
-		constexpr double contentPadding = 28;
-		constexpr double stackSpacing = 16;
-		constexpr double headingSize = 24;
 
 		const auto window = Window{
-			.title = "Stana Counter",
-			.size = {.width = windowWidth, .height = windowHeight},
 			.content = VStack{
-				.spacing = stackSpacing,
-				.layout = {.padding = stana::Insets::all(contentPadding)},
+				.spacing = 16_pt,
+				.layout = {.padding = stana::Insets::all(28_pt)},
 				.children = children(
 					Text{
 						.text = count.map([](int value) -> std::string {
 							return "Count: " + std::to_string(value);
 						}),
-						.textStyle = {.font = stana::Font::system(headingSize)}
+						.textStyle = {.font = stana::Font::system(24_pt)}
 					},
 					Button{
 						.text = "Increment",
@@ -88,7 +82,10 @@ auto main() -> int {
 						.events = {on(Event::click, [count] -> void { ++count; })}
 					}
 				)
-			}
+			},
+			.options =
+				{.geometry = {.contentSize = {.width = 480_pt, .height = 320_pt}},
+					.appearance = {.title = "Stana Counter"}}
 		};
 		return Application::run(window);
 	} catch (const std::exception &error) {

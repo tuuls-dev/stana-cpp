@@ -53,7 +53,8 @@ auto WindowId::create() -> WindowId {
 }
 
 WindowRequestSource::WindowRequestSource()
-	: channel_(std::make_shared<detail::WindowRequestChannel>()) {}
+	: channel_(std::make_shared<detail::WindowRequestChannel>()) {
+}
 
 WindowRequestSource::~WindowRequestSource() = default;
 
@@ -77,7 +78,8 @@ struct WindowRequestChannel::State {
 	std::vector<PendingWindowRequest> pending{};
 };
 
-WindowRequestChannel::WindowRequestChannel() : state(std::make_unique<State>()) {}
+WindowRequestChannel::WindowRequestChannel() : state(std::make_unique<State>()) {
+}
 
 WindowRequestChannel::~WindowRequestChannel() = default;
 
@@ -143,10 +145,9 @@ void closeRequestStream(const WindowRequestStream &stream) {
 	}
 }
 
-auto validateWindowAction(const WindowAction &action)
-	-> std::expected<void, WindowRequestError> {
-	const auto requireToken = [](const InteractionToken &token)
-		-> std::expected<void, WindowRequestError> {
+auto validateWindowAction(const WindowAction &action) -> std::expected<void, WindowRequestError> {
+	const auto requireToken =
+		[](const InteractionToken &token) -> std::expected<void, WindowRequestError> {
 		if (token.value == 0) {
 			return std::unexpected(WindowRequestError::invalidToken);
 		}
@@ -217,8 +218,7 @@ auto validateConfiguration(const WindowConfigurationSnapshot &snapshot)
 			!std::isfinite(explicitPlacement->origin.y.value())) {
 			return std::unexpected(Error::invalidValue);
 		}
-		if (const auto *specific =
-				std::get_if<SpecificScreen>(&explicitPlacement->screen)) {
+		if (const auto *specific = std::get_if<SpecificScreen>(&explicitPlacement->screen)) {
 			if (specific->id.value == 0) {
 				return std::unexpected(Error::invalidValue);
 			}
@@ -227,8 +227,7 @@ auto validateConfiguration(const WindowConfigurationSnapshot &snapshot)
 	return {};
 }
 
-auto sampleConfiguration(WindowId id, const WindowOptions &options)
-	-> WindowConfigurationSnapshot {
+auto sampleConfiguration(WindowId id, const WindowOptions &options) -> WindowConfigurationSnapshot {
 	return {
 		.id = id,
 		.role = options.creation.role,
@@ -266,7 +265,9 @@ auto Application::screens() -> std::vector<Screen> {
 			{.id = ScreenId{.value = screen.id},
 				.name = screen.name,
 				.bounds =
-					{.origin = {.x = Points{screen.bounds.origin.x}, .y = Points{screen.bounds.origin.y}},
+					{.origin =
+							{.x = Points{screen.bounds.origin.x},
+								.y = Points{screen.bounds.origin.y}},
 						.size =
 							{.width = Points{screen.bounds.size.width},
 								.height = Points{screen.bounds.size.height}}},

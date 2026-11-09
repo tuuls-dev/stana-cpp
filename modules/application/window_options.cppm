@@ -30,23 +30,20 @@ inline constexpr bool buildingForApple = false;
 #endif
 
 /// @brief True for registered platform option group types.
-template <typename T>
-inline constexpr bool registeredPlatformWindowOptions = false;
+template <typename T> inline constexpr bool registeredPlatformWindowOptions = false;
 
 template <>
 inline constexpr bool registeredPlatformWindowOptions<platform::macos::WindowOptions> = true;
 
 /// @brief True when a registered extension may be constructed on this build target.
-template <typename T>
-inline constexpr bool compatiblePlatformWindowOptions = false;
+template <typename T> inline constexpr bool compatiblePlatformWindowOptions = false;
 
 template <>
 inline constexpr bool compatiblePlatformWindowOptions<platform::macos::WindowOptions> =
 	buildingForApple;
 
 template <typename T>
-concept RegisteredPlatformWindowOptions =
-	registeredPlatformWindowOptions<std::remove_cvref_t<T>>;
+concept RegisteredPlatformWindowOptions = registeredPlatformWindowOptions<std::remove_cvref_t<T>>;
 
 } // namespace detail
 
@@ -65,42 +62,56 @@ struct WindowCreation {
 /// `contentSize` excludes native chrome. Defaults match prior Stana launch behavior
 /// except placement, which is centered rather than an unspecified system cascade.
 struct WindowGeometry {
-	::stana::reactive::Property<Size> contentSize{Size{
-		.width = detail::defaultContentWidth,
-		.height = detail::defaultContentHeight
-	}}; ///< Content dimensions; default 800×600 logical points.
-	::stana::reactive::Property<WindowPlacement> placement{CenteredPlacement{}}; ///< Default centered.
-	::stana::reactive::Property<std::optional<Size>> minimumContentSize{}; ///< Unconstrained default.
-	::stana::reactive::Property<std::optional<Size>> maximumContentSize{}; ///< Unconstrained default.
-	::stana::reactive::Property<std::optional<double>> aspectRatio{}; ///< width/height; unconstrained.
-	::stana::reactive::Property<std::optional<Size>> resizeIncrement{}; ///< Platform default when empty.
+	::stana::reactive::Property<Size> contentSize{
+		Size{.width = detail::defaultContentWidth, .height = detail::defaultContentHeight}
+	}; ///< Content dimensions; default 800×600 logical points.
+	::stana::reactive::Property<WindowPlacement> placement{
+		CenteredPlacement{}
+	}; ///< Default centered.
+	::stana::reactive::Property<std::optional<Size>>
+		minimumContentSize{}; ///< Unconstrained default.
+	::stana::reactive::Property<std::optional<Size>>
+		maximumContentSize{}; ///< Unconstrained default.
+	::stana::reactive::Property<std::optional<double>>
+		aspectRatio{}; ///< width/height; unconstrained.
+	::stana::reactive::Property<std::optional<Size>>
+		resizeIncrement{}; ///< Platform default when empty.
 };
 
 /// @brief Title, chrome, background, opacity, theme, and shadow preferences.
 struct WindowAppearance {
 	::stana::reactive::Property<std::string> title{}; ///< Owning UTF-8 title; default empty.
-	::stana::reactive::Property<WindowDecorations> decorations{NativeDecorations{}}; ///< Native chrome.
+	::stana::reactive::Property<WindowDecorations> decorations{
+		NativeDecorations{}
+	}; ///< Native chrome.
 	::stana::reactive::Property<WindowBackground> background{SystemBackground{}}; ///< System fill.
 	::stana::reactive::Property<double> opacity{1.0}; ///< Finite opacity in [0, 1]; default 1.
 	::stana::reactive::Property<std::optional<Theme>> theme{}; ///< Follows system when empty.
-	::stana::reactive::Property<bool> hasShadow{true}; ///< Subject to platform capability.
+	::stana::reactive::Property<bool> hasShadow{true};		   ///< Subject to platform capability.
 };
 
 /// @brief Interaction, state, and control preferences.
 struct WindowBehavior {
 	::stana::reactive::Property<bool> isResizable{true}; ///< Default resizable.
-	::stana::reactive::Property<WindowControls> controls{}; ///< Defaults preserve native affordances.
+	::stana::reactive::Property<WindowControls>
+		controls{}; ///< Defaults preserve native affordances.
 	::stana::reactive::Property<WindowState> state{WindowState::normal}; ///< Default restored.
-	::stana::reactive::Property<bool> isVisible{true}; ///< Shown after successful creation.
-	::stana::reactive::Property<bool> isEnabled{true}; ///< Accepts interaction by default.
+	::stana::reactive::Property<bool> isVisible{true};	  ///< Shown after successful creation.
+	::stana::reactive::Property<bool> isEnabled{true};	  ///< Accepts interaction by default.
 	::stana::reactive::Property<bool> acceptsFocus{true}; ///< May become key by default.
-	::stana::reactive::Property<WindowActivation> activation{PlatformDefaultActivation{}}; ///< Default.
-	::stana::reactive::Property<WindowPointerPolicy> pointerPolicy{NormalPointerPolicy{}}; ///< Normal.
+	::stana::reactive::Property<WindowActivation> activation{
+		PlatformDefaultActivation{}
+	}; ///< Default.
+	::stana::reactive::Property<WindowPointerPolicy> pointerPolicy{
+		NormalPointerPolicy{}
+	}; ///< Normal.
 };
 
 /// @brief Portable desktop stacking and task-switcher participation.
 struct WindowDesktopIntegration {
-	::stana::reactive::Property<WindowLevel> level{WindowLevel::normal}; ///< Portable stacking intent.
+	::stana::reactive::Property<WindowLevel> level{
+		WindowLevel::normal
+	}; ///< Portable stacking intent.
 	::stana::reactive::Property<TaskSwitcherParticipation> taskSwitcher{
 		TaskSwitcherParticipation::automatic
 	}; ///< Task list participation; unsupported control is reported explicitly.
@@ -108,8 +119,10 @@ struct WindowDesktopIntegration {
 
 /// @brief Optional specialized facilities kept off the flat `Window` surface.
 struct WindowFacilities {
-	::stana::reactive::Property<std::optional<WindowToolbar>> toolbar{}; ///< Owned toolbar description.
-	::stana::reactive::Property<std::optional<WindowDocument>> document{}; ///< Represented document.
+	::stana::reactive::Property<std::optional<WindowToolbar>>
+		toolbar{}; ///< Owned toolbar description.
+	::stana::reactive::Property<std::optional<WindowDocument>>
+		document{};					 ///< Represented document.
 	WindowDragAndDrop dragAndDrop{}; ///< Accepted formats, operations, and lifecycle handlers.
 	WindowRestoration restoration{}; ///< Creation-only identity plus save/restore hooks.
 };
@@ -164,14 +177,14 @@ class PlatformWindowOptions {
 /// `Signal<T>`, and `Computed<T>`. Discrete actions use `requests` so reactive
 /// coalescing cannot discard commands.
 struct WindowOptions {
-	WindowCreation creation{};					 ///< Role and color mode.
-	WindowGeometry geometry{};					 ///< Size, placement, constraints.
-	WindowAppearance appearance{};				 ///< Title and visual chrome.
-	WindowBehavior behavior{};					 ///< State and interaction.
-	WindowDesktopIntegration desktop{};			 ///< Level and task switcher.
-	WindowFacilities facilities{};				 ///< Toolbar/document/DnD/restoration.
-	PlatformWindowOptions platform{};			 ///< Typed OS extensions; default empty.
-	WindowRequestStream requests{};				 ///< Ordered discrete action stream.
+	WindowCreation creation{};			///< Role and color mode.
+	WindowGeometry geometry{};			///< Size, placement, constraints.
+	WindowAppearance appearance{};		///< Title and visual chrome.
+	WindowBehavior behavior{};			///< State and interaction.
+	WindowDesktopIntegration desktop{}; ///< Level and task switcher.
+	WindowFacilities facilities{};		///< Toolbar/document/DnD/restoration.
+	PlatformWindowOptions platform{};	///< Typed OS extensions; default empty.
+	WindowRequestStream requests{};		///< Ordered discrete action stream.
 };
 
 namespace detail {

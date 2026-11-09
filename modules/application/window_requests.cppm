@@ -54,7 +54,7 @@ struct BeginInteractiveResize {
 /// @brief Shows the system/window menu at a content-local point.
 struct ShowWindowMenu {
 	InteractionToken interaction{}; ///< Opaque gesture authorization from a Stana event.
-	Point location{}; ///< Content-local logical point for menu presentation.
+	Point location{};				///< Content-local logical point for menu presentation.
 };
 
 /// @brief Pixel format for an owned window capture result.
@@ -75,7 +75,7 @@ struct PrintWindow {};
 /// Only `CloseDecision::allow` and `CloseDecision::deny` are valid here.
 /// Returning `defer` again is invalid.
 struct RespondDeferredClose {
-	CloseRequestId request{};			 ///< Identity from the original `CloseRequest`.
+	CloseRequestId request{};					   ///< Identity from the original `CloseRequest`.
 	CloseDecision decision = CloseDecision::allow; ///< Final allow/deny decision.
 };
 
@@ -99,18 +99,18 @@ struct WindowRequestId {
 
 /// @brief Why a request emission was rejected before queuing.
 enum class WindowRequestError : std::uint8_t {
-	notAttached,   ///< The stream is not attached to an open window.
-	windowClosed,  ///< The attached window has already closed.
-	invalidAction, ///< The action failed structural validation.
-	invalidToken,  ///< A required interaction token was missing or stale.
+	notAttached,	///< The stream is not attached to an open window.
+	windowClosed,	///< The attached window has already closed.
+	invalidAction,	///< The action failed structural validation.
+	invalidToken,	///< A required interaction token was missing or stale.
 	duplicateStream ///< A second stream attachment was attempted for one window.
 };
 
 /// @brief Owned capture pixels returned to the application; no native resources escape.
 struct CapturePixels {
 	CapturePixelFormat format = CapturePixelFormat::rgba8Unorm; ///< Pixel layout.
-	std::uint32_t width = 0;  ///< Pixel width.
-	std::uint32_t height = 0; ///< Pixel height.
+	std::uint32_t width = 0;									///< Pixel width.
+	std::uint32_t height = 0;									///< Pixel height.
 	std::vector<std::uint8_t> bytes{}; ///< Owning tightly packed pixel storage.
 };
 
@@ -119,10 +119,10 @@ using WindowRequestPayload = std::variant<std::monostate, CapturePixels>;
 
 /// @brief Result delivered for one previously accepted `WindowRequestId`.
 struct WindowRequestResult {
-	WindowRequestId id{};						 ///< Identity returned by `emit`.
+	WindowRequestId id{};						   ///< Identity returned by `emit`.
 	WindowOutcome outcome = WindowOutcome::failed; ///< Terminal or pending outcome.
-	WindowAction action = CloseWindow{};		 ///< Copy of the accepted action.
-	WindowRequestPayload payload{};				 ///< Owned action-specific data when present.
+	WindowAction action = CloseWindow{};		   ///< Copy of the accepted action.
+	WindowRequestPayload payload{};				   ///< Owned action-specific data when present.
 };
 
 class WindowRequestStream;
@@ -152,6 +152,7 @@ class WindowRequestStream {
 	friend struct detail::WindowRequestChannel;
 	friend auto detail::requestStreamChannel(const WindowRequestStream &stream)
 		-> std::shared_ptr<detail::WindowRequestChannel>;
+
 	explicit WindowRequestStream(std::shared_ptr<detail::WindowRequestChannel> channel)
 		: channel_(std::move(channel)) {}
 

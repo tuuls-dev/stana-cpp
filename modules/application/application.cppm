@@ -45,10 +45,11 @@ export namespace stana::application {
 ///
 /// @tparam Content The static component type representing the root UI tree.
 template <::stana::ui::Component Content> struct Window {
-	WindowId id = WindowId::create(); ///< Opaque identity; creating it allocates no native resources.
-	Content content;				  ///< Root description mounted once when the application starts.
-	WindowOptions options{};		  ///< Grouped creation, geometry, appearance, and facilities.
-	WindowEvents events{};			  ///< UI-executor observation and close-decision callbacks.
+	WindowId id =
+		WindowId::create();	 ///< Opaque identity; creating it allocates no native resources.
+	Content content;		 ///< Root description mounted once when the application starts.
+	WindowOptions options{}; ///< Grouped creation, geometry, appearance, and facilities.
+	WindowEvents events{};	 ///< UI-executor observation and close-decision callbacks.
 };
 
 namespace detail {
@@ -59,7 +60,7 @@ namespace detail {
 /// Live `options` remain owned by the session so reactive updates can re-sample
 /// properties without reconstructing the declaration value.
 struct WindowSession {
-	WindowId id{}; ///< Portable identity correlating events and native attachments.
+	WindowId id{};			 ///< Portable identity correlating events and native attachments.
 	WindowOptions options{}; ///< Live grouped configuration, including the request stream.
 	WindowEvents events{};	 ///< Observation callbacks for this session.
 	std::shared_ptr<::stana::document::detail::Document>

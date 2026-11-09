@@ -36,8 +36,7 @@ void applyPlatformWindowOptions(
 		return;
 	}
 	configuration.macos.present = true;
-	configuration.macos.fullSizeContentView =
-		macos->titleBar.contentIntegration.get() ==
+	configuration.macos.fullSizeContentView = macos->titleBar.contentIntegration.get() ==
 		platform::macos::TitleBarContentIntegration::fullSizeContentView;
 	configuration.macos.transparentTitleBar = macos->titleBar.transparentTitleBar.get();
 	configuration.macos.titleVisible = macos->titleBar.titleVisible.get();
@@ -45,15 +44,13 @@ void applyPlatformWindowOptions(
 		macos->titleBar.controls.get() == platform::macos::TitleBarControlVisibility::hidden;
 	configuration.macos.tabbingMode = static_cast<std::uint8_t>(macos->tabbing.mode.get());
 	configuration.macos.tabbingIdentifier = macos->tabbing.tabbingIdentifier.get();
-	configuration.macos.spacesBehavior =
-		static_cast<std::uint8_t>(macos->spaces.behavior.get());
+	configuration.macos.spacesBehavior = static_cast<std::uint8_t>(macos->spaces.behavior.get());
 	configuration.macos.fullscreenBehavior =
 		static_cast<std::uint8_t>(macos->spaces.fullscreen.get());
 	configuration.macos.becomesKeyOnlyIfNeeded = macos->panel.becomesKeyOnlyIfNeeded.get();
 	configuration.macos.worksWhenModal = macos->panel.worksWhenModal.get();
 	configuration.macos.floatingPanel = macos->panel.floatingPanel.get();
-	configuration.macos.nativeLevel =
-		static_cast<std::uint8_t>(macos->nativeLevel.level.get());
+	configuration.macos.nativeLevel = static_cast<std::uint8_t>(macos->nativeLevel.level.get());
 }
 
 void subscribePlatformPropertyUpdates(const std::shared_ptr<WindowSessionRuntime> &runtime) {

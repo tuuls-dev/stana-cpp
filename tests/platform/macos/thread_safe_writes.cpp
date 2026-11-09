@@ -133,22 +133,26 @@ struct WorkerScenario : std::enable_shared_from_this<WorkerScenario> {
 	});
 	const auto code = stana::application::Application::run(
 		stana::application::Window{
-			.content = stana::ui::Text{
-				.text = scenario->text,
-				.lifecycle = {.onMount = [scenario](const stana::document::NodeHandle &) -> void {
-					const auto path = stana::testing::fixtures::platform::macos::resultPath();
-					if (!path.empty()) {
-						std::ofstream ready{path + ".ready"};
-						ready << "ready";
-					}
-					scenario->queue();
-				}}
-			},
-			.options =
-				{.geometry =
-						{.contentSize =
-								{.width = stana::Points{width}, .height = stana::Points{height}}},
-					.appearance = {.title = "Stana thread-safe writes"}}
+			.content =
+				stana::ui::Text{
+					.text = scenario->text,
+					.lifecycle =
+						{.onMount = [scenario](const stana::document::NodeHandle &) -> void {
+							const auto path =
+								stana::testing::fixtures::platform::macos::resultPath();
+							if (!path.empty()) {
+								std::ofstream ready{path + ".ready"};
+								ready << "ready";
+							}
+							scenario->queue();
+						}}
+				},
+			.options = {
+				.geometry =
+					{.contentSize =
+							{.width = stana::Points{width}, .height = stana::Points{height}}},
+				.appearance = {.title = "Stana thread-safe writes"}
+			}
 		}
 	);
 	scenario->worker.get();
@@ -161,23 +165,24 @@ struct WorkerScenario : std::enable_shared_from_this<WorkerScenario> {
 	const stana::reactive::Signal value{LivePayload{live, 0}};
 	const auto code = stana::application::Application::run(
 		stana::application::Window{
-			.content = stana::ui::Text{
-				.text = "shutdown",
-				.lifecycle = {
-					.onMount = [value, live](const stana::document::NodeHandle &) -> void {
-						constexpr int queued = 8;
-						for (int index = 0; index < queued; ++index) {
-							value.setThreadSafe(LivePayload{live, index + 1});
-						}
-						stana::application::Application::stop();
-					}
-				}
-			},
-			.options =
-				{.geometry =
-						{.contentSize =
-								{.width = stana::Points{width}, .height = stana::Points{height}}},
-					.appearance = {.title = "Stana queued shutdown"}}
+			.content =
+				stana::ui::Text{
+					.text = "shutdown",
+					.lifecycle =
+						{.onMount = [value, live](const stana::document::NodeHandle &) -> void {
+							constexpr int queued = 8;
+							for (int index = 0; index < queued; ++index) {
+								value.setThreadSafe(LivePayload{live, index + 1});
+							}
+							stana::application::Application::stop();
+						}}
+				},
+			.options = {
+				.geometry =
+					{.contentSize =
+							{.width = stana::Points{width}, .height = stana::Points{height}}},
+				.appearance = {.title = "Stana queued shutdown"}
+			}
 		}
 	);
 	require(code == 0, "native scenario 2 shutdown");
@@ -201,17 +206,19 @@ struct WorkerScenario : std::enable_shared_from_this<WorkerScenario> {
 	});
 	const auto code = stana::application::Application::run(
 		stana::application::Window{
-			.content = stana::ui::Text{
-				.text = "failure",
-				.lifecycle = {.onMount = [value](const stana::document::NodeHandle &) -> void {
-					value.setThreadSafe(1);
-				}}
-			},
-			.options =
-				{.geometry =
-						{.contentSize =
-								{.width = stana::Points{width}, .height = stana::Points{height}}},
-					.appearance = {.title = "Stana queued failure"}}
+			.content =
+				stana::ui::Text{
+					.text = "failure",
+					.lifecycle = {.onMount = [value](const stana::document::NodeHandle &) -> void {
+						value.setThreadSafe(1);
+					}}
+				},
+			.options = {
+				.geometry =
+					{.contentSize =
+							{.width = stana::Points{width}, .height = stana::Points{height}}},
+				.appearance = {.title = "Stana queued failure"}
+			}
 		}
 	);
 	require(code != 0, "native scenario 3 contained apply exception");

@@ -205,9 +205,7 @@ void subscribePortablePropertyUpdates(const std::shared_ptr<WindowSessionRuntime
 	runtime->subscriptions.push_back(
 		::stana::reactive::observe(options.geometry.resizeIncrement, refresh)
 	);
-	runtime->subscriptions.push_back(
-		::stana::reactive::observe(options.appearance.title, refresh)
-	);
+	runtime->subscriptions.push_back(::stana::reactive::observe(options.appearance.title, refresh));
 	runtime->subscriptions.push_back(
 		::stana::reactive::observe(options.appearance.decorations, refresh)
 	);
@@ -223,9 +221,7 @@ void subscribePortablePropertyUpdates(const std::shared_ptr<WindowSessionRuntime
 	runtime->subscriptions.push_back(
 		::stana::reactive::observe(options.behavior.controls, refresh)
 	);
-	runtime->subscriptions.push_back(
-		::stana::reactive::observe(options.behavior.state, refresh)
-	);
+	runtime->subscriptions.push_back(::stana::reactive::observe(options.behavior.state, refresh));
 	runtime->subscriptions.push_back(
 		::stana::reactive::observe(options.behavior.isVisible, refresh)
 	);
@@ -238,9 +234,7 @@ void subscribePortablePropertyUpdates(const std::shared_ptr<WindowSessionRuntime
 	runtime->subscriptions.push_back(
 		::stana::reactive::observe(options.behavior.pointerPolicy, refresh)
 	);
-	runtime->subscriptions.push_back(
-		::stana::reactive::observe(options.desktop.level, refresh)
-	);
+	runtime->subscriptions.push_back(::stana::reactive::observe(options.desktop.level, refresh));
 }
 
 void subscribePropertyUpdates(const std::shared_ptr<WindowSessionRuntime> &runtime) {
@@ -370,11 +364,12 @@ void drainSessionRequests(const std::shared_ptr<WindowSessionRuntime> &runtime) 
 		publishEvent(
 			runtime,
 			WindowRequestCompleted{
-				.result =
-					{.id = pending.id,
-						.outcome = portableOutcome(outcome),
-						.action = std::move(pending.action),
-						.payload = {}}
+				.result = {
+					.id = pending.id,
+					.outcome = portableOutcome(outcome),
+					.action = std::move(pending.action),
+					.payload = {}
+				}
 			}
 		);
 	}
@@ -406,8 +401,8 @@ void installSessionController(
 		}
 	};
 	window.configurationApplied = [weak] -> void {
-		if (const auto owner = weak.lock(); owner && owner->hostControl &&
-			owner->hostControl->observe) {
+		if (const auto owner = weak.lock();
+			owner && owner->hostControl && owner->hostControl->observe) {
 			publishEvent(
 				owner,
 				WindowReady{
@@ -428,10 +423,7 @@ void installSessionController(
 			return NativeCloseDecision::allow;
 		}
 		switch (owner->events.onCloseRequested(
-			CloseRequest{
-				.id = CloseRequestId{.value = closeRequestId},
-				.window = owner->id
-			}
+			CloseRequest{.id = CloseRequestId{.value = closeRequestId}, .window = owner->id}
 		)) {
 		case CloseDecision::allow:
 			return NativeCloseDecision::allow;
