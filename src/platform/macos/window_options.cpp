@@ -50,7 +50,8 @@ void applyPlatformWindowOptions(
 	configuration.macos.becomesKeyOnlyIfNeeded = macos->panel.becomesKeyOnlyIfNeeded.get();
 	configuration.macos.worksWhenModal = macos->panel.worksWhenModal.get();
 	configuration.macos.floatingPanel = macos->panel.floatingPanel.get();
-	configuration.macos.nativeLevel = static_cast<std::uint8_t>(macos->nativeLevel.level.get());
+	configuration.macos.nativeLevel =
+		static_cast<::stana::platform::detail::MacosWindowLevel>(macos->nativeLevel.level.get());
 }
 
 void subscribePlatformPropertyUpdates(const std::shared_ptr<WindowSessionRuntime> &runtime) {

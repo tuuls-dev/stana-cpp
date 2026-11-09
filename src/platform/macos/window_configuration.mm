@@ -4,6 +4,7 @@
 #import <AppKit/AppKit.h>
 
 #include <cmath>
+#include <compare>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -38,14 +39,15 @@ namespace {
 
 [[nodiscard]] auto
 configurationChanged(const WindowConfiguration &previous, const WindowConfiguration &next) -> bool {
-	return previous.title != next.title || previous.contentWidth != next.contentWidth ||
-		previous.contentHeight != next.contentHeight || previous.opacity != next.opacity ||
-		previous.hasShadow != next.hasShadow || previous.isVisible != next.isVisible ||
-		previous.acceptsFocus != next.acceptsFocus ||
+	return previous.title != next.title ||
+		!std::is_eq(previous.contentWidth <=> next.contentWidth) ||
+		!std::is_eq(previous.contentHeight <=> next.contentHeight) ||
+		!std::is_eq(previous.opacity <=> next.opacity) || previous.hasShadow != next.hasShadow ||
+		previous.isVisible != next.isVisible || previous.acceptsFocus != next.acceptsFocus ||
 		previous.ignoresMouseEvents != next.ignoresMouseEvents ||
 		previous.presentWithoutActivation != next.presentWithoutActivation ||
-		previous.placement != next.placement || previous.originX != next.originX ||
-		previous.originY != next.originY || previous.level != next.level ||
+		previous.placement != next.placement || !std::is_eq(previous.originX <=> next.originX) ||
+		!std::is_eq(previous.originY <=> next.originY) || previous.level != next.level ||
 		previous.state != next.state || previous.style.closable != next.style.closable ||
 		previous.style.minimizable != next.style.minimizable ||
 		previous.style.maximizable != next.style.maximizable ||
@@ -70,27 +72,28 @@ configurationChanged(const WindowConfiguration &previous, const WindowConfigurat
 		previous.macos.nativeLevel != next.macos.nativeLevel;
 }
 
-[[nodiscard]] auto nativeLevelValue(std::uint8_t level) -> NSWindowLevel {
+[[nodiscard]] auto nativeLevelValue(MacosWindowLevel level) -> NSWindowLevel {
 	switch (level) {
-	case 1:
+	case MacosWindowLevel::floating:
 		return NSFloatingWindowLevel;
-	case 2:
+	case MacosWindowLevel::submenu:
 		return NSSubmenuWindowLevel;
-	case 3:
+	case MacosWindowLevel::tornOffMenu:
 		return NSTornOffMenuWindowLevel;
-	case 4:
+	case MacosWindowLevel::mainMenu:
 		return NSMainMenuWindowLevel;
-	case 5:
+	case MacosWindowLevel::statusBar:
 		return NSStatusWindowLevel;
-	case 6:
+	case MacosWindowLevel::modalPanel:
 		return NSModalPanelWindowLevel;
-	case 7:
+	case MacosWindowLevel::popUpMenu:
 		return NSPopUpMenuWindowLevel;
-	case 8:
+	case MacosWindowLevel::screenSaver:
 		return NSScreenSaverWindowLevel;
-	default:
+	case MacosWindowLevel::normal:
 		return NSNormalWindowLevel;
 	}
+	return NSNormalWindowLevel;
 }
 
 void applyCollectionBehavior(NSWindow *window, const WindowConfiguration &configuration) {
@@ -155,7 +158,7 @@ void applyMacosExtensions(NSWindow *window, const WindowConfiguration &configura
 		window.tabbingIdentifier = utf8String(*configuration.macos.tabbingIdentifier);
 	}
 	if ([window isKindOfClass:[NSPanel class]]) {
-		NSPanel *const panel = static_cast<NSPanel *>(window);
+		auto *const panel = static_cast<NSPanel *>(window);
 		panel.becomesKeyOnlyIfNeeded = configuration.macos.becomesKeyOnlyIfNeeded;
 		panel.worksWhenModal = configuration.macos.worksWhenModal;
 		panel.floatingPanel = configuration.macos.floatingPanel;
@@ -339,22 +342,20 @@ void applyWindowConfiguration(
 	applyMacosExtensions(window, requested);
 	applyCollectionBehavior(window, requested);
 	if (!applied.hasApplied || applied.requested.placement != requested.placement ||
-		applied.requested.originX != requested.originX ||
-		applied.requested.originY != requested.originY ||
-		applied.requested.contentWidth != requested.contentWidth ||
-		applied.requested.contentHeight != requested.contentHeight) {
+		!std::is_eq(applied.requested.originX <=> requested.originX) ||
+		!std::is_eq(applied.requested.originY <=> requested.originY) ||
+		!std::is_eq(applied.requested.contentWidth <=> requested.contentWidth) ||
+		!std::is_eq(applied.requested.contentHeight <=> requested.contentHeight)) {
 		applyPlacement(window, requested);
-	} else if (applied.requested.contentWidth != requested.contentWidth ||
-		applied.requested.contentHeight != requested.contentHeight) {
+	} else if (!std::is_eq(applied.requested.contentWidth <=> requested.contentWidth) ||
+		!std::is_eq(applied.requested.contentHeight <=> requested.contentHeight)) {
 		[window setContentSize:NSMakeSize(requested.contentWidth, requested.contentHeight)];
 	}
 	if (!applied.hasApplied || applied.requested.state != requested.state) {
 		applyState(window, requested.state);
 	}
 	if (requested.isVisible) {
-		if (requested.presentWithoutActivation || !requested.acceptsFocus) {
-			[window orderFront:nil];
-		} else if (!applied.hasApplied) {
+		if (!requested.presentWithoutActivation && requested.acceptsFocus && !applied.hasApplied) {
 			[window makeKeyAndOrderFront:nil];
 		} else {
 			[window orderFront:nil];

@@ -67,6 +67,10 @@ struct LogicalSize {
 	double width = 0;
 	double height = 0;
 	auto operator<=>(const LogicalSize &) const = default;
+
+	[[nodiscard]] auto operator==(const LogicalSize &other) const -> bool {
+		return std::is_eq(*this <=> other);
+	}
 };
 
 struct LogicalRect {
@@ -358,6 +362,22 @@ struct NativeWindowStyle {
 	bool fullscreens = true;
 };
 
+/// @brief Named macOS stacking levels at the native boundary.
+enum class MacosWindowLevel : std::uint8_t {
+	normal,
+	floating,
+	submenu,
+	tornOffMenu,
+	mainMenu,
+	statusBar,
+	modalPanel,
+	popUpMenu,
+	screenSaver
+};
+
+inline constexpr double defaultWindowWidth = 800;
+inline constexpr double defaultWindowHeight = 600;
+
 /// @brief Optional macOS-only extension snapshot; doubles/std only, no AppKit types.
 struct NativeMacosExtension {
 	bool present = false;
@@ -372,13 +392,14 @@ struct NativeMacosExtension {
 	bool becomesKeyOnlyIfNeeded = false;
 	bool worksWhenModal = false;
 	bool floatingPanel = false;
-	std::uint8_t nativeLevel = 0; ///< Matches portable NativeWindowLevel extension enum order.
+	MacosWindowLevel nativeLevel =
+		MacosWindowLevel::normal; ///< Matches portable NativeWindowLevel extension enum order.
 };
 
 /// @brief Module-free configuration payload the host applies at creation and updates.
 struct WindowConfiguration {
-	double contentWidth = 800;
-	double contentHeight = 600;
+	double contentWidth = defaultWindowWidth;
+	double contentHeight = defaultWindowHeight;
 	std::string title{};
 	NativeWindowStyle style{};
 	double opacity = 1;
