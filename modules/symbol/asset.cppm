@@ -13,6 +13,7 @@ module;
 #include <vector>
 
 export module stana:symbol_asset;
+export import :symbol_units;
 import :primitives;
 
 export namespace stana::symbol {
@@ -54,10 +55,10 @@ struct CurrentColor {
 };
 
 struct RgbaColor {
-	double red = 0;
-	double green = 0;
-	double blue = 0;
-	double alpha = 1;
+	SdrChannel red{};
+	SdrChannel green{};
+	SdrChannel blue{};
+	Opacity alpha{1};
 	auto operator<=>(const RgbaColor &) const = default;
 
 	[[nodiscard]] auto operator==(const RgbaColor &other) const -> bool {
@@ -79,10 +80,10 @@ enum class LineCap : std::uint8_t { butt, round, square };
 /// @brief Stroke join between path segments.
 enum class LineJoin : std::uint8_t { miter, round, bevel };
 
-/// @brief One normalized path verb in viewBox coordinates.
+/// @brief One normalized path verb in viewBox / asset coordinates.
 struct MoveTo {
-	double x = 0;
-	double y = 0;
+	AssetUnits x{};
+	AssetUnits y{};
 	auto operator<=>(const MoveTo &) const = default;
 
 	[[nodiscard]] auto operator==(const MoveTo &other) const -> bool {
@@ -91,8 +92,8 @@ struct MoveTo {
 };
 
 struct LineTo {
-	double x = 0;
-	double y = 0;
+	AssetUnits x{};
+	AssetUnits y{};
 	auto operator<=>(const LineTo &) const = default;
 
 	[[nodiscard]] auto operator==(const LineTo &other) const -> bool {
@@ -101,10 +102,10 @@ struct LineTo {
 };
 
 struct QuadraticTo {
-	double controlX = 0;
-	double controlY = 0;
-	double x = 0;
-	double y = 0;
+	AssetUnits controlX{};
+	AssetUnits controlY{};
+	AssetUnits x{};
+	AssetUnits y{};
 	auto operator<=>(const QuadraticTo &) const = default;
 
 	[[nodiscard]] auto operator==(const QuadraticTo &other) const -> bool {
@@ -113,12 +114,12 @@ struct QuadraticTo {
 };
 
 struct CubicTo {
-	double control1X = 0;
-	double control1Y = 0;
-	double control2X = 0;
-	double control2Y = 0;
-	double x = 0;
-	double y = 0;
+	AssetUnits control1X{};
+	AssetUnits control1Y{};
+	AssetUnits control2X{};
+	AssetUnits control2Y{};
+	AssetUnits x{};
+	AssetUnits y{};
 	auto operator<=>(const CubicTo &) const = default;
 
 	[[nodiscard]] auto operator==(const CubicTo &other) const -> bool {
@@ -127,13 +128,13 @@ struct CubicTo {
 };
 
 struct ArcTo {
-	double centerX = 0;
-	double centerY = 0;
-	double radiusX = 0;
-	double radiusY = 0;
-	double rotation = 0;
-	double startAngle = 0;
-	double sweepAngle = 0;
+	AssetUnits centerX{};
+	AssetUnits centerY{};
+	AssetUnits radiusX{};
+	AssetUnits radiusY{};
+	Angle rotation{};
+	Angle startAngle{};
+	Angle sweepAngle{};
 	auto operator<=>(const ArcTo &) const = default;
 
 	[[nodiscard]] auto operator==(const ArcTo &other) const -> bool {
@@ -155,8 +156,8 @@ using PathCommand = std::variant<MoveTo, LineTo, QuadraticTo, CubicTo, ArcTo, Cl
 struct Element {
 	/// @brief A transformed, opacity-composited child list.
 	struct Group {
-		AffineTransform transform{};
-		double opacity = 1;
+		AssetTransform transform{};
+		Opacity opacity{1};
 		std::vector<Element> children;
 
 		constexpr Group();
@@ -168,20 +169,20 @@ struct Element {
 		[[nodiscard]] auto operator==(const Group &) const -> bool;
 	};
 
-	/// @brief One filled and/or stroked path in local coordinates.
+	/// @brief One filled and/or stroked path in asset/viewBox coordinates.
 	struct Path {
 		std::vector<PathCommand> commands;
-		AffineTransform transform{};
+		AssetTransform transform{};
 		Paint fill = RgbaColor{};
 		FillRule fillRule = FillRule::nonzero;
-		double fillOpacity = 1;
+		Opacity fillOpacity{1};
 		Paint stroke = NoPaint{};
-		double strokeOpacity = 1;
-		double strokeWidth = 1;
+		Opacity strokeOpacity{1};
+		AssetUnits strokeWidth{1};
 		LineCap lineCap = LineCap::butt;
 		LineJoin lineJoin = LineJoin::miter;
-		double miterLimit = 4;
-		double opacity = 1;
+		Ratio miterLimit{4};
+		Opacity opacity{1};
 		auto operator<=>(const Path &) const = default;
 
 		[[nodiscard]] auto operator==(const Path &other) const -> bool {
@@ -214,7 +215,7 @@ class Asset;
 namespace detail {
 /// @brief Scalars for an asset whose geometry is loaded from static storage.
 struct ViewHeader {
-	Rect viewBox{};
+	AssetRect viewBox{};
 	std::size_t estimatedBytes = 0;
 	bool mirrorsInRTL = false;
 	bool hasStroke = false;
@@ -234,11 +235,14 @@ class Asset {
 	/// @brief Accepts bridge version 1 and enforces the compiled-artwork budgets.
 	/// @throws std::invalid_argument when the version, viewBox, nesting, counts, or numbers
 	/// fail. Negative zero is normalized to zero.
-	[[nodiscard]] static constexpr auto
-	compiled(std::uint32_t version, Rect viewBox, bool mirrorsInRTL, std::vector<Element> elements)
-		-> Asset;
+	[[nodiscard]] static constexpr auto compiled(
+		std::uint32_t version,
+		AssetRect viewBox,
+		bool mirrorsInRTL,
+		std::vector<Element> elements
+	) -> Asset;
 
-	[[nodiscard]] constexpr auto viewBox() const noexcept -> Rect { return viewBox_; }
+	[[nodiscard]] constexpr auto viewBox() const noexcept -> AssetRect { return viewBox_; }
 
 	[[nodiscard]] constexpr auto mirrorsInRTL() const noexcept -> bool { return mirrorsInRTL_; }
 
@@ -269,7 +273,7 @@ class Asset {
 	detail::adoptView(detail::ViewHeader header, const std::vector<Element> &(*geometry)())
 		-> Asset;
 
-	Rect viewBox_{};
+	AssetRect viewBox_{};
 	bool mirrorsInRTL_ = false;
 	std::vector<Element> elements_{};
 	const std::vector<Element> &(*geometry_)() = nullptr;
@@ -300,35 +304,73 @@ inline constexpr void requireNumber(double value) {
 	}
 }
 
-inline constexpr void requireOpacity(double value) {
-	if (!std::isfinite(value) || value < 0 || value > 1) {
+inline constexpr void requireNumber(AssetUnits value) {
+	requireNumber(value.value());
+}
+
+inline constexpr void requireNumber(ScaleFactor value) {
+	requireNumber(value.value());
+}
+
+inline constexpr void requireNumber(Angle value) {
+	requireNumber(value.radians());
+}
+
+inline constexpr void requireNumber(Ratio value) {
+	requireNumber(value.value());
+}
+
+inline constexpr void requireOpacity(Opacity value) {
+	if (!std::isfinite(value.value()) || value.value() < 0 || value.value() > 1) {
 		reject("Stana: invalid compiled symbol opacity");
 	}
 }
 
 inline constexpr void requirePaint(const Paint &paint) {
 	if (const auto *color = std::get_if<RgbaColor>(&paint)) {
-		const bool channels = finiteLimited(color->red) && color->red >= 0 && color->red <= 1 &&
-			finiteLimited(color->green) && color->green >= 0 && color->green <= 1 &&
-			finiteLimited(color->blue) && color->blue >= 0 && color->blue <= 1 &&
-			finiteLimited(color->alpha) && color->alpha >= 0 && color->alpha <= 1;
+		const bool channels = finiteLimited(color->red.value()) && color->red.value() >= 0 &&
+			color->red.value() <= 1 && finiteLimited(color->green.value()) &&
+			color->green.value() >= 0 && color->green.value() <= 1 &&
+			finiteLimited(color->blue.value()) && color->blue.value() >= 0 &&
+			color->blue.value() <= 1 && finiteLimited(color->alpha.value()) &&
+			color->alpha.value() >= 0 && color->alpha.value() <= 1;
 		if (!channels) {
 			reject("Stana: invalid compiled symbol color");
 		}
 	}
 }
 
-inline constexpr auto normalizedTransform(AffineTransform transform) -> AffineTransform {
-	transform.a = normalized(transform.a);
-	transform.b = normalized(transform.b);
-	transform.c = normalized(transform.c);
-	transform.d = normalized(transform.d);
-	transform.tx = normalized(transform.tx);
-	transform.ty = normalized(transform.ty);
+inline constexpr auto normalizedUnits(AssetUnits value) -> AssetUnits {
+	return AssetUnits{normalized(value.value())};
+}
+
+inline constexpr auto normalizedOpacity(Opacity value) -> Opacity {
+	return Opacity{normalized(value.value())};
+}
+
+inline constexpr auto normalizedChannel(SdrChannel value) -> SdrChannel {
+	return SdrChannel{normalized(value.value())};
+}
+
+inline constexpr auto normalizedRatio(Ratio value) -> Ratio {
+	return Ratio{normalized(value.value())};
+}
+
+inline constexpr auto normalizedAngle(Angle value) -> Angle {
+	return Angle{normalized(value.radians())};
+}
+
+inline constexpr auto normalizedTransform(AssetTransform transform) -> AssetTransform {
+	transform.a = ScaleFactor{normalized(transform.a.value())};
+	transform.b = ScaleFactor{normalized(transform.b.value())};
+	transform.c = ScaleFactor{normalized(transform.c.value())};
+	transform.d = ScaleFactor{normalized(transform.d.value())};
+	transform.tx = normalizedUnits(transform.tx);
+	transform.ty = normalizedUnits(transform.ty);
 	return transform;
 }
 
-inline constexpr void requireTransform(const AffineTransform &transform) {
+inline constexpr void requireTransform(const AssetTransform &transform) {
 	requireNumber(transform.a);
 	requireNumber(transform.b);
 	requireNumber(transform.c);
@@ -338,9 +380,9 @@ inline constexpr void requireTransform(const AffineTransform &transform) {
 }
 
 inline constexpr auto normalizedCommand(PathCommand command) -> PathCommand {
-	auto zeroPoint = [](double &x, double &y) -> void {
-		x = normalized(x);
-		y = normalized(y);
+	auto zeroPoint = [](AssetUnits &x, AssetUnits &y) -> void {
+		x = normalizedUnits(x);
+		y = normalizedUnits(y);
 	};
 	if (auto *move = std::get_if<MoveTo>(&command)) {
 		zeroPoint(move->x, move->y);
@@ -354,13 +396,13 @@ inline constexpr auto normalizedCommand(PathCommand command) -> PathCommand {
 		zeroPoint(cubic->control2X, cubic->control2Y);
 		zeroPoint(cubic->x, cubic->y);
 	} else if (auto *arc = std::get_if<ArcTo>(&command)) {
-		arc->centerX = normalized(arc->centerX);
-		arc->centerY = normalized(arc->centerY);
-		arc->radiusX = normalized(arc->radiusX);
-		arc->radiusY = normalized(arc->radiusY);
-		arc->rotation = normalized(arc->rotation);
-		arc->startAngle = normalized(arc->startAngle);
-		arc->sweepAngle = normalized(arc->sweepAngle);
+		arc->centerX = normalizedUnits(arc->centerX);
+		arc->centerY = normalizedUnits(arc->centerY);
+		arc->radiusX = normalizedUnits(arc->radiusX);
+		arc->radiusY = normalizedUnits(arc->radiusY);
+		arc->rotation = normalizedAngle(arc->rotation);
+		arc->startAngle = normalizedAngle(arc->startAngle);
+		arc->sweepAngle = normalizedAngle(arc->sweepAngle);
 	}
 	return command;
 }
@@ -371,14 +413,10 @@ struct Budget {
 };
 
 inline constexpr void
-validateElements(std::vector<Element> &elements, int depth, AffineTransform parent, Budget &budget);
+validateElements(std::vector<Element> &elements, int depth, AssetTransform parent, Budget &budget);
 
-inline constexpr void validateElements(
-	std::vector<Element> &elements,
-	int depth,
-	AffineTransform parent,
-	Budget &budget
-) {
+inline constexpr void
+validateElements(std::vector<Element> &elements, int depth, AssetTransform parent, Budget &budget) {
 	if (elements.empty()) {
 		return;
 	}
@@ -392,17 +430,17 @@ inline constexpr void validateElements(
 		}
 		if (auto *group = std::get_if<Element::Group>(&element.value)) {
 			requireTransform(group->transform);
-			const AffineTransform cumulative = parent.concatenating(group->transform);
+			const AssetTransform cumulative = parent.concatenating(group->transform);
 			requireTransform(cumulative);
 			requireOpacity(group->opacity);
 			group->transform = normalizedTransform(group->transform);
-			group->opacity = normalized(group->opacity);
+			group->opacity = normalizedOpacity(group->opacity);
 			validateElements(group->children, depth + 1, cumulative, budget);
 			requireTransform(group->transform);
 		} else {
 			auto &path = std::get<Element::Path>(element.value);
 			requireTransform(path.transform);
-			const AffineTransform cumulative = parent.concatenating(path.transform);
+			const AssetTransform cumulative = parent.concatenating(path.transform);
 			requireTransform(cumulative);
 			requirePaint(path.fill);
 			requirePaint(path.stroke);
@@ -411,7 +449,7 @@ inline constexpr void validateElements(
 			requireOpacity(path.opacity);
 			requireNumber(path.strokeWidth);
 			requireNumber(path.miterLimit);
-			if (path.strokeWidth < 0 || path.miterLimit < minimumMiterLimit) {
+			if (path.strokeWidth.value() < 0 || path.miterLimit.value() < minimumMiterLimit) {
 				reject("Stana: invalid compiled symbol stroke");
 			}
 			budget.commands += static_cast<int>(path.commands.size());
@@ -420,10 +458,10 @@ inline constexpr void validateElements(
 			}
 			for (PathCommand &command : path.commands) {
 				command = normalizedCommand(command);
-				auto checkPoint = [&](double x, double y) -> void {
+				auto checkPoint = [&](AssetUnits x, AssetUnits y) -> void {
 					requireNumber(x);
 					requireNumber(y);
-					const Point mapped = cumulative.apply({.x = x, .y = y});
+					const AssetPoint mapped = cumulative.apply({.x = x, .y = y});
 					requireNumber(mapped.x);
 					requireNumber(mapped.y);
 				};
@@ -446,8 +484,8 @@ inline constexpr void validateElements(
 					requireNumber(arc->rotation);
 					requireNumber(arc->startAngle);
 					requireNumber(arc->sweepAngle);
-					if (!(arc->radiusX > 0) || !(arc->radiusY > 0) ||
-						magnitude(arc->sweepAngle) > fullTurn) {
+					if (!(arc->radiusX.value() > 0) || !(arc->radiusY.value() > 0) ||
+						magnitude(arc->sweepAngle.radians()) > fullTurn) {
 						reject("Stana: invalid compiled symbol arc");
 					}
 				}
@@ -456,25 +494,25 @@ inline constexpr void validateElements(
 				reject("Stana: compiled symbol path must start with move");
 			}
 			path.transform = normalizedTransform(path.transform);
-			path.fillOpacity = normalized(path.fillOpacity);
-			path.strokeOpacity = normalized(path.strokeOpacity);
-			path.strokeWidth = normalized(path.strokeWidth);
-			path.miterLimit = normalized(path.miterLimit);
-			path.opacity = normalized(path.opacity);
+			path.fillOpacity = normalizedOpacity(path.fillOpacity);
+			path.strokeOpacity = normalizedOpacity(path.strokeOpacity);
+			path.strokeWidth = normalizedUnits(path.strokeWidth);
+			path.miterLimit = normalizedRatio(path.miterLimit);
+			path.opacity = normalizedOpacity(path.opacity);
 			if (auto *color = std::get_if<RgbaColor>(&path.fill)) {
 				*color = RgbaColor{
-					.red = normalized(color->red),
-					.green = normalized(color->green),
-					.blue = normalized(color->blue),
-					.alpha = normalized(color->alpha)
+					.red = normalizedChannel(color->red),
+					.green = normalizedChannel(color->green),
+					.blue = normalizedChannel(color->blue),
+					.alpha = normalizedOpacity(color->alpha)
 				};
 			}
 			if (auto *color = std::get_if<RgbaColor>(&path.stroke)) {
 				*color = RgbaColor{
-					.red = normalized(color->red),
-					.green = normalized(color->green),
-					.blue = normalized(color->blue),
-					.alpha = normalized(color->alpha)
+					.red = normalizedChannel(color->red),
+					.green = normalizedChannel(color->green),
+					.blue = normalizedChannel(color->blue),
+					.alpha = normalizedOpacity(color->alpha)
 				};
 			}
 		}
@@ -499,7 +537,7 @@ inline constexpr void validateElements(
 
 constexpr auto Asset::compiled(
 	std::uint32_t version,
-	Rect viewBox,
+	AssetRect viewBox,
 	bool mirrorsInRTL,
 	std::vector<Element> elements
 ) -> Asset {
@@ -510,13 +548,14 @@ constexpr auto Asset::compiled(
 	}
 	viewBox = {
 		.origin =
-			{.x = detail::normalized(viewBox.origin.x), .y = detail::normalized(viewBox.origin.y)},
+			{.x = detail::normalizedUnits(viewBox.origin.x),
+				.y = detail::normalizedUnits(viewBox.origin.y)},
 		.size = {
-			.width = detail::normalized(viewBox.size.width),
-			.height = detail::normalized(viewBox.size.height)
+			.width = detail::normalizedUnits(viewBox.size.width),
+			.height = detail::normalizedUnits(viewBox.size.height)
 		}
 	};
-	if (!(viewBox.size.width > 0) || !(viewBox.size.height > 0)) {
+	if (!(viewBox.size.width.value() > 0) || !(viewBox.size.height.value() > 0)) {
 		detail::reject("Stana: invalid compiled symbol viewBox");
 	}
 	detail::requireNumber(viewBox.origin.x);
@@ -524,7 +563,7 @@ constexpr auto Asset::compiled(
 	detail::requireNumber(viewBox.size.width);
 	detail::requireNumber(viewBox.size.height);
 	detail::Budget budget;
-	detail::validateElements(elements, 1, AffineTransform::identity(), budget);
+	detail::validateElements(elements, 1, AssetTransform::identity(), budget);
 	Asset asset;
 	asset.viewBox_ = viewBox;
 	asset.mirrorsInRTL_ = mirrorsInRTL;

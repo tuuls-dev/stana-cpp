@@ -19,11 +19,27 @@ namespace stana::ui {
 namespace detail {
 namespace {
 void validateColor(Color color) {
-	for (const double component : {color.red, color.green, color.blue, color.alpha}) {
+	for (const double component :
+		{color.red.value(), color.green.value(), color.blue.value(), color.alpha.value()}) {
 		stana::detail::requireNonnegative(component);
 		if (component > 1) {
 			throw std::invalid_argument("Color exceeds one");
 		}
+	}
+}
+
+void validateFrameLength(Length length) {
+	using enum Length::Kind;
+	switch (length.kind) {
+	case points:
+		stana::detail::requireNonnegative(length.absolute);
+		return;
+	case percent:
+		stana::detail::requireNonnegative(length.relative);
+		return;
+	case automatic:
+	case fill:
+		return;
 	}
 }
 } // namespace
@@ -60,8 +76,8 @@ void applyLayout(
 			*properties.frame,
 			[](stana::document::detail::Node &node,
 				const Frame &value) -> stana::document::detail::Dirty {
-				stana::detail::requireNonnegative(value.width.value);
-				stana::detail::requireNonnegative(value.height.value);
+				validateFrameLength(value.width);
+				validateFrameLength(value.height);
 				for (const auto limit :
 					{value.minWidth, value.minHeight, value.maxWidth, value.maxHeight}) {
 					if (limit) {
@@ -88,7 +104,7 @@ void applyTextStyle(const TextProperties &properties, NodeId identity, MountCont
 			*properties.font,
 			[](stana::document::detail::Node &node, Font value) -> stana::document::detail::Dirty {
 				stana::detail::requireNonnegative(value.size);
-				stana::detail::requireFinite(value.weight);
+				stana::detail::requireFinite(value.weight.value());
 				return stana::ui::detail::assignRetained(
 					node.font,
 					value,
@@ -140,9 +156,9 @@ void applyAppearance(
 			identity,
 			*properties.opacity,
 			[](stana::document::detail::Node &node,
-				double value) -> stana::document::detail::Dirty {
+				Opacity value) -> stana::document::detail::Dirty {
 				stana::detail::requireNonnegative(value);
-				if (value > 1) {
+				if (value.value() > 1) {
 					throw std::invalid_argument("Opacity exceeds one");
 				}
 				return stana::ui::detail::assignRetained(
@@ -172,7 +188,7 @@ void applyAppearance(
 			identity,
 			*properties.borderWidth,
 			[](stana::document::detail::Node &node,
-				double value) -> stana::document::detail::Dirty {
+				Points value) -> stana::document::detail::Dirty {
 				stana::detail::requireNonnegative(value);
 				return stana::ui::detail::assignRetained(
 					node.borderWidth,
@@ -187,7 +203,7 @@ void applyAppearance(
 			identity,
 			*properties.cornerRadius,
 			[](stana::document::detail::Node &node,
-				double value) -> stana::document::detail::Dirty {
+				Points value) -> stana::document::detail::Dirty {
 				stana::detail::requireNonnegative(value);
 				return stana::ui::detail::assignRetained(
 					node.cornerRadius,
@@ -468,7 +484,7 @@ auto mount(const GPUCanvas &description, MountContext &context) -> stana::docume
 namespace stana::symbol {
 namespace {
 [[nodiscard]] auto
-sameOptional(const std::optional<double> &left, const std::optional<double> &right) -> bool {
+sameOptional(const std::optional<Points> &left, const std::optional<Points> &right) -> bool {
 	if (left.has_value() != right.has_value()) {
 		return false;
 	}
@@ -508,7 +524,7 @@ auto mount(const Symbol &description, stana::ui::MountContext &context)
 	context.document->bind(
 		identity,
 		description.size,
-		[](stana::document::detail::Node &record, double value) -> stana::document::detail::Dirty {
+		[](stana::document::detail::Node &record, Points value) -> stana::document::detail::Dirty {
 			stana::detail::requireNonnegative(value);
 			if (!record.symbol || std::is_eq(record.symbol->size <=> value)) {
 				return stana::document::detail::Dirty::none;
@@ -535,7 +551,7 @@ auto mount(const Symbol &description, stana::ui::MountContext &context)
 		identity,
 		description.strokeWidth,
 		[](stana::document::detail::Node &record,
-			const std::optional<double> &value) -> stana::document::detail::Dirty {
+			const std::optional<Points> &value) -> stana::document::detail::Dirty {
 			if (value) {
 				stana::detail::requireNonnegative(*value);
 			}
@@ -566,7 +582,8 @@ auto mount(const Symbol &description, stana::ui::MountContext &context)
 			return live != nullptr && live->scope.alive() && live->symbol &&
 				live->symbol->playbackState.needsFrame();
 		},
-		[weak, identity](stana::document::detail::Document::FrameStamp, double elapsed) -> void {
+		[weak, identity](stana::document::detail::Document::FrameStamp, FrameDuration elapsed)
+			-> void {
 			const auto document = weak.lock();
 			auto *live = document ? document->find(identity) : nullptr;
 			if (live == nullptr || !live->symbol) {

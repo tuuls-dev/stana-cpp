@@ -21,14 +21,20 @@ void require(bool value, const std::string &message) {
 }
 
 void appendAfterMove(stana::rendering::GPUDrawing &value) {
-	value.fillEllipse({.size = {.width = 1, .height = 1}}, stana::Color::white());
+	value.fillEllipse(
+		{.size = {.width = stana::Points{1}, .height = stana::Points{1}}},
+		stana::Color::white()
+	);
 }
 
 void drawingValues() {
 
 	stana::rendering::GPUDrawing drawing;
 	const auto old = drawing;
-	drawing.fillRect({.size = {.width = 2, .height = 2}}, stana::rendering::ExtendedColor{0, 2, 0});
+	drawing.fillRect(
+		{.size = {.width = stana::Points{2}, .height = stana::Points{2}}},
+		stana::rendering::ExtendedColor{0, 2, 0}
+	);
 	require(
 		!(drawing == old) && old == stana::rendering::GPUDrawing{old},
 		"COW immutable drawing identity"
@@ -40,15 +46,18 @@ void drawingValues() {
 	const auto valid = drawing;
 	bool rejected = false;
 	try {
-		drawing.fillRect({.size = {.width = -1, .height = 1}}, stana::Color::black());
+		drawing.fillRect(
+			{.size = {.width = stana::Points{-1}, .height = stana::Points{1}}},
+			stana::Color::black()
+		);
 	} catch (const std::invalid_argument &) {
 		rejected = true;
 	}
 	require(rejected && drawing == valid, "failed append preserves version");
 	const std::array points{
-		stana::Point{.x = 1, .y = 1},
-		stana::Point{.x = 1, .y = 1},
-		stana::Point{.x = 1, .y = 1}
+		stana::Point{.x = stana::Points{1}, .y = stana::Points{1}},
+		stana::Point{.x = stana::Points{1}, .y = stana::Points{1}},
+		stana::Point{.x = stana::Points{1}, .y = stana::Points{1}}
 	};
 	drawing.strokePolyline(points, stana::Color::accent());
 	const stana::rendering::GPUDrawing moved{std::move(drawing)};
@@ -56,15 +65,15 @@ void drawingValues() {
 	require(!(drawing == moved), "moved-from drawing reusable");
 	const std::array vertices{
 		stana::rendering::GPUVertex{
-			.position = {.x = 0, .y = 0},
+			.position = {.x = stana::Points{0}, .y = stana::Points{0}},
 			.color = stana::rendering::ExtendedColor{1, 0, 0}
 		},
 		stana::rendering::GPUVertex{
-			.position = {.x = 1, .y = 0},
+			.position = {.x = stana::Points{1}, .y = stana::Points{0}},
 			.color = stana::rendering::ExtendedColor{0, 1, 0}
 		},
 		stana::rendering::GPUVertex{
-			.position = {.x = 0, .y = 1},
+			.position = {.x = stana::Points{0}, .y = stana::Points{1}},
 			.color = stana::rendering::ExtendedColor{0, 0, 1}
 		}
 	};
@@ -79,10 +88,10 @@ void drawingValues() {
 		stana::ui::GPUCanvas{
 			.drawing = model,
 			.layout = {
-				.padding = stana::Insets::all(1),
+				.padding = stana::Insets::all(stana::Points{1}),
 				.frame = stana::Frame{
-					.width = stana::Length::points(4),
-					.height = stana::Length::points(4)
+					.width = stana::Length::points(stana::Points{4}),
+					.height = stana::Length::points(stana::Points{4})
 				}
 			}
 		}

@@ -14,8 +14,8 @@ export namespace stana::rendering {
 /// input.
 struct BoxShadow {
 	Point offset{};				  ///< Signed horizontal/vertical displacement.
-	double blurRadius = 0;		  ///< Gaussian sigma is half this radius; zero has a sharp edge.
-	double spreadRadius = 0;	  ///< Expands outer casters; contracts inset openings.
+	Points blurRadius{};		  ///< Gaussian sigma is half this radius; zero has a sharp edge.
+	Points spreadRadius{};		  ///< Expands outer casters; contracts inset openings.
 	std::optional<Color> color{}; ///< Explicit/themed color, or effective foreground when absent.
 	bool isInset = false; ///< Clips the complement of the padding opening inside that contour.
 	auto operator<=>(const BoxShadow &) const = default;
@@ -28,7 +28,8 @@ struct BoxShadow {
 /// @brief Interpolates index-paired shadow lists using premultiplied scene-linear colors.
 /// @param from Starting ordered list.
 /// @param to Ending ordered list; shorter lists are padded with transparent matching-inset shadows.
-/// @param progress Finite value in [0,1]; incompatible inset pairs switch the entire list at 0.5.
+/// @param progress Finite Progress in [0,1]; incompatible inset pairs switch the entire list at
+/// 0.5.
 /// @param foreground Resolves omitted colors before interpolation, using environment
 /// theme/contrast.
 /// @param environment Color-resolution inputs; no animation engine or implicit scheduling is
@@ -37,7 +38,7 @@ struct BoxShadow {
 [[nodiscard]] auto interpolateBoxShadows(
 	std::span<const BoxShadow> from,
 	std::span<const BoxShadow> to,
-	double progress,
+	Progress progress,
 	Color foreground = Color::text(),
 	Environment environment = {}
 ) -> std::vector<BoxShadow>;
@@ -65,7 +66,7 @@ struct ShadowPaint {
 	BoxContour caster{};
 	Point offset{};
 	Color color{};
-	double blurRadius = 0;
+	Points blurRadius{};
 	bool isInset = false;
 	Rect ink{};
 	auto operator<=>(const ShadowPaint &) const = default;

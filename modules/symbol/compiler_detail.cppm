@@ -541,21 +541,21 @@ svgScalar(std::string_view raw, const Context &context, std::size_t origin) -> d
 }
 
 [[nodiscard]] constexpr auto
-checkedTransform(AffineTransform transform, const Context &context, std::size_t index)
-	-> AffineTransform {
-	transform.a = context.checked(transform.a, index);
-	transform.b = context.checked(transform.b, index);
-	transform.c = context.checked(transform.c, index);
-	transform.d = context.checked(transform.d, index);
-	transform.tx = context.checked(transform.tx, index);
-	transform.ty = context.checked(transform.ty, index);
+checkedTransform(AssetTransform transform, const Context &context, std::size_t index)
+	-> AssetTransform {
+	transform.a = ScaleFactor{context.checked(transform.a.value(), index)};
+	transform.b = ScaleFactor{context.checked(transform.b.value(), index)};
+	transform.c = ScaleFactor{context.checked(transform.c.value(), index)};
+	transform.d = ScaleFactor{context.checked(transform.d.value(), index)};
+	transform.tx = AssetUnits{context.checked(transform.tx.value(), index)};
+	transform.ty = AssetUnits{context.checked(transform.ty.value(), index)};
 	return transform;
 }
 
 [[nodiscard]] constexpr auto
-svgTransform(std::string_view raw, const Context &context, std::size_t origin) -> AffineTransform {
+svgTransform(std::string_view raw, const Context &context, std::size_t origin) -> AssetTransform {
 	Scanner scanner = makeScanner(raw, context, origin);
-	AffineTransform result{};
+	AssetTransform result{};
 	int count = 0;
 	scanner.spaces();
 	while (scanner.index < scanner.text.size()) {
@@ -603,34 +603,43 @@ svgTransform(std::string_view raw, const Context &context, std::size_t origin) -
 			);
 		}
 		++scanner.index;
-		AffineTransform next{};
+		AssetTransform next{};
 		const int argumentCount = static_cast<int>(arguments.size());
 		if (name == "matrix" && argumentCount == transformArgumentLimit) {
 			next = {
-				.a = arguments.at(0),
-				.b = arguments.at(1),
-				.c = arguments.at(2),
-				.d = arguments.at(3),
-				.tx = arguments.at(4),
-				.ty = arguments.at(static_cast<std::size_t>(transformArgumentLimit - 1))
+				.a = ScaleFactor{arguments.at(0)},
+				.b = ScaleFactor{arguments.at(1)},
+				.c = ScaleFactor{arguments.at(2)},
+				.d = ScaleFactor{arguments.at(3)},
+				.tx = AssetUnits{arguments.at(4)},
+				.ty = AssetUnits{arguments.at(static_cast<std::size_t>(transformArgumentLimit - 1))}
 			};
 		} else if (name == "translate" && (argumentCount == 1 || argumentCount == 2)) {
 			const double vertical = argumentCount == 2 ? arguments.at(1) : 0.0;
-			next = AffineTransform::translation(arguments.at(0), vertical);
+			next = AssetTransform::translation(AssetUnits{arguments.at(0)}, AssetUnits{vertical});
 		} else if (name == "scale" && (argumentCount == 1 || argumentCount == 2)) {
 			const double vertical = argumentCount == 2 ? arguments.at(1) : arguments.at(0);
-			next = AffineTransform::scale(arguments.at(0), vertical);
+			next = AssetTransform::scale(ScaleFactor{arguments.at(0)}, ScaleFactor{vertical});
 		} else if (name == "rotate" && (argumentCount == 1 || argumentCount == rgbChannelCount)) {
 			const double radians = truncatingRemainder(arguments.at(0), fullCircleDegrees) *
 				std::numbers::pi / straightDegrees;
 			const double sine = sineOf(radians);
 			const double cosine = cosineOf(radians);
-			const AffineTransform rotation{.a = cosine, .b = sine, .c = -sine, .d = cosine};
+			const AssetTransform rotation{
+				.a = ScaleFactor{cosine},
+				.b = ScaleFactor{sine},
+				.c = ScaleFactor{-sine},
+				.d = ScaleFactor{cosine}
+			};
 			if (argumentCount == rgbChannelCount) {
-				const AffineTransform around =
-					AffineTransform::translation(arguments.at(1), arguments.at(2));
-				const AffineTransform back =
-					AffineTransform::translation(-arguments.at(1), -arguments.at(2));
+				const AssetTransform around = AssetTransform::translation(
+					AssetUnits{arguments.at(1)},
+					AssetUnits{arguments.at(2)}
+				);
+				const AssetTransform back = AssetTransform::translation(
+					AssetUnits{-arguments.at(1)},
+					AssetUnits{-arguments.at(2)}
+				);
 				next = around.concatenating(rotation).concatenating(back);
 			} else {
 				next = rotation;
@@ -638,11 +647,17 @@ svgTransform(std::string_view raw, const Context &context, std::size_t origin) -
 		} else if (name == "skewX" && argumentCount == 1) {
 			const double radians = truncatingRemainder(arguments.at(0), fullCircleDegrees) *
 				std::numbers::pi / straightDegrees;
-			next = {.a = 1, .c = context.checked(tangentOf(radians), scanner.position())};
+			next = {
+				.a = ScaleFactor{1},
+				.c = ScaleFactor{context.checked(tangentOf(radians), scanner.position())}
+			};
 		} else if (name == "skewY" && argumentCount == 1) {
 			const double radians = truncatingRemainder(arguments.at(0), fullCircleDegrees) *
 				std::numbers::pi / straightDegrees;
-			next = {.a = 1, .b = context.checked(tangentOf(radians), scanner.position())};
+			next = {
+				.a = ScaleFactor{1},
+				.b = ScaleFactor{context.checked(tangentOf(radians), scanner.position())}
+			};
 		} else {
 			std::string explanation = "Unsupported transform or invalid argument count: ";
 			explanation.append(name);
@@ -722,15 +737,20 @@ normalizedArc(const ArcRequest &arc, const Context &context, std::size_t index) 
 		sweep -= turn;
 	}
 	return {
-		.centerX = centerX,
-		.centerY = centerY,
-		.radiusX = radiusX,
-		.radiusY = radiusY,
-		.rotation = context.checked(phi, index),
-		.startAngle = context.checked(start, index),
-		.sweepAngle = context.checked(sweep, index)
+		.centerX = AssetUnits{centerX},
+		.centerY = AssetUnits{centerY},
+		.radiusX = AssetUnits{radiusX},
+		.radiusY = AssetUnits{radiusY},
+		.rotation = Angle{context.checked(phi, index)},
+		.startAngle = Angle{context.checked(start, index)},
+		.sweepAngle = Angle{context.checked(sweep, index)}
 	};
 }
+
+struct PlotPoint {
+	double x = 0;
+	double y = 0;
+};
 
 [[nodiscard]] constexpr auto
 svgPath(std::string_view source, int limit, const Context &context, std::size_t origin)
@@ -742,8 +762,8 @@ svgPath(std::string_view source, int limit, const Context &context, std::size_t 
 	double y = 0;
 	double startX = 0;
 	double startY = 0;
-	std::optional<Point> cubicControl;
-	std::optional<Point> quadraticControl;
+	std::optional<PlotPoint> cubicControl;
+	std::optional<PlotPoint> quadraticControl;
 	auto add = [&](PathCommand value) -> void {
 		if (std::cmp_greater_equal(commands.size(), limit)) {
 			context.fail(
@@ -809,7 +829,7 @@ svgPath(std::string_view source, int limit, const Context &context, std::size_t 
 		};
 
 		Coordinate coordinate{.scanner = &scanner, .explicitCommand = explicitCommand};
-		auto point = [&]() -> Point {
+		auto point = [&]() -> PlotPoint {
 			const double rawX = coordinate();
 			const double rawY = coordinate();
 			return {
@@ -817,14 +837,14 @@ svgPath(std::string_view source, int limit, const Context &context, std::size_t 
 				.y = context.checked(rawY + (relative ? y : 0), scanner.position())
 			};
 		};
-		std::optional<Point> nextCubic;
-		std::optional<Point> nextQuadratic;
+		std::optional<PlotPoint> nextCubic;
+		std::optional<PlotPoint> nextQuadratic;
 		if (lower == 'm' || lower == 'l') {
-			const Point plotted = point();
+			const PlotPoint plotted = point();
 			if (lower == 'm') {
-				add(MoveTo{.x = plotted.x, .y = plotted.y});
+				add(MoveTo{.x = AssetUnits{plotted.x}, .y = AssetUnits{plotted.y}});
 			} else {
-				add(LineTo{.x = plotted.x, .y = plotted.y});
+				add(LineTo{.x = AssetUnits{plotted.x}, .y = AssetUnits{plotted.y}});
 			}
 			x = plotted.x;
 			y = plotted.y;
@@ -836,16 +856,16 @@ svgPath(std::string_view source, int limit, const Context &context, std::size_t 
 			}
 		} else if (lower == 'h') {
 			x = context.checked(coordinate() + (relative ? x : 0), scanner.position());
-			add(LineTo{.x = x, .y = y});
+			add(LineTo{.x = AssetUnits{x}, .y = AssetUnits{y}});
 		} else if (lower == 'v') {
 			y = context.checked(coordinate() + (relative ? y : 0), scanner.position());
-			add(LineTo{.x = x, .y = y});
+			add(LineTo{.x = AssetUnits{x}, .y = AssetUnits{y}});
 		} else if (lower == 'c' || lower == 's') {
-			Point control{};
+			PlotPoint control{};
 			if (lower == 'c') {
 				control = point();
 			} else if (cubicControl.has_value()) {
-				const Point previous = cubicControl.value_or(Point{});
+				const PlotPoint previous = cubicControl.value_or(PlotPoint{});
 				control = {
 					.x = context.checked(2 * x - previous.x, scanner.position()),
 					.y = context.checked(2 * y - previous.y, scanner.position())
@@ -853,25 +873,25 @@ svgPath(std::string_view source, int limit, const Context &context, std::size_t 
 			} else {
 				control = {.x = x, .y = y};
 			}
-			const Point second = point();
-			const Point plotted = point();
+			const PlotPoint second = point();
+			const PlotPoint plotted = point();
 			add(CubicTo{
-				.control1X = control.x,
-				.control1Y = control.y,
-				.control2X = second.x,
-				.control2Y = second.y,
-				.x = plotted.x,
-				.y = plotted.y
+				.control1X = AssetUnits{control.x},
+				.control1Y = AssetUnits{control.y},
+				.control2X = AssetUnits{second.x},
+				.control2Y = AssetUnits{second.y},
+				.x = AssetUnits{plotted.x},
+				.y = AssetUnits{plotted.y}
 			});
 			nextCubic = second;
 			x = plotted.x;
 			y = plotted.y;
 		} else if (lower == 'q' || lower == 't') {
-			Point control{};
+			PlotPoint control{};
 			if (lower == 'q') {
 				control = point();
 			} else if (quadraticControl.has_value()) {
-				const Point previous = quadraticControl.value_or(Point{});
+				const PlotPoint previous = quadraticControl.value_or(PlotPoint{});
 				control = {
 					.x = context.checked(2 * x - previous.x, scanner.position()),
 					.y = context.checked(2 * y - previous.y, scanner.position())
@@ -879,12 +899,12 @@ svgPath(std::string_view source, int limit, const Context &context, std::size_t 
 			} else {
 				control = {.x = x, .y = y};
 			}
-			const Point plotted = point();
+			const PlotPoint plotted = point();
 			add(QuadraticTo{
-				.controlX = control.x,
-				.controlY = control.y,
-				.x = plotted.x,
-				.y = plotted.y
+				.controlX = AssetUnits{control.x},
+				.controlY = AssetUnits{control.y},
+				.x = AssetUnits{plotted.x},
+				.y = AssetUnits{plotted.y}
 			});
 			nextQuadratic = control;
 			x = plotted.x;
@@ -895,7 +915,7 @@ svgPath(std::string_view source, int limit, const Context &context, std::size_t 
 			const double degrees = coordinate();
 			const bool large = scanner.flag();
 			const bool clockwise = scanner.flag();
-			const Point plotted = point();
+			const PlotPoint plotted = point();
 			if (radiusX < 0 || radiusY < 0) {
 				context.fail(
 					{.code = "invalidValue", .explanation = "Negative SVG arc radius"},
@@ -904,7 +924,7 @@ svgPath(std::string_view source, int limit, const Context &context, std::size_t 
 			}
 			if (!std::is_eq(plotted.x <=> x) || !std::is_eq(plotted.y <=> y)) {
 				if (isZero(radiusX) || isZero(radiusY)) {
-					add(LineTo{.x = plotted.x, .y = plotted.y});
+					add(LineTo{.x = AssetUnits{plotted.x}, .y = AssetUnits{plotted.y}});
 				} else {
 					add(normalizedArc(
 						{.startX = x,
@@ -935,12 +955,12 @@ struct Style {
 	Paint fill = RgbaColor{};
 	Paint stroke = NoPaint{};
 	FillRule fillRule = FillRule::nonzero;
-	double fillOpacity = 1;
-	double strokeOpacity = 1;
-	double strokeWidth = 1;
+	Opacity fillOpacity{1};
+	Opacity strokeOpacity{1};
+	AssetUnits strokeWidth{1};
 	LineCap lineCap = LineCap::butt;
 	LineJoin lineJoin = LineJoin::miter;
-	double miterLimit = defaultMiter;
+	Ratio miterLimit{defaultMiter};
 };
 
 struct Attribute {
@@ -957,9 +977,9 @@ struct Frame {
 	std::string name;
 	Dictionary namespaces;
 	Style style{};
-	AffineTransform transform{};
-	AffineTransform cumulative{};
-	double opacity = 1;
+	AssetTransform transform{};
+	AssetTransform cumulative{};
+	Opacity opacity{1};
 	std::vector<Element> children;
 	std::optional<std::vector<PathCommand>> commands;
 };
@@ -1366,19 +1386,44 @@ svgPaint(std::string_view raw, const Context &context, std::size_t index) -> Pai
 		return RgbaColor{};
 	}
 	if (lower == "white") {
-		return RgbaColor{.red = 1, .green = 1, .blue = 1, .alpha = 1};
+		return RgbaColor{
+			.red = SdrChannel{1},
+			.green = SdrChannel{1},
+			.blue = SdrChannel{1},
+			.alpha = Opacity{1}
+		};
 	}
 	if (lower == "red") {
-		return RgbaColor{.red = 1, .green = 0, .blue = 0, .alpha = 1};
+		return RgbaColor{
+			.red = SdrChannel{1},
+			.green = SdrChannel{0},
+			.blue = SdrChannel{0},
+			.alpha = Opacity{1}
+		};
 	}
 	if (lower == "green") {
-		return RgbaColor{.red = 0, .green = channelByte(svgGreenByte), .blue = 0, .alpha = 1};
+		return RgbaColor{
+			.red = SdrChannel{0},
+			.green = SdrChannel{channelByte(svgGreenByte)},
+			.blue = SdrChannel{0},
+			.alpha = Opacity{1}
+		};
 	}
 	if (lower == "blue") {
-		return RgbaColor{.red = 0, .green = 0, .blue = 1, .alpha = 1};
+		return RgbaColor{
+			.red = SdrChannel{0},
+			.green = SdrChannel{0},
+			.blue = SdrChannel{1},
+			.alpha = Opacity{1}
+		};
 	}
 	if (lower == "transparent") {
-		return RgbaColor{.red = 0, .green = 0, .blue = 0, .alpha = 0};
+		return RgbaColor{
+			.red = SdrChannel{0},
+			.green = SdrChannel{0},
+			.blue = SdrChannel{0},
+			.alpha = Opacity{0}
+		};
 	}
 	if (startsWith(lower, "#")) {
 		const std::string_view hex = std::string_view{lower}.substr(1);
@@ -1413,10 +1458,10 @@ svgPaint(std::string_view raw, const Context &context, std::size_t index) -> Pai
 		}
 		const double alpha = count == shortHexAlphaDigits ? channels.at(rgbChannelCount) : 1;
 		return RgbaColor{
-			.red = channels.at(0),
-			.green = channels.at(1),
-			.blue = channels.at(2),
-			.alpha = alpha
+			.red = SdrChannel{channels.at(0)},
+			.green = SdrChannel{channels.at(1)},
+			.blue = SdrChannel{channels.at(2)},
+			.alpha = Opacity{alpha}
 		};
 	}
 	const bool alpha = startsWith(lower, "rgba(");
@@ -1494,7 +1539,12 @@ svgPaint(std::string_view raw, const Context &context, std::size_t index) -> Pai
 				index
 			);
 		}
-		return RgbaColor{.red = red, .green = green, .blue = blue, .alpha = opacity};
+		return RgbaColor{
+			.red = SdrChannel{red},
+			.green = SdrChannel{green},
+			.blue = SdrChannel{blue},
+			.alpha = Opacity{opacity}
+		};
 	}
 	context.fail(
 		{.code = "unsupportedFeature",
@@ -1566,21 +1616,21 @@ svgPaint(std::string_view raw, const Context &context, std::size_t index) -> Pai
 				);
 			}
 			if (attribute.name == "fill-opacity") {
-				parent.fillOpacity = opacity;
+				parent.fillOpacity = Opacity{opacity};
 			} else {
-				parent.strokeOpacity = opacity;
+				parent.strokeOpacity = Opacity{opacity};
 			}
 		} else if (attribute.name == "stroke-width") {
-			parent.strokeWidth = svgLength(value, context, attribute.position);
-			if (parent.strokeWidth < 0) {
+			parent.strokeWidth = AssetUnits{svgLength(value, context, attribute.position)};
+			if (parent.strokeWidth.value() < 0) {
 				context.fail(
 					{.code = "invalidValue", .explanation = "Negative stroke-width"},
 					attribute.position
 				);
 			}
 		} else if (attribute.name == "stroke-miterlimit") {
-			parent.miterLimit = svgScalar(value, context, attribute.position);
-			if (parent.miterLimit < 1) {
+			parent.miterLimit = Ratio{svgScalar(value, context, attribute.position)};
+			if (parent.miterLimit.value() < 1) {
 				context.fail(
 					{.code = "invalidValue", .explanation = "stroke-miterlimit must be at least 1"},
 					attribute.position
@@ -1644,15 +1694,15 @@ ellipseCommands(double centerX, double centerY, double radiusX, double radiusY)
 	}
 	const double turn = 2 * std::numbers::pi;
 	return {
-		MoveTo{.x = centerX + radiusX, .y = centerY},
+		MoveTo{.x = AssetUnits{centerX + radiusX}, .y = AssetUnits{centerY}},
 		ArcTo{
-			.centerX = centerX,
-			.centerY = centerY,
-			.radiusX = radiusX,
-			.radiusY = radiusY,
-			.rotation = 0,
-			.startAngle = 0,
-			.sweepAngle = turn
+			.centerX = AssetUnits{centerX},
+			.centerY = AssetUnits{centerY},
+			.radiusX = AssetUnits{radiusX},
+			.radiusY = AssetUnits{radiusY},
+			.rotation = Angle{},
+			.startAngle = Angle{},
+			.sweepAngle = Angle{turn}
 		},
 		ClosePath{}
 	};
@@ -1687,12 +1737,12 @@ svgShape(std::string_view name, const Attributes &attributes, int limit, const C
 	if (name == "line") {
 		return {
 			MoveTo{
-				.x = lengthAttribute(attributes, "x1", 0, context),
-				.y = lengthAttribute(attributes, "y1", 0, context)
+				.x = AssetUnits{lengthAttribute(attributes, "x1", 0, context)},
+				.y = AssetUnits{lengthAttribute(attributes, "y1", 0, context)}
 			},
 			LineTo{
-				.x = lengthAttribute(attributes, "x2", 0, context),
-				.y = lengthAttribute(attributes, "y2", 0, context)
+				.x = AssetUnits{lengthAttribute(attributes, "x2", 0, context)},
+				.y = AssetUnits{lengthAttribute(attributes, "y2", 0, context)}
 			}
 		};
 	}
@@ -1716,9 +1766,9 @@ svgShape(std::string_view name, const Attributes &attributes, int limit, const C
 			const double x = scanner.number(!commands.empty());
 			const double y = scanner.number(true);
 			if (commands.empty()) {
-				commands.emplace_back(MoveTo{.x = x, .y = y});
+				commands.emplace_back(MoveTo{.x = AssetUnits{x}, .y = AssetUnits{y}});
 			} else {
-				commands.emplace_back(LineTo{.x = x, .y = y});
+				commands.emplace_back(LineTo{.x = AssetUnits{x}, .y = AssetUnits{y}});
 			}
 			scanner.spaces();
 		}
@@ -1748,51 +1798,51 @@ svgShape(std::string_view name, const Attributes &attributes, int limit, const C
 		const double bottom = context.checked(y + height, 0);
 		if (isZero(clampedX) || isZero(clampedY)) {
 			return {
-				MoveTo{.x = x, .y = y},
-				LineTo{.x = right, .y = y},
-				LineTo{.x = right, .y = bottom},
-				LineTo{.x = x, .y = bottom},
+				MoveTo{.x = AssetUnits{x}, .y = AssetUnits{y}},
+				LineTo{.x = AssetUnits{right}, .y = AssetUnits{y}},
+				LineTo{.x = AssetUnits{right}, .y = AssetUnits{bottom}},
+				LineTo{.x = AssetUnits{x}, .y = AssetUnits{bottom}},
 				ClosePath{}
 			};
 		}
 		const double quarter = std::numbers::pi / 2;
 		return {
-			MoveTo{.x = x + clampedX, .y = y},
-			LineTo{.x = right - clampedX, .y = y},
+			MoveTo{.x = AssetUnits{x + clampedX}, .y = AssetUnits{y}},
+			LineTo{.x = AssetUnits{right - clampedX}, .y = AssetUnits{y}},
 			ArcTo{
-				.centerX = right - clampedX,
-				.centerY = y + clampedY,
-				.radiusX = clampedX,
-				.radiusY = clampedY,
-				.startAngle = -quarter,
-				.sweepAngle = quarter
+				.centerX = AssetUnits{right - clampedX},
+				.centerY = AssetUnits{y + clampedY},
+				.radiusX = AssetUnits{clampedX},
+				.radiusY = AssetUnits{clampedY},
+				.startAngle = Angle{-quarter},
+				.sweepAngle = Angle{quarter}
 			},
-			LineTo{.x = right, .y = bottom - clampedY},
+			LineTo{.x = AssetUnits{right}, .y = AssetUnits{bottom - clampedY}},
 			ArcTo{
-				.centerX = right - clampedX,
-				.centerY = bottom - clampedY,
-				.radiusX = clampedX,
-				.radiusY = clampedY,
-				.startAngle = 0,
-				.sweepAngle = quarter
+				.centerX = AssetUnits{right - clampedX},
+				.centerY = AssetUnits{bottom - clampedY},
+				.radiusX = AssetUnits{clampedX},
+				.radiusY = AssetUnits{clampedY},
+				.startAngle = Angle{},
+				.sweepAngle = Angle{quarter}
 			},
-			LineTo{.x = x + clampedX, .y = bottom},
+			LineTo{.x = AssetUnits{x + clampedX}, .y = AssetUnits{bottom}},
 			ArcTo{
-				.centerX = x + clampedX,
-				.centerY = bottom - clampedY,
-				.radiusX = clampedX,
-				.radiusY = clampedY,
-				.startAngle = quarter,
-				.sweepAngle = quarter
+				.centerX = AssetUnits{x + clampedX},
+				.centerY = AssetUnits{bottom - clampedY},
+				.radiusX = AssetUnits{clampedX},
+				.radiusY = AssetUnits{clampedY},
+				.startAngle = Angle{quarter},
+				.sweepAngle = Angle{quarter}
 			},
-			LineTo{.x = x, .y = y + clampedY},
+			LineTo{.x = AssetUnits{x}, .y = AssetUnits{y + clampedY}},
 			ArcTo{
-				.centerX = x + clampedX,
-				.centerY = y + clampedY,
-				.radiusX = clampedX,
-				.radiusY = clampedY,
-				.startAngle = std::numbers::pi,
-				.sweepAngle = quarter
+				.centerX = AssetUnits{x + clampedX},
+				.centerY = AssetUnits{y + clampedY},
+				.radiusX = AssetUnits{clampedX},
+				.radiusY = AssetUnits{clampedY},
+				.startAngle = Angle{std::numbers::pi},
+				.sweepAngle = Angle{quarter}
 			},
 			ClosePath{}
 		};
@@ -1836,25 +1886,29 @@ svgShape(std::string_view name, const Attributes &attributes, int limit, const C
 		name == "line" || name == "polyline" || name == "polygon";
 }
 
-[[nodiscard]] constexpr auto isIdentity(const AffineTransform &transform) noexcept -> bool {
-	return std::is_eq(transform.a <=> 1.0) && isZero(transform.b) && isZero(transform.c) &&
-		std::is_eq(transform.d <=> 1.0) && isZero(transform.tx) && isZero(transform.ty);
+[[nodiscard]] constexpr auto isIdentity(const AssetTransform &transform) noexcept -> bool {
+	constexpr double identityScale = 1;
+	constexpr double zero = 0;
+	return std::is_eq(transform.a.value() <=> identityScale) &&
+		std::is_eq(transform.b.value() <=> zero) && std::is_eq(transform.c.value() <=> zero) &&
+		std::is_eq(transform.d.value() <=> identityScale) &&
+		std::is_eq(transform.tx.value() <=> zero) && std::is_eq(transform.ty.value() <=> zero);
 }
 
 constexpr void requireMapped(
-	const AffineTransform &cumulative,
-	Point point,
+	const AssetTransform &cumulative,
+	AssetPoint point,
 	const Context &context,
 	std::size_t index
 ) {
-	const Point mapped = cumulative.apply(point);
-	static_cast<void>(context.checked(mapped.x, index));
-	static_cast<void>(context.checked(mapped.y, index));
+	const AssetPoint mapped = cumulative.apply(point);
+	static_cast<void>(context.checked(mapped.x.value(), index));
+	static_cast<void>(context.checked(mapped.y.value(), index));
 }
 
 constexpr void requireGeometry(
 	const std::vector<PathCommand> &commands,
-	const AffineTransform &cumulative,
+	const AssetTransform &cumulative,
 	const Context &context,
 	std::size_t index
 ) {
@@ -1887,20 +1941,26 @@ constexpr void requireGeometry(
 			requireMapped(cumulative, {.x = cubic->x, .y = cubic->y}, context, index);
 		} else if (const auto *arc = std::get_if<ArcTo>(&command)) {
 			requireMapped(cumulative, {.x = arc->centerX, .y = arc->centerY}, context, index);
-			const double cosine = cosineOf(arc->rotation);
-			const double sine = sineOf(arc->rotation);
-			static_cast<void>(
-				context.checked(arc->radiusX * (cumulative.a * cosine + cumulative.c * sine), index)
-			);
-			static_cast<void>(
-				context.checked(arc->radiusX * (cumulative.b * cosine + cumulative.d * sine), index)
-			);
+			const double cosine = cosineOf(arc->rotation.radians());
+			const double sine = sineOf(arc->rotation.radians());
 			static_cast<void>(context.checked(
-				arc->radiusY * (-cumulative.a * sine + cumulative.c * cosine),
+				arc->radiusX.value() *
+					(cumulative.a.value() * cosine + cumulative.c.value() * sine),
 				index
 			));
 			static_cast<void>(context.checked(
-				arc->radiusY * (-cumulative.b * sine + cumulative.d * cosine),
+				arc->radiusX.value() *
+					(cumulative.b.value() * cosine + cumulative.d.value() * sine),
+				index
+			));
+			static_cast<void>(context.checked(
+				arc->radiusY.value() *
+					(-cumulative.a.value() * sine + cumulative.c.value() * cosine),
+				index
+			));
+			static_cast<void>(context.checked(
+				arc->radiusY.value() *
+					(-cumulative.b.value() * sine + cumulative.d.value() * cosine),
 				index
 			));
 		}
@@ -1913,7 +1973,7 @@ struct Parser {
 	std::size_t index = 0;
 	std::vector<Frame> stack;
 	std::vector<Element> result;
-	std::optional<Rect> viewBox;
+	std::optional<AssetRect> viewBox;
 	std::optional<std::string> rootNamespace;
 	std::vector<std::string> ids;
 	int count = 0;
@@ -2048,7 +2108,7 @@ splitQualified(std::string_view qualified, const Context &context, std::size_t i
 
 constexpr void requireCommandsMapped(
 	const std::vector<PathCommand> &commands,
-	const AffineTransform &cumulative,
+	const AssetTransform &cumulative,
 	const Context &context,
 	std::size_t index
 ) {
@@ -2058,7 +2118,7 @@ constexpr void requireCommandsMapped(
 [[nodiscard]] constexpr auto finishFrame(Frame frame) -> std::vector<Element> {
 	if (frame.commands.has_value()) {
 		Element::Path path;
-		path.commands = frame.commands.value_or({});
+		path.commands = frame.commands.value_or(std::vector<PathCommand>{});
 		path.transform = frame.transform;
 		path.fill = frame.style.fill;
 		path.fillRule = frame.style.fillRule;
@@ -2075,7 +2135,9 @@ constexpr void requireCommandsMapped(
 	if (frame.name == "title" || frame.name == "desc") {
 		return {};
 	}
-	if (frame.name == "svg" && isIdentity(frame.transform) && std::is_eq(frame.opacity <=> 1.0)) {
+	constexpr double opaque = 1;
+	if (frame.name == "svg" && isIdentity(frame.transform) &&
+		std::is_eq(frame.opacity.value() <=> opaque)) {
 		return std::move(frame.children);
 	}
 	Element::Group group;
@@ -2244,9 +2306,9 @@ constexpr void openElement(
 				box.position
 			);
 		}
-		parser.viewBox = Rect{
-			.origin = {.x = values.at(0), .y = values.at(1)},
-			.size = {.width = values.at(2), .height = values.at(3)}
+		parser.viewBox = AssetRect{
+			.origin = {.x = AssetUnits{values.at(0)}, .y = AssetUnits{values.at(1)}},
+			.size = {.width = AssetUnits{values.at(2)}, .height = AssetUnits{values.at(3)}}
 		};
 		constexpr std::array<std::string_view, 2> sides{"width", "height"};
 		for (const std::string_view key : sides) {
@@ -2273,18 +2335,18 @@ constexpr void openElement(
 	const Style inherited = parser.stack.empty() ? Style{} : parser.stack.back().style;
 	const Style style = svgStyle(attributes, inherited, *parser.context);
 	const Attribute *transformAttribute = attributeValue(attributes, "transform");
-	const AffineTransform transform = transformAttribute == nullptr
-		? AffineTransform{}
+	const AssetTransform transform = transformAttribute == nullptr
+		? AssetTransform{}
 		: svgTransform(transformAttribute->value, *parser.context, transformAttribute->position);
-	const AffineTransform parentTransform =
-		parser.stack.empty() ? AffineTransform{} : parser.stack.back().cumulative;
-	const AffineTransform cumulative =
+	const AssetTransform parentTransform =
+		parser.stack.empty() ? AssetTransform{} : parser.stack.back().cumulative;
+	const AssetTransform cumulative =
 		checkedTransform(parentTransform.concatenating(transform), *parser.context, position);
 	const Attribute *opacityAttribute = attributeValue(attributes, "opacity");
-	const double opacity = opacityAttribute == nullptr
-		? 1
-		: svgScalar(opacityAttribute->value, *parser.context, opacityAttribute->position);
-	if (opacity < 0 || opacity > 1) {
+	const Opacity opacity = opacityAttribute == nullptr
+		? Opacity{1}
+		: Opacity{svgScalar(opacityAttribute->value, *parser.context, opacityAttribute->position)};
+	if (opacity.value() < 0 || opacity.value() > 1) {
 		parser.context->fail(
 			{.code = "invalidValue", .explanation = "opacity must be in 0...1"},
 			position
@@ -2294,8 +2356,14 @@ constexpr void openElement(
 	if (isGeometryElement(name)) {
 		const int remaining = commandLimit - parser.commandCount;
 		commands = svgShape(name, attributes, remaining > 0 ? remaining : 0, *parser.context);
-		requireCommandsMapped(commands.value_or({}), cumulative, *parser.context, position);
-		parser.commandCount += static_cast<int>(commands.value_or({}).size());
+		requireCommandsMapped(
+			commands.value_or(std::vector<PathCommand>{}),
+			cumulative,
+			*parser.context,
+			position
+		);
+		parser.commandCount +=
+			static_cast<int>(commands.value_or(std::vector<PathCommand>{}).size());
 		if (parser.commandCount > commandLimit) {
 			parser.context->fail(
 				{.code = "budgetExceeded", .explanation = "Normalized SVG command limit exceeded"},
@@ -2482,7 +2550,7 @@ constexpr void parseDocument(Parser &parser) {
 	constexpr std::uint32_t compiledBridgeVersion = 1;
 	return Asset::compiled(
 		compiledBridgeVersion,
-		parser.viewBox.value_or(Rect{}),
+		parser.viewBox.value_or(AssetRect{}),
 		mirrorsInRTL,
 		std::move(parser.result)
 	);

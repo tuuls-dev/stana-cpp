@@ -1,3 +1,4 @@
+#include <chrono>
 #include <compare>
 #include <iostream>
 #include <stdexcept>
@@ -6,10 +7,10 @@
 import stana;
 
 namespace {
-constexpr double firstTimestamp = 1;
-constexpr double firstTarget = 1.6;
-constexpr double secondTimestamp = 1.5;
-constexpr double halfSecond = 0.5;
+constexpr stana::FrameDuration firstTimestamp{1};
+constexpr stana::FrameDuration firstTarget{1.6};
+constexpr stana::FrameDuration secondTimestamp{1.5};
+constexpr stana::FrameDuration halfSecond{0.5};
 constexpr int oneSample = 1;
 constexpr int twoSamples = 2;
 
@@ -19,12 +20,16 @@ void require(bool condition, const std::string &message) {
 	}
 }
 
-[[nodiscard]] auto same(double left, double right) -> bool {
+[[nodiscard]] auto same(stana::FrameDuration left, stana::FrameDuration right) -> bool {
 	return std::is_eq(left <=> right);
 }
 
+[[nodiscard]] auto at(stana::FrameDuration offset) -> stana::FrameTimePoint {
+	return stana::FrameTimePoint{offset};
+}
+
 struct FrameProbe {
-	stana::reactive::Signal<double> elapsed;
+	stana::reactive::Signal<stana::FrameDuration> elapsed;
 	stana::reactive::Signal<int> samples;
 	stana::reactive::Signal<bool> active;
 
@@ -41,14 +46,17 @@ struct FrameProbe {
 };
 
 void firstSampleReportsZeroElapsed() {
-	const stana::reactive::Signal elapsed{0.0};
+	const stana::reactive::Signal elapsed{stana::FrameDuration{}};
 	const stana::reactive::Signal samples{0};
 	const stana::reactive::Signal active{true};
 	stana::testing::TestHost host;
 	host.mount(FrameProbe{.elapsed = elapsed, .samples = samples, .active = active});
-	host.tickFrames({.timestamp = firstTimestamp, .targetTimestamp = firstTarget});
-	require(samples.get() == oneSample && same(elapsed.get(), 0.0), "first elapsed is zero");
-	host.tickFrames({.timestamp = secondTimestamp, .targetTimestamp = secondTimestamp});
+	host.tickFrames({.timestamp = at(firstTimestamp), .targetTimestamp = at(firstTarget)});
+	require(
+		samples.get() == oneSample && same(elapsed.get(), stana::FrameDuration{}),
+		"first elapsed is zero"
+	);
+	host.tickFrames({.timestamp = at(secondTimestamp), .targetTimestamp = at(secondTimestamp)});
 	require(
 		samples.get() == twoSamples && same(elapsed.get(), halfSecond),
 		"later samples report the timestamp delta"
@@ -56,30 +64,32 @@ void firstSampleReportsZeroElapsed() {
 }
 
 void inactiveSkipsAndReactivationResets() {
-	const stana::reactive::Signal elapsed{0.0};
+	const stana::reactive::Signal elapsed{stana::FrameDuration{}};
 	const stana::reactive::Signal samples{0};
 	const stana::reactive::Signal active{true};
 	stana::testing::TestHost host;
 	host.mount(FrameProbe{.elapsed = elapsed, .samples = samples, .active = active});
-	host.tickFrames({.timestamp = firstTimestamp, .targetTimestamp = firstTarget});
+	host.tickFrames({.timestamp = at(firstTimestamp), .targetTimestamp = at(firstTarget)});
 	active.set(false);
 	host.flush();
-	host.tickFrames({.timestamp = secondTimestamp, .targetTimestamp = secondTimestamp});
+	host.tickFrames({.timestamp = at(secondTimestamp), .targetTimestamp = at(secondTimestamp)});
 	require(samples.get() == oneSample, "inactive registration does not sample");
 	active.set(true);
 	host.flush();
-	host.tickFrames({.timestamp = firstTimestamp + halfSecond, .targetTimestamp = firstTarget});
+	host.tickFrames(
+		{.timestamp = at(firstTimestamp + halfSecond), .targetTimestamp = at(firstTarget)}
+	);
 	require(
-		samples.get() == twoSamples && same(elapsed.get(), 0.0),
+		samples.get() == twoSamples && same(elapsed.get(), stana::FrameDuration{}),
 		"reactivation starts a new interval"
 	);
 }
 
 void clocksAdvanceIndependently() {
-	const stana::reactive::Signal firstElapsed{0.0};
+	const stana::reactive::Signal firstElapsed{stana::FrameDuration{}};
 	const stana::reactive::Signal firstSamples{0};
 	const stana::reactive::Signal firstActive{true};
-	const stana::reactive::Signal secondElapsed{0.0};
+	const stana::reactive::Signal secondElapsed{stana::FrameDuration{}};
 	const stana::reactive::Signal secondSamples{0};
 	const stana::reactive::Signal secondActive{true};
 	stana::testing::TestHost host;
@@ -95,12 +105,12 @@ void clocksAdvanceIndependently() {
 			)
 		}
 	);
-	host.tickFrames({.timestamp = firstTimestamp, .targetTimestamp = firstTarget});
-	host.tickFrames({.timestamp = secondTimestamp, .targetTimestamp = secondTimestamp});
+	host.tickFrames({.timestamp = at(firstTimestamp), .targetTimestamp = at(firstTarget)});
+	host.tickFrames({.timestamp = at(secondTimestamp), .targetTimestamp = at(secondTimestamp)});
 	secondActive.set(false);
 	host.flush();
 	host.tickFrames(
-		{.timestamp = secondTimestamp + halfSecond, .targetTimestamp = secondTimestamp}
+		{.timestamp = at(secondTimestamp + halfSecond), .targetTimestamp = at(secondTimestamp)}
 	);
 	require(
 		firstSamples.get() == twoSamples + 1 && same(firstElapsed.get(), halfSecond),

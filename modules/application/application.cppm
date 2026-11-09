@@ -3,6 +3,7 @@ module;
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -13,6 +14,11 @@ module;
 
 export module stana:application;
 export import :ui;
+export import :application_window_types;
+export import :application_window_requests;
+export import :application_window_events;
+export import :platform_macos;
+export import :application_window_options;
 import :document;
 import :rendering_diagnostics;
 
@@ -20,18 +26,29 @@ export namespace stana::application {
 
 /// @brief Describes one native window and its statically typed root component.
 ///
-/// Construct with designated `.title`, `.size`, and `.content` fields, then pass to
-/// `Application::run`. CTAD deduces the content type, so unrelated windows can be
-/// supplied as a tuple. This value is configuration, not the native window owner;
-/// the application session owns the mounted document and native resources.
+/// Construct with designated `.id`, `.content`, `.options`, and `.events` fields,
+/// then pass to `Application::run`. CTAD deduces the content type, so unrelated
+/// windows can be supplied as a tuple. This value is configuration, not the native
+/// window owner; the application session owns the mounted document and native resources.
+///
+/// ## Breaking migration from the prior flat fields
+/// | Existing field | Replacement |
+/// |---|---|
+/// | `.title` | `.options.appearance.title` |
+/// | `.size` | `.options.geometry.contentSize` |
+/// | `.renderingColorMode` | `.options.creation.renderingColorMode` |
+/// | `.content` | remains `.content` |
+///
+/// Do not keep duplicate legacy fields or competing precedence rules. Defaults:
+/// content size 800×600 logical points, centered placement, native decorations,
+/// system background, opacity `1`, normal state, visible/enabled/focusable.
 ///
 /// @tparam Content The static component type representing the root UI tree.
 template <::stana::ui::Component Content> struct Window {
-	std::string title{}; ///< Initial native title; owns its UTF-8 characters.
-	Size size{};		 ///< Initial content dimensions in logical points, excluding native chrome.
-	Content content;	 ///< Root description mounted once when the application starts.
-	::stana::rendering::RenderingColorMode renderingColorMode =
-		::stana::rendering::RenderingColorMode::automatic;
+	WindowId id = WindowId::create(); ///< Opaque identity; creating it allocates no native resources.
+	Content content;				  ///< Root description mounted once when the application starts.
+	WindowOptions options{};		  ///< Grouped creation, geometry, appearance, and facilities.
+	WindowEvents events{};			  ///< UI-executor observation and close-decision callbacks.
 };
 
 namespace detail {
@@ -39,17 +56,18 @@ namespace detail {
 /// @brief C++ composition-root state passed to the compiled native application adapter.
 ///
 /// The root component description is already mounted and is not retained here.
+/// Live `options` remain owned by the session so reactive updates can re-sample
+/// properties without reconstructing the declaration value.
 struct WindowSession {
-	std::string title{}; ///< Owning title configuration for native construction.
-	Size size{};		 ///< Initial logical viewport matching document construction.
-	::stana::rendering::RenderingColorMode renderingColorMode =
-		::stana::rendering::RenderingColorMode::automatic;
+	WindowId id{}; ///< Portable identity correlating events and native attachments.
+	WindowOptions options{}; ///< Live grouped configuration, including the request stream.
+	WindowEvents events{};	 ///< Observation callbacks for this session.
 	std::shared_ptr<::stana::document::detail::Document>
 		document{}; ///< Authoritative retained window state.
 };
 
 void installNativeTaskDispatcher();
-[[nodiscard]] auto runWindows(const std::vector<WindowSession> &sessions) -> int;
+[[nodiscard]] auto runWindows(std::vector<WindowSession> &sessions) -> int;
 
 class NativeExecutorSession {
   public:
@@ -87,8 +105,12 @@ class Application {
 		// Clang 22 restores the end cursor captured by vector::emplace_back, so
 		// push_back constructs the session and then drops it. Assign into a sized
 		// vector instead. Same constraint as symbol path compilation.
+		auto prepared = prepare(window);
+		if (!prepared) {
+			return session.complete(1);
+		}
 		std::vector<::stana::application::detail::WindowSession> sessions(1);
-		sessions.at(0) = prepare(window);
+		sessions.at(0) = *std::move(prepared);
 		return session.complete(::stana::application::detail::runWindows(sessions));
 	}
 
@@ -102,14 +124,35 @@ class Application {
 		// Same Clang 22 emplace_back constraint as the single-window overload.
 		std::vector<::stana::application::detail::WindowSession> sessions(sizeof...(Windows));
 		std::size_t index = 0;
+		std::optional<Error> failure{};
 		std::apply(
 			[&](const auto &...window) -> void {
-				((sessions.at(index++) = prepare(window)), ...);
+				const auto tryPrepare = [&](const auto &entry) -> void {
+					if (failure.has_value()) {
+						return;
+					}
+					auto prepared = prepare(entry);
+					if (!prepared) {
+						failure = prepared.error();
+						return;
+					}
+					sessions.at(index++) = *std::move(prepared);
+				};
+				(tryPrepare(window), ...);
 			},
 			windows
 		);
+		if (failure.has_value()) {
+			return session.complete(1);
+		}
 		return session.complete(::stana::application::detail::runWindows(sessions));
 	}
+
+	/// @brief Returns the currently attached displays in logical points.
+	///
+	/// Empty before a native session exists or when the platform backend is unsupported.
+	/// Screen identities may later become invalid; callers must not assume reuse.
+	[[nodiscard]] static auto screens() -> std::vector<Screen>;
 
 	/// @brief Requests native loop shutdown and disposal of all remaining window sessions.
 	static void stop();
@@ -125,25 +168,31 @@ class Application {
 	/// @param delay The time duration to wait before executing the callback.
 	/// @param callback The function to execute on the UI thread.
 	/// @note Capture state handles by value; use a request token if a component may disappear.
-	static void postAfter(std::chrono::milliseconds delay, std::function<void()> callback);
+	static void postAfter(std::chrono::milliseconds delay, const std::function<void()> &callback);
 
   private:
 	/// @template Content The root component type.
 	/// @param window The window configuration structure.
-	/// @return A prepared `WindowSession` containing the instantiated document.
+	/// @return A prepared session, or `stana::Error` when configuration validation fails.
 	template <::stana::ui::Component Content>
-	[[nodiscard]] static auto prepare(const Window<Content> &window) -> detail::WindowSession {
+	[[nodiscard]] static auto prepare(const Window<Content> &window)
+		-> std::expected<detail::WindowSession, Error> {
 		::stana::application::detail::installNativeTaskDispatcher();
-		auto document = ::stana::document::detail::Document::create(window.size);
+		const auto snapshot = detail::sampleConfiguration(window.id, window.options);
+		if (const auto validation = detail::validateConfiguration(snapshot); !validation) {
+			return std::unexpected(validation.error());
+		}
+		const auto contentSize = snapshot.contentSize;
+		auto document = ::stana::document::detail::Document::create(contentSize);
 		::stana::reactive::Transaction::perform([&] -> void {
 			::stana::ui::MountContext context{.document = document, .parent = document->root()};
 			using ::stana::ui::mount;
 			static_cast<void>(mount(window.content, context));
 		});
-		return {
-			.title = window.title,
-			.size = window.size,
-			.renderingColorMode = window.renderingColorMode,
+		return detail::WindowSession{
+			.id = window.id,
+			.options = window.options,
+			.events = window.events,
 			.document = std::move(document)
 		};
 	}

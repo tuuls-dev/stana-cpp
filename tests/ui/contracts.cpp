@@ -38,14 +38,14 @@ void counterRetainsIdentity() {
 	stana::testing::TestHost host;
 	host.mount(
 		stana::ui::VStack{
-			.spacing = gap,
-			.layout = {.padding = stana::Insets::all(padding)},
+			.spacing = stana::Points{gap},
+			.layout = {.padding = stana::Insets::all(stana::Points{padding})},
 			.children = stana::ui::children(
 				stana::ui::Text{
 					.text = count.map([](int value) -> std::string {
 						return "Count: " + std::to_string(value);
 					}),
-					.textStyle = {.font = stana::Font::system(headingSize)}
+					.textStyle = {.font = stana::Font::system(stana::Points{headingSize})}
 				},
 				stana::ui::Button{
 					.text = "Increment",
@@ -81,7 +81,9 @@ void counterRetainsIdentity() {
 	});
 	require(findKind(host, "text").text == "Count: 0", "commit final batch value");
 	const auto hitBounds = findKind(host, "button").bounds;
-	host.click({.x = hitBounds.origin.x + 1, .y = hitBounds.origin.y + 1});
+	host.click(
+		{.x = hitBounds.origin.x + stana::Points{1}, .y = hitBounds.origin.y + stana::Points{1}}
+	);
 	require(count.get() == 1, "pointer click shares activation path");
 	require(publishedBeforeEffect, "effects observe published retained state");
 	host.close();

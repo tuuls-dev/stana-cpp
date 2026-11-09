@@ -11,18 +11,22 @@ import stana;
 
 auto main() -> int {
 	using namespace std::string_view_literals;
+	using namespace stana::literals;
 	constexpr std::array tiles{stana::rendering::TileId{0}, stana::rendering::TileId{1}};
 	stana::rendering::PresentationTracker tracker;
 	const auto attempt = tracker.begin(1, 1, tiles);
 	if (!attempt ||
 		tracker.reportPresented(
 			*attempt,
-			stana::rendering::TilePresentation{.tile = tiles.front(), .timestamp = 1}
+			stana::rendering::TilePresentation{
+				.tile = tiles.front(),
+				.timestamp = stana::PresentationTimePoint{stana::PresentationDuration{1}}
+			}
 		)) {
 		return 1;
 	}
 	stana::rendering::Drawing drawing;
-	drawing.fillRect({.size = {.width = 1, .height = 1}}, stana::Color::accent());
+	drawing.fillRect({.size = {.width = 1_pt, .height = 1_pt}}, stana::Color::accent());
 	const stana::reactive::Signal model{drawing};
 	const stana::ui::CPUCanvas canvas{.drawing = model, .appearance = {.clip = false}};
 	static_cast<void>(canvas);
@@ -45,14 +49,17 @@ auto main() -> int {
 	}
 	stana::rendering::GPUDrawing graphics{*program};
 	const std::vector<stana::rendering::BoxShadow> shadows{
-		{.offset = {.x = 0, .y = 6}, .blurRadius = 16, .color = stana::Color::rgb(0, 0, 0, 0.2)}
+		{.offset = {.x = 0_pt, .y = 6_pt},
+			.blurRadius = 16_pt,
+			.color = stana::Color::rgb(0, 0, 0, 0.2)}
 	};
-	const auto interpolated = stana::rendering::interpolateBoxShadows({}, shadows, 0.5);
+	const auto interpolated =
+		stana::rendering::interpolateBoxShadows({}, shadows, stana::Progress{0.5});
 	graphics.drawBoxShadows(
-		{.size = {.width = 120, .height = 60}},
+		{.size = {.width = 120_pt, .height = 60_pt}},
 		interpolated,
-		stana::CornerRadii::all(12),
-		stana::BorderWidths::all(2)
+		stana::CornerRadii::all(12_pt),
+		stana::BorderWidths::all(2_pt)
 	);
 	const stana::reactive::Signal gpu{graphics};
 	stana::testing::TestHost host;
@@ -69,11 +76,15 @@ auto main() -> int {
 		return 1;
 	}
 	const stana::application::Window positional{
-		std::string{"canvas"},
-		stana::Size{.width = 1, .height = 1},
-		stana::ui::CPUCanvas{}
+		.content = stana::ui::CPUCanvas{},
+		.options =
+			{.geometry = {.contentSize = stana::Size{.width = 1_pt, .height = 1_pt}},
+				.appearance = {.title = std::string{"canvas"}}}
 	};
-	if (positional.renderingColorMode != stana::rendering::RenderingColorMode::automatic) {
+	if (positional.options.creation.renderingColorMode !=
+			stana::rendering::RenderingColorMode::automatic ||
+		positional.options.appearance.title.get() != "canvas" ||
+		positional.options.geometry.contentSize.get().width != 1_pt) {
 		return 1;
 	}
 	stana::document::Metrics metrics;

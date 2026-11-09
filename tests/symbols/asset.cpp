@@ -50,33 +50,42 @@ void require(bool condition, const std::string &message) {
 	using stana::symbol::LineTo;
 	using stana::symbol::MoveTo;
 	Element::Path path;
-	path.commands = {MoveTo{.x = 0, .y = 0}, LineTo{.x = lineEndX, .y = lineEndY}};
+	path.commands = {
+		MoveTo{.x = stana::symbol::AssetUnits{0}, .y = stana::symbol::AssetUnits{0}},
+		LineTo{.x = stana::symbol::AssetUnits{lineEndX}, .y = stana::symbol::AssetUnits{lineEndY}}
+	};
 	path.fill = stana::symbol::NoPaint{};
 	path.stroke = stana::symbol::CurrentColor{};
-	path.strokeWidth = strokeWidth;
-	return stana::symbol::Asset::compiled(
-		bridgeVersion,
-		{.origin = {.x = viewOriginX, .y = viewOriginY},
-			.size = {.width = viewWidth, .height = viewHeight}},
-		false,
-		{Element{.value = path}}
-	);
+	path.strokeWidth = stana::symbol::AssetUnits{strokeWidth};
+	const stana::symbol::AssetRect viewBox{
+		.origin =
+			stana::symbol::AssetPoint{
+				.x = stana::symbol::AssetUnits{viewOriginX},
+				.y = stana::symbol::AssetUnits{viewOriginY}
+			},
+		.size = stana::symbol::AssetSize{
+			.width = stana::symbol::AssetUnits{viewWidth},
+			.height = stana::symbol::AssetUnits{viewHeight}
+		}
+	};
+	return stana::symbol::Asset::compiled(bridgeVersion, viewBox, false, {Element{.value = path}});
 }
 
 void compiledArtworkNormalizesAndRejectsBudgets() {
 	const auto asset = icon();
 	require(asset.valid() && asset.hasStroke(), "stroke is retained");
-	require(same(asset.viewBox().size.width, viewWidth), "viewBox width");
+	require(same(asset.viewBox().size.width.value(), viewWidth), "viewBox width");
 	const auto again = icon();
 	require(asset == again, "semantic equality");
 	bool rejected = false;
 	try {
-		static_cast<void>(stana::symbol::Asset::compiled(
-			rejectedBridgeVersion,
-			{.size = {.width = 1, .height = 1}},
-			false,
-			{}
-		));
+		const stana::symbol::AssetRect tiny{
+			.size = stana::symbol::AssetSize{
+				.width = stana::symbol::AssetUnits{1},
+				.height = stana::symbol::AssetUnits{1}
+			}
+		};
+		static_cast<void>(stana::symbol::Asset::compiled(rejectedBridgeVersion, tiny, false, {}));
 	} catch (const std::invalid_argument &) {
 		rejected = true;
 	}
@@ -84,11 +93,17 @@ void compiledArtworkNormalizesAndRejectsBudgets() {
 }
 
 void squareAndPlaybackMatchTheSwiftContract() {
-	const stana::Rect content{.size = {.width = contentWidth, .height = contentHeight}};
-	const auto fitted = stana::symbol::square(fittedSide, content);
+	const stana::Rect content{
+		.size = stana::Size{
+			.width = stana::Points{contentWidth},
+			.height = stana::Points{contentHeight}
+		}
+	};
+	const auto fitted = stana::symbol::square(stana::Points{fittedSide}, content);
 	require(
-		same(fitted.size.width, fittedSide) && same(fitted.origin.x, fittedOriginX) &&
-			same(fitted.origin.y, fittedOriginY),
+		same(fitted.size.width.value(), fittedSide) &&
+			same(fitted.origin.x.value(), fittedOriginX) &&
+			same(fitted.origin.y.value(), fittedOriginY),
 		"square"
 	);
 	stana::symbol::PlaybackState state;
@@ -99,20 +114,33 @@ void squareAndPlaybackMatchTheSwiftContract() {
 		true
 	);
 	require(state.needsFrame() && state.resetClock(), "loop demands a frame at rest");
-	state.advance(firstAdvance);
-	require(same(state.sample().rotation, 0.0), "the reset frame does not catch up");
-	state.advance(secondAdvance);
+	state.advance(stana::FrameDuration{firstAdvance});
+	require(same(state.sample().rotation.radians(), 0.0), "the reset frame does not catch up");
+	state.advance(stana::FrameDuration{secondAdvance});
 	const auto sample = state.sample();
 	require(
-		sample.rotation > 0.0 && same(sample.scale, 1.0),
+		sample.rotation.radians() > 0.0 && same(sample.scale.value(), 1.0),
 		"rotate advances after the reset frame"
 	);
-	const auto transform = stana::AffineTransform::translation(translationX, translationY)
-							   .concatenating(stana::AffineTransform::scale(scaleX, scaleY));
-	const auto point = transform.apply({.x = sampleX, .y = sampleY});
-	require(same(point.x, mappedX) && same(point.y, mappedY), "concatenating applies scale first");
+	const auto transform = stana::AffineTransform::translation(
+		stana::Points{translationX},
+		stana::Points{translationY}
+	)
+							   .concatenating(
+								   stana::AffineTransform::scale(
+									   stana::ScaleFactor{scaleX},
+									   stana::ScaleFactor{scaleY}
+								   )
+							   );
+	const auto point = transform.apply({.x = stana::Points{sampleX}, .y = stana::Points{sampleY}});
 	require(
-		stana::AffineTransform::scale(dominantScale, scaleY).maximumScale() > dominantScale,
+		same(point.x.value(), mappedX) && same(point.y.value(), mappedY),
+		"concatenating applies scale first"
+	);
+	require(
+		stana::AffineTransform::scale(stana::ScaleFactor{dominantScale}, stana::ScaleFactor{scaleY})
+				.maximumScale()
+				.value() > dominantScale,
 		"maximum scale"
 	);
 }

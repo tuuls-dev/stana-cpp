@@ -29,7 +29,9 @@ constexpr auto timeout = std::chrono::seconds{10};
  textureStore(next, vec2<i32>(0), vec4<f32>(textureLoad(history, vec2<i32>(0), 0).x + 1.0, 0.0, 0.0, 1.0));
 }
 )");
-	const auto state = stana::rendering::GPUStateSlot::create({.width = 1, .height = 1});
+	const auto state = stana::rendering::GPUStateSlot::create(
+		{.width = stana::Points{1}, .height = stana::Points{1}}
+	);
 	if (!shader || !state) {
 		throw std::runtime_error("Invalid canvas qualification resources");
 	}
@@ -54,7 +56,7 @@ constexpr auto timeout = std::chrono::seconds{10};
 	}
 	stana::rendering::GPUDrawing result{*program};
 	result.fillRect(
-		{.size = {.width = extent, .height = extent}},
+		{.size = {.width = stana::Points{extent}, .height = stana::Points{extent}}},
 		stana::rendering::ExtendedColor{2, 0, 0}
 	);
 	return result;
@@ -122,8 +124,8 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 				coreBefore = document->metrics();
 				auto next = drawing.get();
 				next.fillEllipse(
-					{.origin = {.x = extent / 2, .y = extent / 2},
-						.size = {.width = extent, .height = extent}},
+					{.origin = {.x = stana::Points{extent / 2}, .y = stana::Points{extent / 2}},
+						.size = {.width = stana::Points{extent}, .height = stana::Points{extent}}},
 					stana::rendering::ExtendedColor{0, 2, 0}
 				);
 				drawing.set(std::move(next));
@@ -173,10 +175,14 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 
 [[nodiscard]] auto run() -> int {
 	auto scenario = std::make_shared<Scenario>();
-	scenario->document =
-		stana::document::detail::Document::create({.width = width, .height = height});
+	scenario->document = stana::document::detail::Document::create(
+		{.width = stana::Points{width}, .height = stana::Points{height}}
+	);
 	stana::rendering::Drawing background;
-	background.fillRect({.size = {.width = extent, .height = extent}}, stana::Color::accent());
+	background.fillRect(
+		{.size = {.width = stana::Points{extent}, .height = stana::Points{extent}}},
+		stana::Color::accent()
+	);
 	const stana::Frame fill{.width = stana::Length::fill(), .height = stana::Length::fill()};
 	stana::reactive::Transaction::perform([&] -> void {
 		stana::ui::MountContext context{
@@ -203,12 +209,17 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 		));
 	});
 	scenario->queue();
-	const int status = stana::application::detail::runWindows(
-		{{.title = "Stana canvas qualification",
-			.size = {.width = width, .height = height},
-			.renderingColorMode = stana::rendering::RenderingColorMode::sdr,
-			.document = scenario->document}}
-	);
+	std::vector<stana::application::detail::WindowSession> sessions(1);
+	sessions.at(0) = {
+		.options =
+			{.creation = {.renderingColorMode = stana::rendering::RenderingColorMode::sdr},
+				.geometry =
+					{.contentSize =
+							{.width = stana::Points{width}, .height = stana::Points{height}}},
+				.appearance = {.title = "Stana canvas qualification"}},
+		.document = scenario->document
+	};
+	const int status = stana::application::detail::runWindows(sessions);
 	return status == 0 && scenario->verified ? 0 : 1;
 }
 } // namespace

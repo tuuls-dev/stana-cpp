@@ -17,7 +17,7 @@ import :primitives;
 export namespace stana::rendering {
 namespace detail {
 struct GPUAccess;
-inline constexpr double gpuSourcePeak = 16;
+inline constexpr SourcePeak gpuSourcePeak{16};
 } // namespace detail
 
 /// @brief Owning portable descriptor or execution failure; allocation failures remain exceptions.
@@ -86,7 +86,7 @@ struct GPUTextureDescriptor {
 	std::vector<std::byte> bytes{};
 	GPUColorEncoding encoding = GPUColorEncoding::encodedSRGB;
 	bool premultiplied = true;
-	double sourcePeak = ::stana::rendering::detail::gpuSourcePeak;
+	SourcePeak sourcePeak = ::stana::rendering::detail::gpuSourcePeak;
 };
 
 class GPUTexture {
@@ -187,9 +187,9 @@ struct GPUProgramDescriptor {
 	std::vector<GPUPass> passes{};
 	std::string output = "output";
 	GPUColorEncoding outputColor = GPUColorEncoding::extendedLinear;
-	double sourcePeak = ::stana::rendering::detail::gpuSourcePeak;
+	SourcePeak sourcePeak = ::stana::rendering::detail::gpuSourcePeak;
 	std::map<std::string, GPUFunctionConstant, std::less<>> constants{};
-	std::optional<double> samplingRadius{};
+	std::optional<SamplingRadius> samplingRadius{};
 };
 
 /// @brief Immutable validated dependency plan. Resource replacement never mutates this value.

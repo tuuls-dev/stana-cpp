@@ -123,7 +123,9 @@ void diagnosticsAndGeometry() {
 	host.injectGPUDiagnostic(diagnostic, drawing.version());
 	require(calls == 2, "handler may close safely");
 	constexpr double extent = 20;
-	auto document = stana::document::detail::Document::create({.width = extent, .height = extent});
+	auto document = stana::document::detail::Document::create(
+		{.width = stana::Points{extent}, .height = stana::Points{extent}}
+	);
 	document->enablePresentationTracking();
 	document->commit();
 	const auto revision = document->renderSnapshot()->revision;

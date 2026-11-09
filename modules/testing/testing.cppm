@@ -23,7 +23,7 @@ struct GPUCanvasPaint {
 	Rect bounds;
 	::stana::rendering::GPUDrawing drawing;
 	Environment environment;
-	double opacity = 1;
+	Opacity opacity{1};
 };
 
 using MixedPaint =
@@ -81,7 +81,7 @@ class TestHost {
 		}
 		if (acknowledge) {
 			reportGPUCompletion(*attempt, true);
-			reportPresentation(*attempt, 1);
+			reportPresentation(*attempt, PresentationTimePoint{PresentationDuration{1}});
 		}
 		return *attempt;
 	}
@@ -92,7 +92,10 @@ class TestHost {
 	}
 
 	/// @brief Injects native presentation time; zero/unknown evidence keeps geometry gated.
-	void reportPresentation(::stana::rendering::PresentationAttempt attempt, double timestamp) {
+	void reportPresentation(
+		::stana::rendering::PresentationAttempt attempt,
+		PresentationTimePoint timestamp
+	) {
 		static_cast<void>(document_->reportPresentation(attempt, timestamp));
 	}
 
@@ -249,7 +252,7 @@ class TestHost {
 
 	/// @brief Applies a logical vertical delta to the nearest eligible scroll ancestor.
 	/// A scroll handler may prevent that default. The event still runs first.
-	void scroll(Point point, double delta) { document_->scroll(point, delta); }
+	void scroll(Point point, Points delta) { document_->scroll(point, delta); }
 
 	/// @brief Moves the pointer and reports enter, leave, and move against hit testing.
 	void pointerMove(Point point) { document_->pointerMove(point); }
@@ -286,7 +289,7 @@ class TestHost {
 
 	[[nodiscard]] auto frameDemand() const -> bool { return document_->frameDemand(); }
 
-	[[nodiscard]] auto symbolBaseline(NodeId identity) const -> std::optional<double> {
+	[[nodiscard]] auto symbolBaseline(NodeId identity) const -> std::optional<Points> {
 		const auto *node = document_->find(identity);
 		if (node == nullptr || !node->symbol) {
 			return std::nullopt;
@@ -347,8 +350,8 @@ class TestHost {
 	void setEnvironment(Environment environment) { document_->setEnvironment(environment); }
 
   private:
-	static constexpr double defaultWidth = 800;
-	static constexpr double defaultHeight = 600;
+	static constexpr Points defaultWidth{800};
+	static constexpr Points defaultHeight{600};
 	::stana::reactive::detail::HeadlessExecutorLease
 		lease_; ///< Shared-owner claim; last host closes the endpoint.
 	std::shared_ptr<::stana::document::detail::Document>

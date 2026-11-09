@@ -41,10 +41,10 @@ struct PaintCommand {
 	PaintKind kind = PaintKind::fillRect; ///< Operation the scene renderer must execute.
 	Rect bounds{}; ///< Local bounds in Drawing; document-relative bounds in a published scene.
 	Color color{}; ///< Fill, outline, line or text color, including opacity.
-	double cornerRadius = 0; ///< Rectangle/clip rounding radius in logical points.
-	double lineWidth = 1;	 ///< Outline or segment thickness in logical points.
-	std::string text{};		 ///< Owned display text; used only for PaintKind::text.
-	Font font{};			 ///< System-font request; used only for PaintKind::text.
+	Points cornerRadius{}; ///< Rectangle/clip rounding radius in logical points.
+	Points lineWidth{1};   ///< Outline or segment thickness in logical points.
+	std::string text{};	   ///< Owned display text; used only for PaintKind::text.
+	Font font{};		   ///< System-font request; used only for PaintKind::text.
 	std::optional<detail::BoxGeometry>
 		boxGeometry{};							 ///< Opt-in physical fill/border/clip contours.
 	std::optional<detail::ShadowPaint> shadow{}; ///< Owning immutable built-in GPU operation.
@@ -64,14 +64,16 @@ struct Drawing {
 	/// @brief Validates the complete authored stream, including direct command edits.
 	void validate() const;
 	[[nodiscard]] auto operator==(const Drawing &) const -> bool = default;
-	void fillRect(Rect bounds, Color color, double cornerRadius = 0);
-	void strokeRect(Rect bounds, Color color, double width = 1, double cornerRadius = 0);
+	void fillRect(Rect bounds, Color color, Points cornerRadius = Points{});
+	void
+	strokeRect(Rect bounds, Color color, Points width = Points{1}, Points cornerRadius = Points{});
 
-	void fill(Rect bounds, Color color, double cornerRadius = 0) {
+	void fill(Rect bounds, Color color, Points cornerRadius = Points{}) {
 		fillRect(bounds, color, cornerRadius);
 	}
 
-	void stroke(Rect bounds, Color color, double width = 1, double cornerRadius = 0) {
+	void
+	stroke(Rect bounds, Color color, Points width = Points{1}, Points cornerRadius = Points{}) {
 		strokeRect(bounds, color, width, cornerRadius);
 	}
 };

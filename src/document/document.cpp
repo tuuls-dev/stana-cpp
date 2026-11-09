@@ -28,8 +28,8 @@ import :rendering;
 
 namespace stana::document {
 namespace {
-constexpr double buttonPadding = 10;
-constexpr double defaultCornerRadius = 6;
+constexpr Points buttonPadding{10};
+constexpr Points defaultCornerRadius{6};
 } // namespace
 
 namespace detail {
@@ -334,7 +334,7 @@ void Document::setEnvironment(Environment environment) {
 	commit();
 }
 
-void Document::setTextMeasure(std::function<Size(const std::string &, Font, double)> measure) {
+void Document::setTextMeasure(std::function<Size(const std::string &, Font, Points)> measure) {
 	measureText_ = std::move(measure);
 	textEnvironment_ = stana::detail::nextIdentity();
 	for (const auto &[serial, node] : nodes_) {
@@ -444,7 +444,7 @@ auto Document::frameById(std::uint64_t registration) const -> const FrameRegistr
 
 auto Document::addFrameRegistration(
 	std::function<bool()> active,
-	std::function<void(FrameStamp, double elapsed)> callback
+	std::function<void(FrameStamp, FrameDuration elapsed)> callback
 ) -> std::uint64_t {
 	const auto id = stana::detail::nextIdentity();
 	frames_.push_back(
@@ -497,8 +497,13 @@ void Document::tickFrames(FrameStamp stamp) {
 			frame->lastTimestamp.reset();
 			continue;
 		}
-		const double elapsed =
-			frame->lastTimestamp ? std::max(0.0, stamp.timestamp - *frame->lastTimestamp) : 0.0;
+		const FrameDuration elapsed = frame->lastTimestamp
+			? FrameDuration{std::max(
+				  0.0,
+				  stamp.timestamp.time_since_epoch().count() -
+					  frame->lastTimestamp->time_since_epoch().count()
+			  )}
+			: FrameDuration{};
 		frame->lastTimestamp = stamp.timestamp;
 		const auto callback = frame->callback;
 		if (callback) {

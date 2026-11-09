@@ -342,8 +342,8 @@ void Document::cancelPointer() {
 	pressed_.reset();
 }
 
-void Document::scroll(Point point, double delta) {
-	stana::detail::requireFinite(delta);
+void Document::scroll(Point point, Points delta) {
+	stana::detail::requireFinite(delta.value());
 	pointerPosition_ = point;
 	const auto target = hitTest(point);
 	if (!target) {
@@ -364,7 +364,7 @@ void Document::scroll(Point point, double delta) {
 			return;
 		}
 		if (node->kind == NodeKind::scroll) {
-			if (delta <= 0 && delta >= 0) {
+			if (std::is_eq(delta <=> Points{})) {
 				return;
 			}
 			node->scrollOffset += delta;
@@ -453,8 +453,10 @@ auto Document::reportGPUCompletion(stana::rendering::PresentationAttempt attempt
 	return false;
 }
 
-auto Document::reportPresentation(stana::rendering::PresentationAttempt attempt, double timestamp)
-	-> bool {
+auto Document::reportPresentation(
+	stana::rendering::PresentationAttempt attempt,
+	PresentationTimePoint timestamp
+) -> bool {
 	return reportPresentation(
 		attempt,
 		stana::rendering::TilePresentation{
@@ -475,7 +477,8 @@ auto Document::reportPresentation(
 		acceptPresentation(attempt);
 		return true;
 	}
-	if (!std::isfinite(observation.timestamp) || observation.timestamp <= 0) {
+	if (!std::isfinite(observation.timestamp.time_since_epoch().count()) ||
+		observation.timestamp.time_since_epoch().count() <= 0) {
 		gatePendingPresentation(attempt);
 	}
 	return false;

@@ -25,11 +25,21 @@ target_link_libraries(stana-ui-frame PRIVATE stana::stana)
 stana_apply_safety(stana-ui-frame)
 add_test(NAME stana.ui.frame COMMAND stana-ui-frame)
 
+add_executable(stana-primitive-contracts primitives/contracts.cpp)
+target_link_libraries(stana-primitive-contracts PRIVATE stana::stana)
+stana_apply_safety(stana-primitive-contracts)
+add_test(NAME stana.primitives COMMAND stana-primitive-contracts)
+
 add_executable(stana-smoke smoke.cpp)
 target_link_libraries(stana-smoke PRIVATE stana::stana)
 stana_apply_safety(stana-smoke)
 set_property(SOURCE smoke.cpp APPEND PROPERTY OBJECT_DEPENDS "${PROJECT_SOURCE_DIR}/.clang-tidy")
 add_test(NAME stana.smoke COMMAND stana-smoke)
+
+add_executable(stana-application-contracts application/contracts.cpp)
+target_link_libraries(stana-application-contracts PRIVATE stana::stana)
+stana_apply_safety(stana-application-contracts)
+add_test(NAME stana.application COMMAND stana-application-contracts)
 
 add_test(NAME stana.policy
 	COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/policy_test.py"

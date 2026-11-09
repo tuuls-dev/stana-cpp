@@ -12,14 +12,14 @@ import :symbol_playback;
 
 namespace stana::symbol {
 namespace {
-constexpr double cycleDuration = 1;
-constexpr double bounceDuration = 0.6;
-constexpr double settledPhase = 1;
-constexpr double restScale = 1;
+constexpr FrameDuration cycleDuration{1};
+constexpr FrameDuration bounceDuration{0.6};
+constexpr Progress settledPhase{1};
+constexpr ScaleFactor restScale{1};
 constexpr double pulseAmplitude = 0.08;
 constexpr double bounceAmplitude = 0.12;
 
-[[nodiscard]] auto duration(Effect effect) noexcept -> double {
+[[nodiscard]] auto duration(Effect effect) noexcept -> FrameDuration {
 	return effect == Effect::bounce ? bounceDuration : cycleDuration;
 }
 } // namespace
@@ -27,13 +27,13 @@ constexpr double bounceAmplitude = 0.12;
 void PlaybackState::start(Effect effect, bool looping) {
 	active_ = effect;
 	looping_ = looping;
-	elapsed_ = 0;
+	elapsed_ = FrameDuration{};
 	resetClock_ = true;
 }
 
 void PlaybackState::stop() {
 	active_.reset();
-	elapsed_ = 0;
+	elapsed_ = FrameDuration{};
 	resetClock_ = true;
 }
 
@@ -86,21 +86,21 @@ void PlaybackState::reconcile(
 	initialized_ = true;
 }
 
-void PlaybackState::advance(double delta) {
+void PlaybackState::advance(FrameDuration delta) {
 	if (!needsFrame_ || !active_) {
 		return;
 	}
-	const double length = duration(*active_);
+	const FrameDuration length = duration(*active_);
 	if (resetClock_) {
 		resetClock_ = false;
 	} else if (looping_) {
-		const double wrapped = std::fmod(std::max(0.0, delta), length);
-		elapsed_ = std::fmod(elapsed_ + wrapped, length);
-	} else if (delta >= length - elapsed_) {
+		const double wrapped = std::fmod(std::max(0.0, delta.count()), length.count());
+		elapsed_ = FrameDuration{std::fmod(elapsed_.count() + wrapped, length.count())};
+	} else if (delta.count() >= length.count() - elapsed_.count()) {
 		stop();
 		needsFrame_ = false;
 	} else {
-		elapsed_ += std::max(0.0, delta);
+		elapsed_ += FrameDuration{std::max(0.0, delta.count())};
 	}
 }
 
@@ -108,24 +108,29 @@ auto PlaybackState::sample() const -> EffectSample {
 	if (!active_) {
 		return {};
 	}
-	const double length = duration(*active_);
-	const double phase =
-		looping_ ? std::fmod(elapsed_, length) / length : std::min(elapsed_ / length, settledPhase);
+	const FrameDuration length = duration(*active_);
+	const Progress phase{
+		looping_ ? std::fmod(elapsed_.count(), length.count()) / length.count()
+				 : std::min(elapsed_.count() / length.count(), settledPhase.value())
+	};
 	return sample(*active_, phase);
 }
 
-auto PlaybackState::sample(Effect effect, double phase) -> EffectSample {
-	const bool settled = std::is_eq(phase <=> 0.0) || std::is_eq(phase <=> settledPhase);
-	const double wave = settled ? 0.0 : std::pow(std::sin(std::numbers::pi * phase), 2);
+auto PlaybackState::sample(Effect effect, Progress phase) -> EffectSample {
+	const bool settled =
+		std::is_eq(phase.value() <=> 0.0) || std::is_eq(phase.value() <=> settledPhase.value());
+	const double wave = settled ? 0.0 : std::pow(std::sin(std::numbers::pi * phase.value()), 2);
 	switch (effect) {
 	case Effect::rotate:
 		return {
-			.rotation = std::is_eq(phase <=> settledPhase) ? 0.0 : 2 * std::numbers::pi * phase
+			.rotation = std::is_eq(phase.value() <=> settledPhase.value())
+				? Angle{}
+				: Angle{2 * std::numbers::pi * phase.value()}
 		};
 	case Effect::pulse:
-		return {.scale = restScale + pulseAmplitude * wave};
+		return {.scale = ScaleFactor{restScale.value() + pulseAmplitude * wave}};
 	case Effect::bounce:
-		return {.verticalFraction = -bounceAmplitude * wave};
+		return {.verticalFraction = Ratio{-bounceAmplitude * wave}};
 	}
 	throw std::logic_error("Unknown symbol effect");
 }

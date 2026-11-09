@@ -55,7 +55,10 @@ void requirePoint(stana::Point actual, stana::Point expected, const std::string 
 }
 
 [[nodiscard]] auto square(double side) -> stana::Frame {
-	return {.width = stana::Length::points(side), .height = stana::Length::points(side)};
+	return {
+		.width = stana::Length::points(stana::Points{side}),
+		.height = stana::Length::points(stana::Points{side})
+	};
 }
 
 [[nodiscard]] auto findKind(const stana::testing::TestHost &host, const std::string &kind)
@@ -83,12 +86,20 @@ void requirePoint(stana::Point actual, stana::Point expected, const std::string 
 	constexpr double extent = 12;
 	using stana::symbol::Element;
 	Element::Path path;
-	path.commands = {stana::symbol::MoveTo{}, stana::symbol::LineTo{.x = extent, .y = extent}};
+	path.commands = {
+		stana::symbol::MoveTo{},
+		stana::symbol::LineTo{
+			.x = stana::symbol::AssetUnits{extent},
+			.y = stana::symbol::AssetUnits{extent}
+		}
+	};
 	path.fill = stana::symbol::NoPaint{};
 	path.stroke = stana::symbol::CurrentColor{};
 	return stana::symbol::Asset::compiled(
 		bridgeVersion,
-		{.size = {.width = extent, .height = extent}},
+		{.size =
+				{.width = stana::symbol::AssetUnits{extent},
+					.height = stana::symbol::AssetUnits{extent}}},
 		false,
 		{Element{.value = std::move(path)}}
 	);
@@ -335,10 +346,12 @@ void scrollPreventionAndZeroDelta() {
 	constexpr double contentHeight = 640;
 	constexpr double delta = 24;
 	int scrolls = 0;
-	double reported = 0;
+	stana::Points reported{};
 	bool prevent = true;
 	// The root stretches its child to the host, so the viewport is the host size.
-	stana::testing::TestHost host{{.width = viewport, .height = viewport}};
+	stana::testing::TestHost host{
+		{.width = stana::Points{viewport}, .height = stana::Points{viewport}}
+	};
 	host.mount(
 		stana::ui::ScrollView{
 			.events = {stana::ui::on(
@@ -352,28 +365,32 @@ void scrollPreventionAndZeroDelta() {
 				}
 			)},
 			.content = stana::ui::VStack{
-				.layout = {.frame = stana::Frame{.height = stana::Length::points(contentHeight)}},
+				.layout =
+					{.frame =
+							stana::Frame{
+								.height = stana::Length::points(stana::Points{contentHeight})
+							}},
 				.children = stana::ui::children(stana::ui::Text{.text = "scrolled"})
 			}
 		}
 	);
 	const auto point = centerOf(findKind(host, "scroll").bounds);
-	const double initial = findText(host, "scrolled").bounds.origin.y;
-	host.scroll(point, delta);
-	require(scrolls == 1 && std::is_eq(reported <=> delta), "scroll payload");
+	const stana::Points initial = findText(host, "scrolled").bounds.origin.y;
+	host.scroll(point, stana::Points{delta});
+	require(scrolls == 1 && std::is_eq(reported <=> stana::Points{delta}), "scroll payload");
 	require(
 		std::is_eq(findText(host, "scrolled").bounds.origin.y <=> initial),
 		"prevented scroll does not move"
 	);
 	prevent = false;
-	host.scroll(point, delta);
+	host.scroll(point, stana::Points{delta});
 	require(
 		findText(host, "scrolled").bounds.origin.y < initial,
 		"scroll moves content after the handler"
 	);
-	const double moved = findText(host, "scrolled").bounds.origin.y;
+	const stana::Points moved = findText(host, "scrolled").bounds.origin.y;
 	constexpr double zeroDelta = 0;
-	host.scroll(point, zeroDelta);
+	host.scroll(point, stana::Points{zeroDelta});
 	require(scrolls == 3, "a zero delta still dispatches");
 	require(
 		std::is_eq(findText(host, "scrolled").bounds.origin.y <=> moved),

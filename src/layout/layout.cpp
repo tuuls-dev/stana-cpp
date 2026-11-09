@@ -28,30 +28,31 @@ constexpr double defaultGlyphAdvance = 0.56;
 constexpr double lineHeightMultiplier = 1.4;
 
 [[nodiscard]] auto resolveLength(Length length, double intrinsic, double available) -> double {
-	stana::detail::requireNonnegative(length.value);
 	switch (length.kind) {
 	case Length::Kind::automatic:
 		return intrinsic;
 	case Length::Kind::points:
-		return length.value;
+		stana::detail::requireNonnegative(length.absolute);
+		return length.absolute.value();
 	case Length::Kind::fill:
 		return available;
 	case Length::Kind::percent:
+		stana::detail::requireNonnegative(length.relative);
 		constexpr double percentDenominator = 100;
-		return available * length.value / percentDenominator;
+		return available * length.relative.value() / percentDenominator;
 	}
 	throw std::logic_error("Unknown Stana length");
 }
 
 [[nodiscard]] auto
-constrain(double value, std::optional<double> minimum, std::optional<double> maximum) -> double {
+constrain(double value, std::optional<Points> minimum, std::optional<Points> maximum) -> double {
 	if (minimum) {
 		stana::detail::requireNonnegative(*minimum);
-		value = std::max(value, *minimum);
+		value = std::max(value, minimum->value());
 	}
 	if (maximum) {
 		stana::detail::requireNonnegative(*maximum);
-		value = std::min(value, *maximum);
+		value = std::min(value, maximum->value());
 	}
 	return std::max(0.0, value);
 }
@@ -95,8 +96,13 @@ auto Document::measure(NodeId identity, Size available) -> Size {
 	}
 	const auto padding = node->padding;
 	const Size contentAvailable{
-		.width = std::max(0.0, available.width - padding.leading - padding.trailing),
-		.height = std::max(0.0, available.height - padding.top - padding.bottom)
+		.width = Points{std::max(
+			0.0,
+			available.width.value() - padding.leading.value() - padding.trailing.value()
+		)},
+		.height = Points{
+			std::max(0.0, available.height.value() - padding.top.value() - padding.bottom.value())
+		}
 	};
 	Size intrinsic;
 	if (node->kind == NodeKind::text || node->kind == NodeKind::button ||
@@ -119,16 +125,16 @@ auto Document::measure(NodeId identity, Size available) -> Size {
 			stana::detail::requireNonnegative(intrinsic.height);
 		} else {
 			intrinsic = {
-				.width = std::min(
-					contentAvailable.width,
-					static_cast<double>(node->text.size()) * font.size *
+				.width = Points{std::min(
+					contentAvailable.width.value(),
+					static_cast<double>(node->text.size()) * font.size.value() *
 						stana::layout::detail::defaultGlyphAdvance
-				),
-				.height = font.size * stana::layout::detail::lineHeightMultiplier
+				)},
+				.height = Points{font.size.value() * stana::layout::detail::lineHeightMultiplier}
 			};
 		}
 	} else if (node->kind == NodeKind::symbol) {
-		const double side = node->symbol ? node->symbol->size : 0.0;
+		const Points side = node->symbol ? node->symbol->size : Points{};
 		intrinsic = {.width = side, .height = side};
 	} else {
 		bool firstChild = true;
@@ -141,42 +147,42 @@ auto Document::measure(NodeId identity, Size available) -> Size {
 			if (childNode->visibility == Visibility::collapsed) {
 				continue;
 			}
-			const double spacing = firstChild ? 0 : node->spacing;
+			const Points spacing = firstChild ? Points{} : node->spacing;
 			firstChild = false;
 			if (node->kind == NodeKind::vstack || node->kind == NodeKind::group ||
 				node->kind == NodeKind::scroll) {
 				intrinsic.height += size.height + spacing;
-				intrinsic.width = std::max(intrinsic.width, size.width);
+				intrinsic.width = Points{std::max(intrinsic.width.value(), size.width.value())};
 			} else if (node->kind == NodeKind::hstack) {
 				intrinsic.width += size.width + spacing;
-				intrinsic.height = std::max(intrinsic.height, size.height);
+				intrinsic.height = Points{std::max(intrinsic.height.value(), size.height.value())};
 			} else {
-				intrinsic.width = std::max(intrinsic.width, size.width);
-				intrinsic.height = std::max(intrinsic.height, size.height);
+				intrinsic.width = Points{std::max(intrinsic.width.value(), size.width.value())};
+				intrinsic.height = Points{std::max(intrinsic.height.value(), size.height.value())};
 			}
 		}
 	}
 	intrinsic.width += padding.leading + padding.trailing;
 	intrinsic.height += padding.top + padding.bottom;
 	node->measured = {
-		.width = stana::layout::detail::constrain(
+		.width = Points{stana::layout::detail::constrain(
 			stana::layout::detail::resolveLength(
 				node->frame.width,
-				intrinsic.width,
-				available.width
+				intrinsic.width.value(),
+				available.width.value()
 			),
 			node->frame.minWidth,
 			node->frame.maxWidth
-		),
-		.height = stana::layout::detail::constrain(
+		)},
+		.height = Points{stana::layout::detail::constrain(
 			stana::layout::detail::resolveLength(
 				node->frame.height,
-				intrinsic.height,
-				available.height
+				intrinsic.height.value(),
+				available.height.value()
 			),
 			node->frame.minHeight,
 			node->frame.maxHeight
-		)
+		)}
 	};
 	stana::detail::requireNonnegative(node->measured.width);
 	stana::detail::requireNonnegative(node->measured.height);
@@ -232,29 +238,39 @@ void Document::arrange(NodeId identity, Rect bounds) {
 		invalidate(identity, Dirty::paint | Dirty::snapshot);
 	}
 	node->bounds = bounds;
-	const double left = environment_.direction == Direction::leftToRight ? node->padding.leading
+	const Points left = environment_.direction == Direction::leftToRight ? node->padding.leading
 																		 : node->padding.trailing;
 	const Rect content{
 		.origin = {.x = bounds.origin.x + left, .y = bounds.origin.y + node->padding.top},
 		.size = {
-			.width =
-				std::max(0.0, bounds.size.width - node->padding.leading - node->padding.trailing),
-			.height = std::max(0.0, bounds.size.height - node->padding.top - node->padding.bottom)
+			.width = Points{std::max(
+				0.0,
+				bounds.size.width.value() - node->padding.leading.value() -
+					node->padding.trailing.value()
+			)},
+			.height = Points{std::max(
+				0.0,
+				bounds.size.height.value() - node->padding.top.value() -
+					node->padding.bottom.value()
+			)}
 		}
 	};
 	const bool horizontal = node->kind == NodeKind::hstack;
 	const bool vertical = node->kind == NodeKind::vstack || node->kind == NodeKind::group ||
 		node->kind == NodeKind::scroll;
-	double offset = 0;
+	Points offset{};
 	if (node->kind == NodeKind::scroll) {
-		double extent = 0;
+		Points extent{};
 		for (const auto child : node->children) {
 			if (const auto *record = find(child)) {
 				extent += record->measured.height;
 			}
 		}
-		node->scrollOffset =
-			std::clamp(node->scrollOffset, 0.0, std::max(0.0, extent - content.size.height));
+		node->scrollOffset = Points{std::clamp(
+			node->scrollOffset.value(),
+			0.0,
+			std::max(0.0, extent.value() - content.size.height.value())
+		)};
 		offset = -node->scrollOffset;
 	}
 	for (const auto child : node->children) {
@@ -283,7 +299,7 @@ void Document::arrange(NodeId identity, Rect bounds) {
 			origin.y += offset;
 			offset += childSize.height + node->spacing;
 		} else if (node->kind != NodeKind::root) {
-			origin.y += (content.size.height - childSize.height) / 2;
+			origin.y += Points{(content.size.height.value() - childSize.height.value()) / 2};
 		}
 		if (!horizontal && node->kind != NodeKind::root) {
 			auto alignment = node->alignment;
@@ -295,7 +311,7 @@ void Document::arrange(NodeId identity, Rect bounds) {
 				}
 			}
 			if (alignment == Alignment::center) {
-				origin.x += (content.size.width - childSize.width) / 2;
+				origin.x += Points{(content.size.width.value() - childSize.width.value()) / 2};
 			} else if (alignment == Alignment::trailing) {
 				origin.x += content.size.width - childSize.width;
 			}

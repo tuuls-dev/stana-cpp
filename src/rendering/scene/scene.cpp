@@ -26,8 +26,8 @@ import :symbol_geometry;
 
 namespace stana::rendering::detail {
 namespace {
-constexpr double disabledOpacity = 0.45;
-constexpr double focusBorderWidth = 2;
+constexpr Opacity disabledOpacity{0.45};
+constexpr Points focusBorderWidth{2};
 
 [[nodiscard]] auto nodeKindName(stana::document::detail::NodeKind kind) -> std::string {
 	using enum stana::document::detail::NodeKind;
@@ -64,8 +64,8 @@ constexpr double focusBorderWidth = 2;
 	throw std::logic_error("Unknown Stana node kind");
 }
 
-[[nodiscard]] auto withOpacity(Color color, double opacity) -> Color {
-	color.alpha *= opacity;
+[[nodiscard]] auto withOpacity(Color color, Opacity opacity) -> Color {
+	color.alpha = Opacity{color.alpha.value() * opacity.value()};
 	return color;
 }
 
@@ -77,19 +77,25 @@ constexpr double focusBorderWidth = 2;
 
 namespace {
 [[nodiscard]] auto intersect(Rect left, Rect right) -> Rect {
-	const double x = std::max(left.origin.x, right.origin.x);
-	const double y = std::max(left.origin.y, right.origin.y);
+	const double x = std::max(left.origin.x.value(), right.origin.x.value());
+	const double y = std::max(left.origin.y.value(), right.origin.y.value());
 	return {
-		.origin = {.x = x, .y = y},
+		.origin = {.x = Points{x}, .y = Points{y}},
 		.size = {
-			.width = std::max(
+			.width = Points{std::max(
 				0.0,
-				std::min(left.origin.x + left.size.width, right.origin.x + right.size.width) - x
-			),
-			.height = std::max(
+				std::min(
+					left.origin.x.value() + left.size.width.value(),
+					right.origin.x.value() + right.size.width.value()
+				) - x
+			)},
+			.height = Points{std::max(
 				0.0,
-				std::min(left.origin.y + left.size.height, right.origin.y + right.size.height) - y
-			)
+				std::min(
+					left.origin.y.value() + left.size.height.value(),
+					right.origin.y.value() + right.size.height.value()
+				) - y
+			)}
 		}
 	};
 }
@@ -140,7 +146,7 @@ void eraseGeometry(
 namespace stana::document::detail {
 namespace {
 [[nodiscard]] auto symbolRectEmpty(Rect rect) -> bool {
-	return std::is_eq(rect.size.width <=> 0.0) || std::is_eq(rect.size.height <=> 0.0);
+	return std::is_eq(rect.size.width <=> Points{}) || std::is_eq(rect.size.height <=> Points{});
 }
 
 [[nodiscard]] auto uniteSymbol(Rect left, Rect right) -> Rect {
@@ -150,13 +156,20 @@ namespace {
 	if (symbolRectEmpty(right)) {
 		return left;
 	}
-	const double x = std::min(left.origin.x, right.origin.x);
-	const double y = std::min(left.origin.y, right.origin.y);
-	const double rightEdge =
-		std::max(left.origin.x + left.size.width, right.origin.x + right.size.width);
-	const double bottomEdge =
-		std::max(left.origin.y + left.size.height, right.origin.y + right.size.height);
-	return {.origin = {.x = x, .y = y}, .size = {.width = rightEdge - x, .height = bottomEdge - y}};
+	const double x = std::min(left.origin.x.value(), right.origin.x.value());
+	const double y = std::min(left.origin.y.value(), right.origin.y.value());
+	const double rightEdge = std::max(
+		left.origin.x.value() + left.size.width.value(),
+		right.origin.x.value() + right.size.width.value()
+	);
+	const double bottomEdge = std::max(
+		left.origin.y.value() + left.size.height.value(),
+		right.origin.y.value() + right.size.height.value()
+	);
+	return {
+		.origin = {.x = Points{x}, .y = Points{y}},
+		.size = {.width = Points{rightEdge - x}, .height = Points{bottomEdge - y}}
+	};
 }
 } // namespace
 
@@ -173,8 +186,10 @@ auto Document::project(
 	}
 	auto previous = node->work.projection;
 	auto context = incoming;
-	context.opacity *=
-		node->opacity * (node->isEnabled ? 1 : stana::rendering::detail::disabledOpacity);
+	context.opacity = Opacity{
+		context.opacity.value() * node->opacity.value() *
+		(node->isEnabled ? 1 : stana::rendering::detail::disabledOpacity.value())
+	};
 	context.visible = incoming.visible && node->visibility == Visibility::visible;
 	context.eligible = incoming.eligible && context.visible && node->isEnabled && !node->inert;
 	if (previous && node->work.local == Dirty::none && node->work.projectionChildren.empty() &&
@@ -200,7 +215,7 @@ auto Document::project(
 		auto paint = std::make_shared<stana::rendering::detail::PaintSegments>();
 		paint->identity = stana::detail::nextIdentity();
 		stana::rendering::SceneSnapshot scene;
-		const double opacity = context.opacity;
+		const Opacity opacity = context.opacity;
 
 		const auto radii = node->cornerRadii.value_or(CornerRadii::all(node->cornerRadius));
 		const auto widths = node->borderWidths.value_or(BorderWidths::all(node->borderWidth));
@@ -222,7 +237,7 @@ auto Document::project(
 		const auto appendShadows = [&](bool inset) -> void {
 			for (auto shadow : shadows) {
 				if (shadow.isInset == inset) {
-					shadow.color.alpha *= opacity;
+					shadow.color.alpha = Opacity{shadow.color.alpha.value() * opacity.value()};
 					scene.commands.push_back(
 						{.kind = stana::rendering::PaintKind::boxShadow,
 							.bounds = shadow.ink,
@@ -232,7 +247,7 @@ auto Document::project(
 			}
 		};
 		appendShadows(false);
-		if (node->background.alpha > 0) {
+		if (node->background.alpha.value() > 0) {
 			scene.commands.push_back(
 				{.kind = stana::rendering::PaintKind::fillRect,
 					.bounds = node->bounds,
@@ -283,18 +298,22 @@ auto Document::project(
 			if (command.kind != stana::rendering::PaintKind::popClip) {
 				command.bounds.origin.x += content.origin.x;
 				command.bounds.origin.y += content.origin.y;
-				stana::detail::requireFinite(command.bounds.origin.x);
-				stana::detail::requireFinite(command.bounds.origin.y);
-				stana::detail::requireFinite(command.bounds.origin.x + command.bounds.size.width);
-				stana::detail::requireFinite(command.bounds.origin.y + command.bounds.size.height);
+				stana::detail::requireFinite(command.bounds.origin.x.value());
+				stana::detail::requireFinite(command.bounds.origin.y.value());
+				stana::detail::requireFinite(
+					command.bounds.origin.x.value() + command.bounds.size.width.value()
+				);
+				stana::detail::requireFinite(
+					command.bounds.origin.y.value() + command.bounds.size.height.value()
+				);
 				if (command.kind == stana::rendering::PaintKind::fillRect ||
 					command.kind == stana::rendering::PaintKind::strokeRect ||
 					command.kind == stana::rendering::PaintKind::pushClip) {
-					command.cornerRadius = std::min(
-						{command.cornerRadius,
-							command.bounds.size.width / 2,
-							command.bounds.size.height / 2}
-					);
+					command.cornerRadius = Points{std::min(
+						{command.cornerRadius.value(),
+							command.bounds.size.width.value() / 2,
+							command.bounds.size.height.value() / 2}
+					)};
 				}
 				command.color = stana::rendering::detail::withOpacity(
 					command.color.resolved(environment_.theme, environment_.highContrast),
@@ -352,7 +371,7 @@ auto Document::project(
 		if (node->clip) {
 			paint->suffix.push_back({.kind = stana::rendering::PaintKind::popClip});
 		}
-		if (node->borderWidth > 0 || node->borderWidths || focused_ == identity) {
+		if (node->borderWidth.value() > 0 || node->borderWidths || focused_ == identity) {
 			const auto borderContours = rich && focused_ == identity
 				? stana::rendering::detail::boxGeometry(
 					  node->bounds,
@@ -593,19 +612,21 @@ void Document::reconcileSymbols() {
 			stana::layout::detail::contentRect(node->bounds, node->padding, environment_.direction);
 		const auto fitted = stana::symbol::square(symbol.size, content);
 		const auto box = symbol.asset.viewBox();
-		const double longest = std::max(box.size.width, box.size.height);
-		const double fitScale =
-			fitted.size.width > 0.0 && longest > 0.0 ? fitted.size.width / longest : 0.0;
-		const std::optional<double> strokeKey =
+		const double longest = std::max(box.size.width.value(), box.size.height.value());
+		const ScaleFactor fitScale{
+			fitted.size.width.value() > 0.0 && longest > 0.0 ? fitted.size.width.value() / longest
+															 : 0.0
+		};
+		const std::optional<Points> strokeKey =
 			symbol.asset.hasStroke() ? symbol.strokeWidth : std::nullopt;
 		const bool assetChanged = symbol.asset != symbol.previousAsset;
-		const double previousStroke = symbol.previousStroke.value_or(0.0);
-		const double nextStroke = strokeKey.value_or(0.0);
+		const double previousStroke = symbol.previousStroke.value_or(Points{}).value();
+		const double nextStroke = strokeKey.value_or(Points{}).value();
 		const bool strokeChanged = symbol.previousStroke.has_value() != strokeKey.has_value() ||
 			(symbol.previousStroke.has_value() && !std::is_eq(previousStroke <=> nextStroke));
-		const double previousScale = symbol.previousScale.value_or(fitScale);
+		const double previousScale = symbol.previousScale.value_or(fitScale).value();
 		const bool scaleChanged =
-			!symbol.previousScale.has_value() || !std::is_eq(previousScale <=> fitScale);
+			!symbol.previousScale.has_value() || !std::is_eq(previousScale <=> fitScale.value());
 		if (assetChanged || strokeChanged || scaleChanged) {
 			symbol.available = true;
 			symbol.failed.clear();

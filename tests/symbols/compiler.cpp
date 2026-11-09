@@ -72,7 +72,8 @@ void compiledIconMatchesTheAuthoredPath() {
 	require(icon.valid(), "icon compiles");
 	require(icon.hasStroke(), "stroke retained");
 	require(
-		same(icon.viewBox().size.width, viewSide) && same(icon.viewBox().size.height, viewSide),
+		same(icon.viewBox().size.width.value(), viewSide) &&
+			same(icon.viewBox().size.height.value(), viewSide),
 		"viewBox"
 	);
 	require(icon.elements().size() == 1, "one path");
@@ -80,15 +81,15 @@ void compiledIconMatchesTheAuthoredPath() {
 	require(path.commands.size() == 4, "two strokes");
 	require(std::holds_alternative<stana::symbol::NoPaint>(path.fill), "fill none");
 	require(std::holds_alternative<stana::symbol::CurrentColor>(path.stroke), "currentColor");
-	require(same(path.strokeWidth, strokeWidth), "stroke width");
+	require(same(path.strokeWidth.value(), strokeWidth), "stroke width");
 	const auto &move = std::get<stana::symbol::MoveTo>(path.commands.at(0));
 	const auto &line = std::get<stana::symbol::LineTo>(path.commands.at(1));
-	require(same(move.x, moveX) && same(move.y, moveY), "first move");
-	require(same(line.x, lineEnd) && same(line.y, moveY), "first line");
+	require(same(move.x.value(), moveX) && same(move.y.value(), moveY), "first move");
+	require(same(line.x.value(), lineEnd) && same(line.y.value(), moveY), "first line");
 	const auto &down = std::get<stana::symbol::MoveTo>(path.commands.at(2));
 	const auto &up = std::get<stana::symbol::LineTo>(path.commands.at(3));
-	require(same(down.x, verticalX) && same(down.y, verticalStart), "second move");
-	require(same(up.x, verticalX) && same(up.y, lineEnd), "second line");
+	require(same(down.x.value(), verticalX) && same(down.y.value(), verticalStart), "second move");
+	require(same(up.x.value(), verticalX) && same(up.y.value(), lineEnd), "second line");
 }
 
 void ignoredMetadataMatchesTheNormalizedPath() {
@@ -105,8 +106,11 @@ void ignoredMetadataMatchesTheNormalizedPath() {
 )">();
 	require(plain == noisy, "metadata does not change geometry");
 	const auto &move = std::get<stana::symbol::MoveTo>(pathAt(noisy, 0).commands.at(0));
-	require(!std::signbit(move.x) && !std::signbit(move.y), "negative zero cleared");
-	require(same(move.x, 0) && same(move.y, 0), "move origin");
+	require(
+		!std::signbit(move.x.value()) && !std::signbit(move.y.value()),
+		"negative zero cleared"
+	);
+	require(same(move.x.value(), 0) && same(move.y.value(), 0), "move origin");
 }
 
 void reflectedControlsMatchSwift() {
@@ -121,35 +125,38 @@ void reflectedControlsMatchSwift() {
 	const auto &quad = std::get<stana::symbol::QuadraticTo>(commands.at(3));
 	const auto &smoothQuad = std::get<stana::symbol::QuadraticTo>(commands.at(4));
 	require(
-		same(move.x, reflectedMove.at(0)) && same(move.y, reflectedMove.at(1)),
+		same(move.x.value(), reflectedMove.at(0)) && same(move.y.value(), reflectedMove.at(1)),
 		"reflected move"
 	);
 	require(
-		same(cubic.control1X, reflectedCubic.at(0)) &&
-			same(cubic.control1Y, reflectedCubic.at(1)) &&
-			same(cubic.control2X, reflectedCubic.at(2)) &&
-			same(cubic.control2Y, reflectedCubic.at(3)) && same(cubic.x, reflectedCubic.at(4)) &&
-			same(cubic.y, reflectedCubic.at(cubicEndY)),
+		same(cubic.control1X.value(), reflectedCubic.at(0)) &&
+			same(cubic.control1Y.value(), reflectedCubic.at(1)) &&
+			same(cubic.control2X.value(), reflectedCubic.at(2)) &&
+			same(cubic.control2Y.value(), reflectedCubic.at(3)) &&
+			same(cubic.x.value(), reflectedCubic.at(4)) &&
+			same(cubic.y.value(), reflectedCubic.at(cubicEndY)),
 		"first cubic"
 	);
 	require(
-		same(smooth.control1X, reflectedSmooth.at(0)) &&
-			same(smooth.control1Y, reflectedSmooth.at(1)) &&
-			same(smooth.control2X, reflectedSmooth.at(2)) &&
-			same(smooth.control2Y, reflectedSmooth.at(3)) &&
-			same(smooth.x, reflectedSmooth.at(4)) && same(smooth.y, reflectedSmooth.at(cubicEndY)),
+		same(smooth.control1X.value(), reflectedSmooth.at(0)) &&
+			same(smooth.control1Y.value(), reflectedSmooth.at(1)) &&
+			same(smooth.control2X.value(), reflectedSmooth.at(2)) &&
+			same(smooth.control2Y.value(), reflectedSmooth.at(3)) &&
+			same(smooth.x.value(), reflectedSmooth.at(4)) &&
+			same(smooth.y.value(), reflectedSmooth.at(cubicEndY)),
 		"smooth cubic"
 	);
 	require(
-		same(quad.controlX, reflectedQuad.at(0)) && same(quad.controlY, reflectedQuad.at(1)) &&
-			same(quad.x, reflectedQuad.at(2)) && same(quad.y, reflectedQuad.at(3)),
+		same(quad.controlX.value(), reflectedQuad.at(0)) &&
+			same(quad.controlY.value(), reflectedQuad.at(1)) &&
+			same(quad.x.value(), reflectedQuad.at(2)) && same(quad.y.value(), reflectedQuad.at(3)),
 		"quadratic"
 	);
 	require(
-		same(smoothQuad.controlX, reflectedSmoothQuad.at(0)) &&
-			same(smoothQuad.controlY, reflectedSmoothQuad.at(1)) &&
-			same(smoothQuad.x, reflectedSmoothQuad.at(2)) &&
-			same(smoothQuad.y, reflectedSmoothQuad.at(3)),
+		same(smoothQuad.controlX.value(), reflectedSmoothQuad.at(0)) &&
+			same(smoothQuad.controlY.value(), reflectedSmoothQuad.at(1)) &&
+			same(smoothQuad.x.value(), reflectedSmoothQuad.at(2)) &&
+			same(smoothQuad.y.value(), reflectedSmoothQuad.at(3)),
 		"smooth quadratic"
 	);
 }
@@ -162,9 +169,9 @@ void degenerateArcBecomesALine() {
 	require(commands.size() == degenerateLine.size(), "degenerate arc commands");
 	const auto &move = std::get<stana::symbol::MoveTo>(commands.at(0));
 	const auto &line = std::get<stana::symbol::LineTo>(commands.at(1));
-	require(same(move.x, 0) && same(move.y, 0), "degenerate move");
+	require(same(move.x.value(), 0) && same(move.y.value(), 0), "degenerate move");
 	require(
-		same(line.x, degenerateLine.at(0)) && same(line.y, degenerateLine.at(1)),
+		same(line.x.value(), degenerateLine.at(0)) && same(line.y.value(), degenerateLine.at(1)),
 		"degenerate line"
 	);
 }
@@ -190,7 +197,8 @@ void shapesAndTransformsProduceGeometry() {
 	require(!pathAt(artwork, 0).commands.empty(), "circle has commands");
 	const auto &group = std::get<stana::symbol::Element::Group>(artwork.elements().at(1).value);
 	require(
-		same(group.transform.tx, translatedX) && same(group.transform.ty, translatedY),
+		same(group.transform.tx.value(), translatedX) &&
+			same(group.transform.ty.value(), translatedY),
 		"translation"
 	);
 	require(group.children.size() == 1, "grouped path");
@@ -209,11 +217,16 @@ void paintGrammarKeepsLiteralColors() {
 	const auto *rgb = std::get_if<stana::symbol::RgbaColor>(&pathAt(paints, 2).fill);
 	require(hex != nullptr && green != nullptr && rgb != nullptr, "literal paints");
 	require(
-		same(hex->red, hexRed) && same(hex->green, hexGreen) && same(hex->blue, hexBlue),
+		same(hex->red.value(), hexRed) && same(hex->green.value(), hexGreen) &&
+			same(hex->blue.value(), hexBlue),
 		"hex"
 	);
-	require(same(green->green, greenChannel) && same(green->red, 0), "green");
-	require(same(rgb->red, rgbRed) && same(rgb->green, rgbGreen) && same(rgb->blue, unit), "rgb");
+	require(same(green->green.value(), greenChannel) && same(green->red.value(), 0), "green");
+	require(
+		same(rgb->red.value(), rgbRed) && same(rgb->green.value(), rgbGreen) &&
+			same(rgb->blue.value(), unit),
+		"rgb"
+	);
 	require(
 		std::holds_alternative<stana::symbol::NoPaint>(pathAt(paints, 2).stroke),
 		"stroke none"
@@ -231,7 +244,7 @@ void prefixedSvgMatchesTheDefaultNamespace() {
 <svg viewBox="0 0 2 2"><path d="M0 0L1 1"/></svg>
 )">();
 	require(prefixed == plain, "prefixed svg");
-	require(same(prefixed.viewBox().size.width, boxSide), "prefixed viewBox");
+	require(same(prefixed.viewBox().size.width.value(), boxSide), "prefixed viewBox");
 }
 
 void unicodeAndDecodedPrefixesCompile() {
@@ -242,7 +255,10 @@ void unicodeAndDecodedPrefixesCompile() {
 <s:svg xmlns:s="http://www.w3.org/2000/sv&#103;" viewBox="0 0 1 1"/>
 )">();
 	require(unicode.valid() && decoded.valid(), "namespace prefixes");
-	require(!unicode.mirrorsInRTL() && same(unicode.viewBox().size.width, unit), "unicode viewBox");
+	require(
+		!unicode.mirrorsInRTL() && same(unicode.viewBox().size.width.value(), unit),
+		"unicode viewBox"
+	);
 }
 
 void rightToLeftMirroringIsRetained() {
@@ -255,9 +271,12 @@ void normalizedArcKeepsTheSwiftCenter() {
 		R"(<svg viewBox="0 0 24 24"><path d="M0 0A1 1 0 0 1 10 0"/></svg>)">();
 	const auto &path = std::get<stana::symbol::Element::Path>(arc.elements().at(0).value);
 	const auto &curve = std::get<stana::symbol::ArcTo>(path.commands.at(1));
-	require(same(curve.centerX, arcCenter) && same(curve.centerY, 0), "arc center");
-	require(same(curve.radiusX, arcCenter) && same(curve.radiusY, arcCenter), "arc radii");
-	require(same(curve.sweepAngle, fullTurn / 2), "arc sweep");
+	require(same(curve.centerX.value(), arcCenter) && same(curve.centerY.value(), 0), "arc center");
+	require(
+		same(curve.radiusX.value(), arcCenter) && same(curve.radiusY.value(), arcCenter),
+		"arc radii"
+	);
+	require(same(curve.sweepAngle.radians(), fullTurn / 2), "arc sweep");
 }
 
 } // namespace

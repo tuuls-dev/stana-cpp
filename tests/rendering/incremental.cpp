@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <exception>
@@ -55,6 +56,10 @@ void sameNodes(
 			"node projection differs"
 		);
 	}
+}
+
+[[nodiscard]] auto presentationAt(double seconds) -> stana::PresentationTimePoint {
+	return stana::PresentationTimePoint{stana::PresentationDuration{seconds}};
 }
 
 /// @brief C01-C03/C14/C18-C20: sparse work and lazy immutable compatibility views.
@@ -154,14 +159,16 @@ void differential() {
 	};
 	for (unsigned fixture = 0; fixture < fixtures; ++fixture) {
 		const stana::reactive::Signal text{std::string{"label"}};
-		const stana::reactive::Signal padding{stana::Insets::all(0)};
-		const stana::reactive::Signal spacing{0.0};
+		const stana::reactive::Signal padding{stana::Insets::all(stana::Points{0})};
+		const stana::reactive::Signal spacing{stana::Points{0}};
 		const stana::reactive::Signal frame{stana::Frame{}};
 		const stana::reactive::Signal visible{stana::Visibility::visible};
 		const stana::reactive::Signal enabled{true};
-		const stana::reactive::Signal opacity{1.0};
+		const stana::reactive::Signal opacity{stana::Opacity{1}};
 		const stana::reactive::Signal present{true};
-		stana::testing::TestHost host{{.width = fixtureWidth, .height = fixtureHeight}};
+		stana::testing::TestHost host{
+			{.width = stana::Points{fixtureWidth}, .height = stana::Points{fixtureHeight}}
+		};
 		auto content = stana::ui::VStack{
 			.spacing = spacing,
 			.layout = {.padding = padding, .frame = frame},
@@ -200,15 +207,15 @@ void differential() {
 					text.set(std::string(static_cast<std::size_t>(value), 'x'));
 					break;
 				case Edit::padding:
-					padding.set(stana::Insets::all(value));
+					padding.set(stana::Insets::all(stana::Points{value}));
 					break;
 				case Edit::spacing:
-					spacing.set(value);
+					spacing.set(stana::Points{value});
 					break;
 				case Edit::frame:
 					frame.set(
 						stana::Frame{
-							.width = stana::Length::points(value),
+							.width = stana::Length::points(stana::Points{value}),
 							.height = stana::Length::fill()
 						}
 					);
@@ -220,7 +227,7 @@ void differential() {
 					enabled.set(!enabled.get());
 					break;
 				case Edit::opacity:
-					opacity.set(value / static_cast<double>(scalarRange));
+					opacity.set(stana::Opacity{value / static_cast<double>(scalarRange)});
 					break;
 				case Edit::present:
 					present.set(!present.get());
@@ -229,16 +236,20 @@ void differential() {
 					host.setEnvironment(
 						{.direction = random() % 2 == 0 ? stana::Direction::leftToRight
 														: stana::Direction::rightToLeft,
-							.textScale = 1 + value / static_cast<double>(scalarRange)}
+							.textScale =
+								stana::ScaleFactor{1 + value / static_cast<double>(scalarRange)}}
 					);
 					break;
 				case Edit::resize:
-					host.resize({.width = fixtureWidth + value, .height = fixtureHeight - value});
+					host.resize(
+						{.width = stana::Points{fixtureWidth + value},
+							.height = stana::Points{fixtureHeight - value}}
+					);
 					break;
 				}
 			});
 			if (fixture == 1) {
-				host.scroll({.x = 1, .y = 1}, value);
+				host.scroll({.x = stana::Points{1}, .y = stana::Points{1}}, stana::Points{value});
 			}
 			const auto incremental = host.scene();
 			const auto nodes = host.nodes();
@@ -257,11 +268,17 @@ void motionAndFocus() {
 	constexpr double viewport = 100;
 	constexpr double contentHeight = 2000;
 	constexpr double delta = 50;
-	stana::testing::TestHost scroll{{.width = viewport, .height = viewport}};
+	stana::testing::TestHost scroll{
+		{.width = stana::Points{viewport}, .height = stana::Points{viewport}}
+	};
 	scroll.mount(
 		stana::ui::ScrollView{
 			.content = stana::ui::VStack{
-				.layout = {.frame = stana::Frame{.height = stana::Length::points(contentHeight)}},
+				.layout =
+					{.frame =
+							stana::Frame{
+								.height = stana::Length::points(stana::Points{contentHeight})
+							}},
 				.children = stana::ui::children(
 					stana::ui::Text{.text = "scrolling"},
 					stana::ui::Text{.text = "unchanged measurement"}
@@ -271,7 +288,7 @@ void motionAndFocus() {
 	);
 	const auto beforeNodes = scroll.nodes();
 	const auto before = scroll.metrics();
-	scroll.scroll({.x = 1, .y = 1}, delta);
+	scroll.scroll({.x = stana::Points{1}, .y = stana::Points{1}}, stana::Points{delta});
 	require(
 		scroll.metrics().measurements == before.measurements &&
 			scroll.metrics().arrangements > before.arrangements,
@@ -316,8 +333,9 @@ void motionAndFocus() {
 void providerSettlement() {
 
 	constexpr double viewport = 100;
-	auto document =
-		stana::document::detail::Document::create({.width = viewport, .height = viewport});
+	auto document = stana::document::detail::Document::create(
+		{.width = stana::Points{viewport}, .height = stana::Points{viewport}}
+	);
 	const auto identity =
 		document->createNode(stana::document::detail::NodeKind::text, document->root());
 	const stana::reactive::Signal text{std::string{"old"}};
@@ -339,7 +357,7 @@ void providerSettlement() {
 	document->setTextMeasure(
 		[text,
 			weak,
-			&effectSawFinal](const std::string &value, stana::Font, double) -> stana::Size {
+			&effectSawFinal](const std::string &value, stana::Font, stana::Points) -> stana::Size {
 			if (value == "middle") {
 				stana::reactive::detail::ReactiveRuntime::current().effects.emplace_back(
 					[weak, &effectSawFinal] -> void {
@@ -352,7 +370,10 @@ void providerSettlement() {
 				);
 				text.set("new");
 			}
-			return {.width = static_cast<double>(value.size()), .height = 1};
+			return {
+				.width = stana::Points{static_cast<double>(value.size())},
+				.height = stana::Points{1}
+			};
 		}
 	);
 	document->commit();
@@ -374,8 +395,9 @@ void providerSettlement() {
 void owningCore() {
 
 	constexpr double viewport = 100;
-	auto document =
-		stana::document::detail::Document::create({.width = viewport, .height = viewport});
+	auto document = stana::document::detail::Document::create(
+		{.width = stana::Points{viewport}, .height = stana::Points{viewport}}
+	);
 	const auto group =
 		document->createNode(stana::document::detail::NodeKind::group, document->root());
 	const auto first = document->createNode(stana::document::detail::NodeKind::text, group);
@@ -404,7 +426,7 @@ void owningCore() {
 	document->commit();
 	const auto old = document->renderSnapshot();
 	document->setTextMeasure(
-		[] [[noreturn]] (const std::string &, stana::Font, double) -> stana::Size {
+		[] [[noreturn]] (const std::string &, stana::Font, stana::Points) -> stana::Size {
 			throw std::runtime_error("provider failure");
 		}
 	);
@@ -419,9 +441,9 @@ void owningCore() {
 			document->metrics().sceneRevisions == old->revision,
 		"C21 no half-publication"
 	);
-	document->setTextMeasure([](const std::string &, stana::Font, double) -> stana::Size {
+	document->setTextMeasure([](const std::string &, stana::Font, stana::Points) -> stana::Size {
 		constexpr double extent = 20;
-		return {.width = extent, .height = extent};
+		return {.width = stana::Points{extent}, .height = stana::Points{extent}};
 	});
 	document->commit();
 	require(document->renderSnapshot()->revision > old->revision, "C17 new provider recovers");
@@ -443,12 +465,14 @@ void owningCore() {
 		"paint-only publication shares the exact geometry root"
 	);
 	const auto weak = std::weak_ptr{document};
-	document->setTextMeasure([weak, text](const std::string &, stana::Font, double) -> stana::Size {
-		if (const auto owner = weak.lock()) {
-			owner->remove(text);
+	document->setTextMeasure(
+		[weak, text](const std::string &, stana::Font, stana::Points) -> stana::Size {
+			if (const auto owner = weak.lock()) {
+				owner->remove(text);
+			}
+			return {.width = stana::Points{1}, .height = stana::Points{1}};
 		}
-		return {.width = 1, .height = 1};
-	});
+	);
 	document->commit();
 	require(
 		!document->handle(text).isAlive(),
@@ -456,8 +480,9 @@ void owningCore() {
 	);
 
 	// An overlap reorder has identical rectangles but changes which control receives a hit.
-	auto ordered =
-		stana::document::detail::Document::create({.width = viewport, .height = viewport});
+	auto ordered = stana::document::detail::Document::create(
+		{.width = stana::Points{viewport}, .height = stana::Points{viewport}}
+	);
 	const auto overlay =
 		ordered->createNode(stana::document::detail::NodeKind::zstack, ordered->root());
 	const auto back = ordered->createNode(stana::document::detail::NodeKind::button, overlay);
@@ -466,8 +491,11 @@ void owningCore() {
 	const auto initialAttempt = ordered->beginPresentation(1, ordered->renderSnapshot()->revision);
 	require(initialAttempt.has_value(), "ordered initial admission");
 	static_cast<void>(ordered->reportGPUCompletion(*initialAttempt, true));
-	require(ordered->reportPresentation(*initialAttempt, 1), "ordered initial confirmation");
-	const stana::Point overlap{.x = 1, .y = viewport / 2};
+	require(
+		ordered->reportPresentation(*initialAttempt, presentationAt(1)),
+		"ordered initial confirmation"
+	);
+	const stana::Point overlap{.x = stana::Points{1}, .y = stana::Points{viewport / 2}};
 	require(ordered->hitTest(overlap) == front, "initial topmost hit");
 	require(ordered->reorder(overlay, {front, back}).has_value(), "overlap reorder");
 	ordered->commit();
@@ -481,7 +509,8 @@ void owningCore() {
 	require(!ordered->hitTest(overlap), "order-only geometry gates the changed hit route");
 	static_cast<void>(ordered->reportGPUCompletion(*reordered, true));
 	require(
-		ordered->reportPresentation(*reordered, 1) && ordered->hitTest(overlap) == back,
+		ordered->reportPresentation(*reordered, presentationAt(1)) &&
+			ordered->hitTest(overlap) == back,
 		"confirmed order installs new hit route"
 	);
 
@@ -491,7 +520,12 @@ void owningCore() {
 		root = stana::rendering::detail::geometrySet(
 			root,
 			{.document = 1, .serial = serial},
-			{.bounds = {.size = {.width = static_cast<double>(serial), .height = 1}}}
+			{.bounds = {
+				 .size = {
+					 .width = stana::Points{static_cast<double>(serial)},
+					 .height = stana::Points{1}
+				 }
+			 }}
 		);
 	}
 	const auto immutable = root;

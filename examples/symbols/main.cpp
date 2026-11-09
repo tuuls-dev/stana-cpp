@@ -49,20 +49,20 @@ constexpr double windowHeight =
 	gridHeight + headingHeight + footerHeight + sectionSpacing * 2 + contentPadding * 2;
 
 constexpr stana::Frame cardFrame{
-	.width = stana::Length::points(cardWidth),
-	.height = stana::Length::points(cardHeight)
+	.width = stana::Length::points(stana::Points{cardWidth}),
+	.height = stana::Length::points(stana::Points{cardHeight})
 };
 constexpr stana::Frame symbolFrame{
-	.width = stana::Length::points(symbolWidth),
-	.height = stana::Length::points(symbolHeight)
+	.width = stana::Length::points(stana::Points{symbolWidth}),
+	.height = stana::Length::points(stana::Points{symbolHeight})
 };
 constexpr stana::Frame headingFrame{
-	.width = stana::Length::points(gridWidth),
-	.height = stana::Length::points(headingHeight)
+	.width = stana::Length::points(stana::Points{gridWidth}),
+	.height = stana::Length::points(stana::Points{headingHeight})
 };
 constexpr stana::Frame footerFrame{
-	.width = stana::Length::points(gridWidth),
-	.height = stana::Length::points(footerHeight)
+	.width = stana::Length::points(stana::Points{gridWidth}),
+	.height = stana::Length::points(stana::Points{footerHeight})
 };
 
 constexpr stana::Color pageColor = stana::Color::rgb(0.035, 0.051, 0.078);
@@ -157,40 +157,46 @@ auto reportSymbol(const stana::symbol::Diagnostic &diagnostic) -> void {
 }
 
 /// @brief One labeled Lucide symbol on the gallery's dark card.
-[[nodiscard]] auto iconCard(std::string name, const stana::symbol::Asset &asset, stana::Color tint)
+[[nodiscard]] auto
+iconCard(const std::string &name, const stana::symbol::Asset &asset, stana::Color tint)
 	-> stana::ui::VStack<std::tuple<stana::symbol::Symbol, stana::ui::Text>> {
 	const std::string label = "Lucide " + name;
 	return {
-		.spacing = cardSpacing,
+		.spacing = stana::Points{cardSpacing},
 		.alignment = stana::Alignment::center,
-		.layout = {.padding = stana::Insets::all(cardPadding), .frame = cardFrame},
+		.layout = {.padding = stana::Insets::all(stana::Points{cardPadding}), .frame = cardFrame},
 		.appearance =
 			{.background = cardColor,
 				.borderColor = cardBorder,
-				.borderWidth = borderWidth,
-				.cornerRadius = cornerRadius,
+				.borderWidth = stana::Points{borderWidth},
+				.cornerRadius = stana::Points{cornerRadius},
 				.boxShadows =
 					std::vector<stana::rendering::BoxShadow>{
-						{.offset = {.x = 0, .y = shadowOffset},
-							.blurRadius = shadowBlur,
+						{.offset = {.x = stana::Points{}, .y = stana::Points{shadowOffset}},
+							.blurRadius = stana::Points{shadowBlur},
 							.color = stana::Color::rgb(0, 0, 0, shadowOpacity)},
-						{.offset = {.x = 0, .y = 1},
+						{.offset = {.x = stana::Points{}, .y = stana::Points{1}},
 							.color = stana::Color::rgb(1, 1, 1, insetHighlightOpacity),
 							.isInset = true}
 					}},
 		.children = stana::ui::children(
 			stana::symbol::Symbol{
 				.asset = asset,
-				.size = symbolSize,
+				.size = stana::Points{symbolSize},
 				.color = tint,
 				.layout = {.frame = symbolFrame},
 				.accessibility = {.label = label},
 				.onError = reportSymbol
 			},
 			stana::ui::Text{
-				.text = std::move(name),
-				.textStyle =
-					{.font = stana::Font::system(labelSize, mediumWeight), .foreground = labelColor}
+				.text = name,
+				.textStyle = {
+					.font = stana::Font::system(
+						stana::Points{labelSize},
+						stana::FontWeight{mediumWeight}
+					),
+					.foreground = labelColor
+				}
 			}
 		)
 	};
@@ -201,70 +207,84 @@ auto reportSymbol(const stana::symbol::Diagnostic &diagnostic) -> void {
 /// @brief Opens the Lucide symbol gallery in a native window.
 auto main() -> int {
 	try {
-		const auto window =
-			stana::application::Window{
-				.title = "Stana · Lucide icons",
-				.size = {.width = windowWidth, .height = windowHeight},
-				.content = stana::ui::VStack{
-					.spacing = sectionSpacing,
+		const auto window = stana::application::Window{
+			.content =
+				stana::ui::VStack{
+					.spacing = stana::Points{sectionSpacing},
 					.alignment = stana::Alignment::center,
-					.layout = {.padding = stana::Insets::all(contentPadding)},
+					.layout = {.padding = stana::Insets::all(stana::Points{contentPadding})},
 					.appearance = {.background = pageColor},
-					.children = stana::ui::children(
-						stana::ui::VStack{
-							.spacing = headingSpacing,
-							.layout = {.frame = headingFrame},
-							.children = stana::ui::children(
-								stana::ui::Text{
-									.text = "Lucide, rendered by Stana",
-									.textStyle =
-										{.font = stana::Font::system(titleSize, semiboldWeight),
-											.foreground = stana::Color::white()}
-								},
-								stana::ui::Text{
-									.text = "Ten SVG symbols. Compile-time geometry. Native macOS "
-											"rendering.",
-									.textStyle =
-										{.font = stana::Font::system(subtitleSize),
-											.foreground = subtitleColor}
-								}
-							)
-						},
-						stana::ui::VStack{
-							.spacing = gridSpacing,
-							.children = stana::ui::children(
-								stana::ui::HStack{
-									.spacing = gridSpacing,
-									.children = stana::ui::children(
-										iconCard("Heart", heart, heartTint),
-										iconCard("Camera", camera, cameraTint),
-										iconCard("Search", search, searchTint),
-										iconCard("House", house, houseTint),
-										iconCard("Star", star, starTint)
+					.children =
+						stana::ui::children(
+							stana::ui::VStack{
+								.spacing = stana::Points{headingSpacing},
+								.layout = {.frame = headingFrame},
+								.children =
+									stana::ui::children(
+										stana::ui::Text{
+											.text = "Lucide, rendered by Stana",
+											.textStyle =
+												{.font = stana::Font::system(
+													 stana::Points{titleSize},
+													 stana::FontWeight{semiboldWeight}
+												 ),
+													.foreground = stana::Color::white()}
+										},
+										stana::ui::Text{
+											.text = "Ten SVG symbols. Compile-time geometry. "
+													"Native macOS "
+													"rendering.",
+											.textStyle =
+												{.font = stana::Font::system(
+													 stana::Points{subtitleSize}
+												 ),
+													.foreground = subtitleColor}
+										}
 									)
-								},
-								stana::ui::HStack{
-									.spacing = gridSpacing,
-									.children = stana::ui::children(
-										iconCard("Settings", settings, settingsTint),
-										iconCard("Bell", bell, bellTint),
-										iconCard("Cloud Download", cloudDownload, cloudTint),
-										iconCard("Code XML", codeXml, codeTint),
-										iconCard("Mail", mail, mailTint)
-									)
+							},
+							stana::ui::VStack{
+								.spacing = stana::Points{gridSpacing},
+								.children = stana::ui::children(
+									stana::ui::HStack{
+										.spacing = stana::Points{gridSpacing},
+										.children = stana::ui::children(
+											iconCard("Heart", heart, heartTint),
+											iconCard("Camera", camera, cameraTint),
+											iconCard("Search", search, searchTint),
+											iconCard("House", house, houseTint),
+											iconCard("Star", star, starTint)
+										)
+									},
+									stana::ui::HStack{
+										.spacing = stana::Points{gridSpacing},
+										.children = stana::ui::children(
+											iconCard("Settings", settings, settingsTint),
+											iconCard("Bell", bell, bellTint),
+											iconCard("Cloud Download", cloudDownload, cloudTint),
+											iconCard("Code XML", codeXml, codeTint),
+											iconCard("Mail", mail, mailTint)
+										)
+									}
+								)
+							},
+							stana::ui::Text{
+								.text = "STNSymbol  ·  36 pt  ·  currentColor     /     Artwork: "
+										"Lucide",
+								.layout = {.frame = footerFrame},
+								.textStyle = {
+									.font = stana::Font::system(stana::Points{footerSize}),
+									.foreground = footerColor
 								}
-							)
-						},
-						stana::ui::Text{
-							.text =
-								"STNSymbol  ·  36 pt  ·  currentColor     /     Artwork: Lucide",
-							.layout = {.frame = footerFrame},
-							.textStyle =
-								{.font = stana::Font::system(footerSize), .foreground = footerColor}
-						}
-					)
-				}
-			};
+							}
+						)
+				},
+			.options =
+				{.geometry =
+						{.contentSize =
+								{.width = stana::Points{windowWidth},
+									.height = stana::Points{windowHeight}}},
+					.appearance = {.title = "Stana · Lucide icons"}}
+		};
 		return stana::application::Application::run(window);
 	} catch (const std::exception &error) {
 		std::cerr << error.what() << '\n';

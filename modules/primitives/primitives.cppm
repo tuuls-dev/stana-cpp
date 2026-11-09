@@ -10,12 +10,16 @@ module;
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <tuple>
 
 export module stana:primitives;
 
+export import :primitives_quantities;
+
 export namespace stana {
 namespace defaults {
-inline constexpr double fontSize = 14;
+inline constexpr Points fontSize{14};
 inline constexpr double accentRed = 0.12;
 inline constexpr double accentGreen = 0.38;
 inline constexpr double accentBlue = 0.92;
@@ -43,8 +47,8 @@ enum class Error : std::uint8_t {
 /// Used by layout, input and paint commands; the containing API determines whether
 /// the origin is local, document-relative or screen-relative. Not physical pixels.
 struct Point {
-	double x = 0; ///< Horizontal coordinate, increasing rightward.
-	double y = 0; ///< Vertical coordinate, increasing downward.
+	Points x{}; ///< Horizontal coordinate, increasing rightward.
+	Points y{}; ///< Vertical coordinate, increasing downward.
 	auto operator<=>(const Point &) const = default;
 
 	[[nodiscard]] auto operator==(const Point &other) const -> bool {
@@ -56,8 +60,8 @@ struct Point {
 /// Geometry-consuming APIs require finite, nonnegative dimensions. Native backends
 /// convert logical points to device pixels using the window backing scale.
 struct Size {
-	double width = 0;  ///< Horizontal extent in logical points.
-	double height = 0; ///< Vertical extent in logical points.
+	Points width{};	 ///< Horizontal extent in logical points.
+	Points height{}; ///< Vertical extent in logical points.
 	auto operator<=>(const Size &) const = default;
 
 	[[nodiscard]] auto operator==(const Size &other) const -> bool {
@@ -73,16 +77,17 @@ struct Rect {
 	Size size{};	///< Nonnegative logical extent from origin.
 
 	[[nodiscard]] auto contains(Point point) const noexcept -> bool {
-		return point.x >= origin.x && point.y >= origin.y && point.x < origin.x + size.width &&
-			point.y < origin.y + size.height;
+		return point.x.value() >= origin.x.value() && point.y.value() >= origin.y.value() &&
+			point.x.value() < origin.x.value() + size.width.value() &&
+			point.y.value() < origin.y.value() + size.height.value();
 	}
 
-	[[nodiscard]] auto inset(double amount) const noexcept -> Rect {
+	[[nodiscard]] auto inset(Points amount) const noexcept -> Rect {
 		return {
 			.origin = {.x = origin.x + amount, .y = origin.y + amount},
 			.size = {
-				.width = std::max(0.0, size.width - 2 * amount),
-				.height = std::max(0.0, size.height - 2 * amount)
+				.width = Points{std::max(0.0, size.width.value() - 2 * amount.value())},
+				.height = Points{std::max(0.0, size.height.value() - 2 * amount.value())}
 			}
 		};
 	}
@@ -98,12 +103,12 @@ struct Rect {
 /// Set all edges with Insets::all(value), or designate top/leading/bottom/trailing.
 /// Layout resolves leading/trailing against the document direction on each commit.
 struct Insets {
-	double top = 0;		 ///< Inset from the physical top edge.
-	double leading = 0;	 ///< Inset from the direction-dependent leading edge.
-	double bottom = 0;	 ///< Inset from the physical bottom edge.
-	double trailing = 0; ///< Inset from the direction-dependent trailing edge.
+	Points top{};	   ///< Inset from the physical top edge.
+	Points leading{};  ///< Inset from the direction-dependent leading edge.
+	Points bottom{};   ///< Inset from the physical bottom edge.
+	Points trailing{}; ///< Inset from the direction-dependent trailing edge.
 
-	[[nodiscard]] static constexpr auto all(double value) noexcept -> Insets {
+	[[nodiscard]] static constexpr auto all(Points value) noexcept -> Insets {
 		return {.top = value, .leading = value, .bottom = value, .trailing = value};
 	}
 
@@ -123,7 +128,7 @@ struct CornerRadii {
 	Size bottomTrailing{}; ///< Horizontal/vertical radii at the bottom trailing corner.
 	Size bottomLeading{};  ///< Horizontal/vertical radii at the bottom leading corner.
 
-	[[nodiscard]] static constexpr auto all(double value) noexcept -> CornerRadii {
+	[[nodiscard]] static constexpr auto all(Points value) noexcept -> CornerRadii {
 		return all(Size{.width = value, .height = value});
 	}
 
@@ -146,12 +151,12 @@ struct CornerRadii {
 /// @brief Finite nonnegative border widths extending inward from the outer border contour.
 /// Leading/trailing resolve with the environment; unlike content Insets, these are paint-only.
 struct BorderWidths {
-	double top = 0;		 ///< Top edge width.
-	double leading = 0;	 ///< Direction-dependent leading edge width.
-	double bottom = 0;	 ///< Bottom edge width.
-	double trailing = 0; ///< Direction-dependent trailing edge width.
+	Points top{};	   ///< Top edge width.
+	Points leading{};  ///< Direction-dependent leading edge width.
+	Points bottom{};   ///< Bottom edge width.
+	Points trailing{}; ///< Direction-dependent trailing edge width.
 
-	[[nodiscard]] static constexpr auto all(double value) noexcept -> BorderWidths {
+	[[nodiscard]] static constexpr auto all(Points value) noexcept -> BorderWidths {
 		return {.top = value, .leading = value, .bottom = value, .trailing = value};
 	}
 
@@ -194,26 +199,27 @@ enum class Theme : std::uint8_t {
 /// @brief A typed sizing request resolved by layout against available logical space.
 /// Use points(), fill(), percent() or the default automatic kind. An automatic
 /// axis uses intrinsic measurement; percentage values use 100 as the full extent.
+/// Absolute and percentage payloads are distinct typed members—there is no mixed-unit
+/// raw scalar shared across kinds.
 struct Length {
 	enum class Kind : std::uint8_t {
 		automatic, ///< Uses measured intrinsic size for this axis.
-		points,	   ///< Uses value as an absolute logical extent.
+		points,	   ///< Uses absolute as an absolute logical extent.
 		fill,	   ///< Requests the available parent extent for this axis.
-		percent	   ///< Uses value / 100 of the available parent extent.
+		percent	   ///< Uses relative / 100 of the available parent extent.
 	};
-	Kind kind = Kind::automatic; ///< Rule layout uses to interpret value.
-	double value = 0;			 ///< Point extent or percentage; ignored for automatic sizing.
+	Kind kind = Kind::automatic; ///< Rule layout uses to interpret the payload.
+	Points absolute{};			 ///< Absolute extent when kind is points; otherwise unused.
+	Percentage relative{};		 ///< Percentage payload when kind is percent; otherwise unused.
 
-	[[nodiscard]] static constexpr auto points(double value) noexcept -> Length {
-		return {.kind = Kind::points, .value = value};
+	[[nodiscard]] static constexpr auto points(Points value) noexcept -> Length {
+		return {.kind = Kind::points, .absolute = value};
 	}
 
-	[[nodiscard]] static constexpr auto fill() noexcept -> Length {
-		return {.kind = Kind::fill, .value = 1};
-	}
+	[[nodiscard]] static constexpr auto fill() noexcept -> Length { return {.kind = Kind::fill}; }
 
-	[[nodiscard]] static constexpr auto percent(double value) noexcept -> Length {
-		return {.kind = Kind::percent, .value = value};
+	[[nodiscard]] static constexpr auto percent(Percentage value) noexcept -> Length {
+		return {.kind = Kind::percent, .relative = value};
 	}
 
 	auto operator<=>(const Length &) const = default;
@@ -224,12 +230,15 @@ struct Length {
 };
 
 inline namespace literals {
+/// @brief Historical literal that builds Length::points from a logical-point value.
+/// Despite the _px spelling, the result is logical layout extent—not PixelDistance.
+/// Prefer _pt for new Points authoring; keep _px only where Length is intended.
 [[nodiscard]] constexpr auto operator""_px(long double value) noexcept -> Length {
-	return Length::points(static_cast<double>(value));
+	return Length::points(Points{static_cast<double>(value)});
 }
 
 [[nodiscard]] constexpr auto operator""_px(unsigned long long value) noexcept -> Length {
-	return Length::points(static_cast<double>(value));
+	return Length::points(Points{static_cast<double>(value)});
 }
 } // namespace literals
 
@@ -239,10 +248,10 @@ inline namespace literals {
 struct Frame {
 	Length width{};					   ///< Horizontal sizing rule; automatic uses intrinsic width.
 	Length height{};				   ///< Vertical sizing rule; automatic uses intrinsic height.
-	std::optional<double> minWidth{};  ///< Optional lower bound on resolved width.
-	std::optional<double> minHeight{}; ///< Optional lower bound on resolved height.
-	std::optional<double> maxWidth{};  ///< Optional upper bound on resolved width.
-	std::optional<double> maxHeight{}; ///< Optional upper bound on resolved height.
+	std::optional<Points> minWidth{};  ///< Optional lower bound on resolved width.
+	std::optional<Points> minHeight{}; ///< Optional lower bound on resolved height.
+	std::optional<Points> maxWidth{};  ///< Optional upper bound on resolved width.
+	std::optional<Points> maxHeight{}; ///< Optional upper bound on resolved height.
 	auto operator<=>(const Frame &) const = default;
 
 	[[nodiscard]] auto operator==(const Frame &other) const -> bool {
@@ -252,7 +261,8 @@ struct Frame {
 
 /// @brief Portable RGBA paint value used by styling and drawing commands.
 /// Components store these values without native color objects; renderer adapters
-/// interpret them in the scene color contract. Alpha is opacity, with zero transparent.
+/// interpret them in the scene color contract. Channels remain encoded SDR and are
+/// not linearized or premultiplied here. Alpha uses Opacity.
 struct Color {
 	enum class Token : std::uint8_t {
 		explicitColor,
@@ -263,35 +273,35 @@ struct Color {
 		accent,
 		border
 	};
-	double red = 0;						///< Red channel in the scene color contract.
-	double green = 0;					///< Green channel in the scene color contract.
-	double blue = 0;					///< Blue channel in the scene color contract.
-	double alpha = 1;					///< Opacity; zero is transparent and one is opaque.
+	SdrChannel red{};					///< Red channel in the encoded SDR contract.
+	SdrChannel green{};					///< Green channel in the encoded SDR contract.
+	SdrChannel blue{};					///< Blue channel in the encoded SDR contract.
+	Opacity alpha{1};					///< Opacity; zero is transparent and one is opaque.
 	Token token = Token::explicitColor; ///< Explicit numeric colors are never theme-dependent.
 
 	[[nodiscard]] static constexpr auto
-	rgb(double red, double green, double blue, double alpha = 1) noexcept -> Color {
+	rgb(SdrChannel red, SdrChannel green, SdrChannel blue, Opacity alpha = Opacity{1}) noexcept
+		-> Color {
 		return {.red = red, .green = green, .blue = blue, .alpha = alpha};
 	}
 
-	[[nodiscard]] static constexpr auto white() noexcept -> Color {
-		return {.red = 1, .green = 1, .blue = 1, .alpha = 1};
+	[[nodiscard]] static constexpr auto
+	rgb(double red, double green, double blue, double alpha = 1) noexcept -> Color {
+		return rgb(SdrChannel{red}, SdrChannel{green}, SdrChannel{blue}, Opacity{alpha});
 	}
 
-	[[nodiscard]] static constexpr auto black() noexcept -> Color {
-		return {.red = 0, .green = 0, .blue = 0, .alpha = 1};
-	}
+	[[nodiscard]] static constexpr auto white() noexcept -> Color { return rgb(1, 1, 1); }
 
-	[[nodiscard]] static constexpr auto clear() noexcept -> Color {
-		return {.red = 0, .green = 0, .blue = 0, .alpha = 0};
-	}
+	[[nodiscard]] static constexpr auto black() noexcept -> Color { return rgb(0, 0, 0); }
+
+	[[nodiscard]] static constexpr auto clear() noexcept -> Color { return rgb(0, 0, 0, 0); }
 
 	[[nodiscard]] static constexpr auto accent() noexcept -> Color {
 		return {
-			.red = defaults::accentRed,
-			.green = defaults::accentGreen,
-			.blue = defaults::accentBlue,
-			.alpha = 1,
+			.red = SdrChannel{defaults::accentRed},
+			.green = SdrChannel{defaults::accentGreen},
+			.blue = SdrChannel{defaults::accentBlue},
+			.alpha = Opacity{1},
 			.token = Token::accent
 		};
 	}
@@ -364,15 +374,25 @@ struct Color {
 	}
 };
 
-/// @brief System-font request shared by text measurement and painting.
-/// Set size in logical points and weight using the native system-font weight scale.
-/// Environment::textScale multiplies size; custom font-family selection is not exposed.
-struct Font {
-	double size = defaults::fontSize; ///< Unscaled logical point size; Environment::textScale is
-									  ///< applied by the document.
-	double weight = 0; ///< System font weight request, with zero representing regular weight.
+inline namespace literals {
+[[nodiscard]] consteval auto operator""_color(const char *text, std::size_t size) -> Color {
+	const auto [red, green, blue, alpha] =
+		primitives::detail::parseHexColor(std::string_view{text, size});
+	return Color::rgb(red, green, blue, alpha);
+}
+} // namespace literals
 
-	[[nodiscard]] static constexpr auto system(double size, double weight = 0) noexcept -> Font {
+/// @brief System-font request shared by text measurement and painting.
+/// Set size in logical points and weight using FontWeight on the native system-font
+/// weight scale. Environment::textScale multiplies size; custom font-family selection
+/// is not exposed.
+struct Font {
+	Points size = defaults::fontSize; ///< Unscaled logical point size; Environment::textScale is
+									  ///< applied by the document.
+	FontWeight weight{}; ///< System font weight request; FontWeight::regular() is the default.
+
+	[[nodiscard]] static constexpr auto
+	system(Points size, FontWeight weight = FontWeight::regular()) noexcept -> Font {
 		return {.size = size, .weight = weight};
 	}
 
@@ -383,39 +403,42 @@ struct Font {
 	}
 };
 
-/// @brief Portable 2D affine mapping for local-to-parent geometry.
+/// @brief Portable 2D affine mapping for local-to-parent logical geometry.
 /// apply() maps one point; inverse() returns no value for a nonfinite or near-singular
-/// linear part. Coefficients follow x′=a*x+c*y+tx and y′=b*x+d*y+ty.
+/// linear part. Coefficients follow x′=a*x+c*y+tx and y′=b*x+d*y+ty. Linear coefficients
+/// are ScaleFactor/Ratio-like unitless values; translations are Points.
 struct AffineTransform {
-	double a = 1;  ///< Horizontal contribution of the input x coordinate.
-	double b = 0;  ///< Vertical contribution of the input x coordinate.
-	double c = 0;  ///< Horizontal contribution of the input y coordinate.
-	double d = 1;  ///< Vertical contribution of the input y coordinate.
-	double tx = 0; ///< Horizontal translation in the destination coordinate space.
-	double ty = 0; ///< Vertical translation in the destination coordinate space.
+	ScaleFactor a{1}; ///< Horizontal contribution of the input x coordinate.
+	ScaleFactor b{0}; ///< Vertical contribution of the input x coordinate.
+	ScaleFactor c{0}; ///< Horizontal contribution of the input y coordinate.
+	ScaleFactor d{1}; ///< Vertical contribution of the input y coordinate.
+	Points tx{};	  ///< Horizontal translation in the destination coordinate space.
+	Points ty{};	  ///< Vertical translation in the destination coordinate space.
 
 	/// @brief Returns the mapping that leaves every point unchanged.
 	[[nodiscard]] static constexpr auto identity() noexcept -> AffineTransform { return {}; }
 
 	/// @brief Returns a pure translation. x′=x+tx and y′=y+ty.
-	[[nodiscard]] static constexpr auto translation(double x, double y) noexcept
+	[[nodiscard]] static constexpr auto translation(Points x, Points y) noexcept
 		-> AffineTransform {
 		return {.tx = x, .ty = y};
 	}
 
 	/// @brief Returns an axis-aligned scale about the origin.
-	[[nodiscard]] static constexpr auto scale(double x, double y) noexcept -> AffineTransform {
+	[[nodiscard]] static constexpr auto scale(ScaleFactor x, ScaleFactor y) noexcept
+		-> AffineTransform {
 		return {.a = x, .d = y};
 	}
 
 	/// @brief Returns a clockwise rotation about the origin in y-down coordinates.
-	/// The angle is radians. Trigonometry is not a constant expression on this standard library.
-	[[nodiscard]] static auto rotation(double radians) noexcept -> AffineTransform {
+	/// Trigonometry is not a constant expression on this standard library.
+	[[nodiscard]] static auto rotation(Angle angle) noexcept -> AffineTransform {
+		const double radians = angle.radians();
 		return {
-			.a = std::cos(radians),
-			.b = std::sin(radians),
-			.c = -std::sin(radians),
-			.d = std::cos(radians)
+			.a = ScaleFactor{std::cos(radians)},
+			.b = ScaleFactor{std::sin(radians)},
+			.c = ScaleFactor{-std::sin(radians)},
+			.d = ScaleFactor{std::cos(radians)}
 		};
 	}
 
@@ -423,49 +446,56 @@ struct AffineTransform {
 	[[nodiscard]] constexpr auto concatenating(const AffineTransform &other) const noexcept
 		-> AffineTransform {
 		return {
-			.a = a * other.a + c * other.b,
-			.b = b * other.a + d * other.b,
-			.c = a * other.c + c * other.d,
-			.d = b * other.c + d * other.d,
-			.tx = a * other.tx + c * other.ty + tx,
-			.ty = b * other.tx + d * other.ty + ty
+			.a = ScaleFactor{a.value() * other.a.value() + c.value() * other.b.value()},
+			.b = ScaleFactor{b.value() * other.a.value() + d.value() * other.b.value()},
+			.c = ScaleFactor{a.value() * other.c.value() + c.value() * other.d.value()},
+			.d = ScaleFactor{b.value() * other.c.value() + d.value() * other.d.value()},
+			.tx = Points{a.value() * other.tx.value() + c.value() * other.ty.value() + tx.value()},
+			.ty = Points{b.value() * other.tx.value() + d.value() * other.ty.value() + ty.value()}
 		};
 	}
 
 	/// @brief Largest singular value of the linear part, or zero when that part is zero.
 	/// Used to choose symbol preparation scale. Nonfinite coefficients yield a nonfinite result.
-	[[nodiscard]] auto maximumScale() const noexcept -> double {
-		const double dominant = std::max({std::abs(a), std::abs(b), std::abs(c), std::abs(d)});
+	[[nodiscard]] auto maximumScale() const noexcept -> ScaleFactor {
+		const double dominant = std::max(
+			{std::abs(a.value()), std::abs(b.value()), std::abs(c.value()), std::abs(d.value())}
+		);
 		if (!(dominant > 0)) {
-			return 0;
+			return ScaleFactor{0};
 		}
-		const double horizontalX = a / dominant;
-		const double verticalX = b / dominant;
-		const double horizontalY = c / dominant;
-		const double verticalY = d / dominant;
+		const double horizontalX = a.value() / dominant;
+		const double verticalX = b.value() / dominant;
+		const double horizontalY = c.value() / dominant;
+		const double verticalY = d.value() / dominant;
 		const double trace = horizontalX * horizontalX + verticalX * verticalX +
 			horizontalY * horizontalY + verticalY * verticalY;
 		const double determinant = horizontalX * verticalY - verticalX * horizontalY;
 		const double discriminant = trace * trace - 4 * determinant * determinant;
-		return dominant * std::sqrt((trace + std::sqrt(std::max(0.0, discriminant))) / 2);
+		return ScaleFactor{
+			dominant * std::sqrt((trace + std::sqrt(std::max(0.0, discriminant))) / 2)
+		};
 	}
 
 	[[nodiscard]] constexpr auto apply(Point point) const noexcept -> Point {
-		return {.x = a * point.x + c * point.y + tx, .y = b * point.x + d * point.y + ty};
+		return {
+			.x = Points{a.value() * point.x.value() + c.value() * point.y.value() + tx.value()},
+			.y = Points{b.value() * point.x.value() + d.value() * point.y.value() + ty.value()}
+		};
 	}
 
 	[[nodiscard]] auto inverse() const noexcept -> std::optional<AffineTransform> {
-		const double determinant = a * d - b * c;
+		const double determinant = a.value() * d.value() - b.value() * c.value();
 		if (!std::isfinite(determinant) || std::abs(determinant) < defaults::singularTolerance) {
 			return std::nullopt;
 		}
 		return AffineTransform{
-			.a = d / determinant,
-			.b = -b / determinant,
-			.c = -c / determinant,
-			.d = a / determinant,
-			.tx = (c * ty - d * tx) / determinant,
-			.ty = (b * tx - a * ty) / determinant
+			.a = ScaleFactor{d.value() / determinant},
+			.b = ScaleFactor{-b.value() / determinant},
+			.c = ScaleFactor{-c.value() / determinant},
+			.d = ScaleFactor{a.value() / determinant},
+			.tx = Points{(c.value() * ty.value() - d.value() * tx.value()) / determinant},
+			.ty = Points{(b.value() * tx.value() - a.value() * ty.value()) / determinant}
 		};
 	}
 
@@ -494,7 +524,7 @@ struct Environment {
 		Theme::light; ///< Light or dark scene defaults. Native sessions follow the system.
 	Direction direction =
 		Direction::leftToRight; ///< Logical direction used to resolve layout edges and row order.
-	double textScale = 1;		///< Nonnegative multiplier applied to requested system-font sizes.
+	ScaleFactor textScale{1};	///< Nonnegative multiplier applied to requested system-font sizes.
 	bool reducedMotion =
 		false; ///< Accessibility preference for motion consumers; does not change layout.
 	bool highContrast =
@@ -534,6 +564,54 @@ inline void requireNonnegative(double value) {
 	if (value < 0) {
 		throw std::invalid_argument("Stana requires nonnegative geometry");
 	}
+}
+
+inline void requireFinite(Points value) {
+	requireFinite(value.value());
+}
+
+inline void requireNonnegative(Points value) {
+	requireNonnegative(value.value());
+}
+
+inline void requireFinite(ScaleFactor value) {
+	requireFinite(value.value());
+}
+
+inline void requireNonnegative(ScaleFactor value) {
+	requireNonnegative(value.value());
+}
+
+inline void requireFinite(Opacity value) {
+	requireFinite(value.value());
+}
+
+inline void requireNonnegative(Opacity value) {
+	requireNonnegative(value.value());
+}
+
+inline void requireFinite(FontWeight value) {
+	requireFinite(value.value());
+}
+
+inline void requireNonnegative(FontWeight value) {
+	requireNonnegative(value.value());
+}
+
+inline void requireFinite(SdrChannel value) {
+	requireFinite(value.value());
+}
+
+inline void requireNonnegative(SdrChannel value) {
+	requireNonnegative(value.value());
+}
+
+inline void requireFinite(Percentage value) {
+	requireFinite(value.value());
+}
+
+inline void requireNonnegative(Percentage value) {
+	requireNonnegative(value.value());
 }
 } // namespace detail
 } // namespace stana
