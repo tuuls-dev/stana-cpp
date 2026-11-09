@@ -208,8 +208,6 @@ iconCard(const std::string &name, const stana::symbol::Asset &asset, stana::Colo
 auto main() -> int {
 	try {
 		const auto window = stana::application::Window{
-			.title = "Stana · Lucide icons",
-			.size = {.width = stana::Points{windowWidth}, .height = stana::Points{windowHeight}},
 			.content =
 				stana::ui::VStack{
 					.spacing = stana::Points{sectionSpacing},
@@ -279,7 +277,13 @@ auto main() -> int {
 								}
 							}
 						)
-				}
+				},
+			.options =
+				{.geometry =
+						{.contentSize =
+								{.width = stana::Points{windowWidth},
+									.height = stana::Points{windowHeight}}},
+					.appearance = {.title = "Stana · Lucide icons"}}
 		};
 		return stana::application::Application::run(window);
 	} catch (const std::exception &error) {

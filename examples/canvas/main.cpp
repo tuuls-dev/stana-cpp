@@ -168,9 +168,6 @@ auto main(int argc, char **) -> int {
 		constexpr double windowHeight = 370;
 		return stana::application::Application::run(
 			stana::application::Window{
-				.title = "Stana CPU / GPU Canvas",
-				.size =
-					{.width = stana::Points{windowWidth}, .height = stana::Points{windowHeight}},
 				.content = stana::ui::VStack{
 					.spacing = stana::Points{spacing},
 					.layout = {.padding = stana::Insets::all(stana::Points{padding})},
@@ -226,7 +223,13 @@ auto main(int argc, char **) -> int {
 							)}
 						}
 					)
-				}
+				},
+				.options =
+					{.geometry =
+							{.contentSize =
+									{.width = stana::Points{windowWidth},
+										.height = stana::Points{windowHeight}}},
+						.appearance = {.title = "Stana CPU / GPU Canvas"}}
 			}
 		);
 	} catch (const std::exception &error) {

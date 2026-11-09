@@ -17,8 +17,6 @@ auto main() -> int {
 		constexpr double headingSize = 24;
 
 		const auto window = stana::application::Window{
-			.title = "Stana Counter",
-			.size = {.width = stana::Points{windowWidth}, .height = stana::Points{windowHeight}},
 			.content = stana::ui::VStack{
 				.spacing = stana::Points{stackSpacing},
 				.layout = {.padding = stana::Insets::all(stana::Points{contentPadding})},
@@ -37,7 +35,13 @@ auto main() -> int {
 						})}
 					}
 				)
-			}
+			},
+			.options =
+				{.geometry =
+						{.contentSize =
+								{.width = stana::Points{windowWidth},
+									.height = stana::Points{windowHeight}}},
+					.appearance = {.title = "Stana Counter"}}
 		};
 		return stana::application::Application::run(window);
 	} catch (const std::exception &error) {

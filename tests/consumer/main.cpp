@@ -76,11 +76,15 @@ auto main() -> int {
 		return 1;
 	}
 	const stana::application::Window positional{
-		std::string{"canvas"},
-		stana::Size{.width = 1_pt, .height = 1_pt},
-		stana::ui::CPUCanvas{}
+		.content = stana::ui::CPUCanvas{},
+		.options =
+			{.geometry = {.contentSize = stana::Size{.width = 1_pt, .height = 1_pt}},
+				.appearance = {.title = std::string{"canvas"}}}
 	};
-	if (positional.renderingColorMode != stana::rendering::RenderingColorMode::automatic) {
+	if (positional.options.creation.renderingColorMode !=
+			stana::rendering::RenderingColorMode::automatic ||
+		positional.options.appearance.title.get() != "canvas" ||
+		positional.options.geometry.contentSize.get().width != 1_pt) {
 		return 1;
 	}
 	stana::document::Metrics metrics;

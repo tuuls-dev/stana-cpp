@@ -209,12 +209,17 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 		));
 	});
 	scenario->queue();
-	const int status = stana::application::detail::runWindows(
-		{{.title = "Stana canvas qualification",
-			.size = {.width = stana::Points{width}, .height = stana::Points{height}},
-			.renderingColorMode = stana::rendering::RenderingColorMode::sdr,
-			.document = scenario->document}}
-	);
+	std::vector<stana::application::detail::WindowSession> sessions(1);
+	sessions.at(0) = {
+		.options =
+			{.creation = {.renderingColorMode = stana::rendering::RenderingColorMode::sdr},
+				.geometry =
+					{.contentSize =
+							{.width = stana::Points{width}, .height = stana::Points{height}}},
+				.appearance = {.title = "Stana canvas qualification"}},
+		.document = scenario->document
+	};
+	const int status = stana::application::detail::runWindows(sessions);
 	return status == 0 && scenario->verified ? 0 : 1;
 }
 } // namespace

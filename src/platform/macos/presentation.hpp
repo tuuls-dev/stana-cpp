@@ -3,9 +3,11 @@
 #include "../scheduler.hpp"
 #include "compositor.hpp"
 #include "renderer.hpp"
+#include "window_configuration.hpp"
 #import <AppKit/AppKit.h>
 #import <QuartzCore/CAMetalLayer.h>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -74,6 +76,9 @@ struct WindowState {
 	bool isFrameQueued = false;
 	bool isClosed = false;
 	std::string failureMessage;
+	std::shared_ptr<AppliedWindowConfiguration> appliedConfiguration =
+		std::make_shared<AppliedWindowConfiguration>();
+	__weak NSWindow *nativeWindow = nil;
 
 	[[nodiscard]] auto allowsPointer() const -> bool { return !isClosed && confirmedRevision != 0; }
 };
