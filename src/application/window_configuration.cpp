@@ -179,48 +179,48 @@ auto validateWindowAction(const WindowAction &action)
 }
 
 auto validateConfiguration(const WindowConfigurationSnapshot &snapshot)
-	-> std::expected<void, ConfigurationValidationError> {
+	-> std::expected<void, Error> {
 	if (!finiteNonnegative(snapshot.contentSize)) {
-		return std::unexpected(ConfigurationValidationError::invalidGeometry);
+		return std::unexpected(Error::invalidValue);
 	}
 	if (snapshot.minimumContentSize && !finiteNonnegative(*snapshot.minimumContentSize)) {
-		return std::unexpected(ConfigurationValidationError::invalidGeometry);
+		return std::unexpected(Error::invalidValue);
 	}
 	if (snapshot.maximumContentSize && !finiteNonnegative(*snapshot.maximumContentSize)) {
-		return std::unexpected(ConfigurationValidationError::invalidGeometry);
+		return std::unexpected(Error::invalidValue);
 	}
 	if (snapshot.resizeIncrement && !finiteNonnegative(*snapshot.resizeIncrement)) {
-		return std::unexpected(ConfigurationValidationError::invalidGeometry);
+		return std::unexpected(Error::invalidValue);
 	}
 	if (snapshot.minimumContentSize && snapshot.maximumContentSize) {
 		if (snapshot.minimumContentSize->width.value() >
 				snapshot.maximumContentSize->width.value() ||
 			snapshot.minimumContentSize->height.value() >
 				snapshot.maximumContentSize->height.value()) {
-			return std::unexpected(ConfigurationValidationError::invalidConstraints);
+			return std::unexpected(Error::invalidValue);
 		}
 	}
 	if (snapshot.aspectRatio) {
 		if (!std::isfinite(*snapshot.aspectRatio) || *snapshot.aspectRatio <= 0.0) {
-			return std::unexpected(ConfigurationValidationError::invalidConstraints);
+			return std::unexpected(Error::invalidValue);
 		}
 	}
 	if (!std::isfinite(snapshot.opacity) || snapshot.opacity < 0.0 || snapshot.opacity > 1.0) {
-		return std::unexpected(ConfigurationValidationError::invalidOpacity);
+		return std::unexpected(Error::invalidValue);
 	}
 	if (!validOwnership(snapshot.role)) {
-		return std::unexpected(ConfigurationValidationError::invalidOwnership);
+		return std::unexpected(Error::invalidStructure);
 	}
 	const auto *explicitPlacement = std::get_if<ExplicitPlacement>(&snapshot.placement);
 	if (explicitPlacement != nullptr) {
 		if (!std::isfinite(explicitPlacement->origin.x.value()) ||
 			!std::isfinite(explicitPlacement->origin.y.value())) {
-			return std::unexpected(ConfigurationValidationError::invalidGeometry);
+			return std::unexpected(Error::invalidValue);
 		}
 		if (const auto *specific =
 				std::get_if<SpecificScreen>(&explicitPlacement->screen)) {
 			if (specific->id.value == 0) {
-				return std::unexpected(ConfigurationValidationError::invalidScreen);
+				return std::unexpected(Error::invalidValue);
 			}
 		}
 	}

@@ -152,11 +152,11 @@ void installNativeTaskDispatcher() {
 
 auto runWindows(std::vector<WindowSession> &sessions) -> int {
 	try {
-		if (!validateSessionIdentities(sessions)) {
-			std::cerr << "Stana: duplicate WindowId values in Application::run\n";
+		if (const auto identities = validateSessionIdentities(sessions); !identities) {
+			std::cerr << "Stana: invalid or duplicate WindowId values in Application::run\n";
 			return 1;
 		}
-		if (!attachSessionRequestStreams(sessions)) {
+		if (const auto attached = attachSessionRequestStreams(sessions); !attached) {
 			std::cerr << "Stana: window request stream attachment failed\n";
 			return 1;
 		}
@@ -164,8 +164,8 @@ auto runWindows(std::vector<WindowSession> &sessions) -> int {
 		std::vector<std::shared_ptr<WindowSessionRuntime>> runtimes;
 		runtimes.reserve(sessions.size());
 		for (auto &session : sessions) {
-			if (!session.configurationValid || !session.document) {
-				std::cerr << "Stana: window configuration validation failed\n";
+			if (!session.document) {
+				std::cerr << "Stana: window document missing after prepare\n";
 				return 1;
 			}
 			auto runtime = std::make_shared<WindowSessionRuntime>();

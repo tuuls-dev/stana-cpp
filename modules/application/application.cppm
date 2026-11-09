@@ -3,6 +3,7 @@ module;
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -63,7 +64,6 @@ struct WindowSession {
 	WindowEvents events{};	 ///< Observation callbacks for this session.
 	std::shared_ptr<::stana::document::detail::Document>
 		document{}; ///< Authoritative retained window state.
-	bool configurationValid = true; ///< False when prepare-time validation failed.
 };
 
 void installNativeTaskDispatcher();
@@ -105,11 +105,12 @@ class Application {
 		// Clang 22 restores the end cursor captured by vector::emplace_back, so
 		// push_back constructs the session and then drops it. Assign into a sized
 		// vector instead. Same constraint as symbol path compilation.
-		std::vector<::stana::application::detail::WindowSession> sessions(1);
-		sessions.at(0) = prepare(window);
-		if (!sessions.at(0).configurationValid) {
+		auto prepared = prepare(window);
+		if (!prepared) {
 			return session.complete(1);
 		}
+		std::vector<::stana::application::detail::WindowSession> sessions(1);
+		sessions.at(0) = *std::move(prepared);
 		return session.complete(::stana::application::detail::runWindows(sessions));
 	}
 
@@ -123,16 +124,26 @@ class Application {
 		// Same Clang 22 emplace_back constraint as the single-window overload.
 		std::vector<::stana::application::detail::WindowSession> sessions(sizeof...(Windows));
 		std::size_t index = 0;
+		std::optional<Error> failure{};
 		std::apply(
 			[&](const auto &...window) -> void {
-				((sessions.at(index++) = prepare(window)), ...);
+				const auto tryPrepare = [&](const auto &entry) -> void {
+					if (failure.has_value()) {
+						return;
+					}
+					auto prepared = prepare(entry);
+					if (!prepared) {
+						failure = prepared.error();
+						return;
+					}
+					sessions.at(index++) = *std::move(prepared);
+				};
+				(tryPrepare(window), ...);
 			},
 			windows
 		);
-		for (const auto &prepared : sessions) {
-			if (!prepared.configurationValid) {
-				return session.complete(1);
-			}
+		if (failure.has_value()) {
+			return session.complete(1);
 		}
 		return session.complete(::stana::application::detail::runWindows(sessions));
 	}
@@ -162,20 +173,14 @@ class Application {
   private:
 	/// @template Content The root component type.
 	/// @param window The window configuration structure.
-	/// @return A prepared `WindowSession` containing the instantiated document.
+	/// @return A prepared session, or `stana::Error` when configuration validation fails.
 	template <::stana::ui::Component Content>
-	[[nodiscard]] static auto prepare(const Window<Content> &window) -> detail::WindowSession {
+	[[nodiscard]] static auto prepare(const Window<Content> &window)
+		-> std::expected<detail::WindowSession, Error> {
 		::stana::application::detail::installNativeTaskDispatcher();
 		const auto snapshot = detail::sampleConfiguration(window.id, window.options);
-		const auto validation = detail::validateConfiguration(snapshot);
-		if (!validation) {
-			return {
-				.id = window.id,
-				.options = window.options,
-				.events = window.events,
-				.document = {},
-				.configurationValid = false
-			};
+		if (const auto validation = detail::validateConfiguration(snapshot); !validation) {
+			return std::unexpected(validation.error());
 		}
 		const auto contentSize = snapshot.contentSize;
 		auto document = ::stana::document::detail::Document::create(contentSize);
@@ -184,12 +189,11 @@ class Application {
 			using ::stana::ui::mount;
 			static_cast<void>(mount(window.content, context));
 		});
-		return {
+		return detail::WindowSession{
 			.id = window.id,
 			.options = window.options,
 			.events = window.events,
-			.document = std::move(document),
-			.configurationValid = true
+			.document = std::move(document)
 		};
 	}
 };

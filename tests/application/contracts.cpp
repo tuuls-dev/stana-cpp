@@ -39,7 +39,7 @@ void validation() {
 	require(
 		!stana::application::detail::validateConfiguration(snapshot) &&
 			stana::application::detail::validateConfiguration(snapshot).error() ==
-				stana::application::detail::ConfigurationValidationError::invalidOpacity,
+				stana::Error::invalidValue,
 		"bad opacity"
 	);
 
@@ -49,7 +49,7 @@ void validation() {
 	require(
 		!stana::application::detail::validateConfiguration(snapshot) &&
 			stana::application::detail::validateConfiguration(snapshot).error() ==
-				stana::application::detail::ConfigurationValidationError::invalidConstraints,
+				stana::Error::invalidValue,
 		"min greater than max"
 	);
 
@@ -58,7 +58,7 @@ void validation() {
 	require(
 		!stana::application::detail::validateConfiguration(snapshot) &&
 			stana::application::detail::validateConfiguration(snapshot).error() ==
-				stana::application::detail::ConfigurationValidationError::invalidOwnership,
+				stana::Error::invalidStructure,
 		"popup without owner"
 	);
 
@@ -70,7 +70,7 @@ void validation() {
 	require(
 		!stana::application::detail::validateConfiguration(snapshot) &&
 			stana::application::detail::validateConfiguration(snapshot).error() ==
-				stana::application::detail::ConfigurationValidationError::invalidScreen,
+				stana::Error::invalidValue,
 		"invalid screen id"
 	);
 }

@@ -288,30 +288,32 @@ auto nativeConfigurationFromOptions(const WindowOptions &options) -> WindowConfi
 	return configuration;
 }
 
-auto validateSessionIdentities(const std::vector<WindowSession> &sessions) -> bool {
+auto validateSessionIdentities(const std::vector<WindowSession> &sessions)
+	-> std::expected<void, Error> {
 	std::vector<std::uint64_t> seen;
 	seen.reserve(sessions.size());
 	for (const auto &session : sessions) {
 		if (session.id.value == 0) {
-			continue;
+			return std::unexpected(Error::invalidValue);
 		}
 		for (const auto value : seen) {
 			if (value == session.id.value) {
-				return false;
+				return std::unexpected(Error::invalidStructure);
 			}
 		}
 		seen.push_back(session.id.value);
 	}
-	return true;
+	return {};
 }
 
-auto attachSessionRequestStreams(std::vector<WindowSession> &sessions) -> bool {
+auto attachSessionRequestStreams(std::vector<WindowSession> &sessions)
+	-> std::expected<void, WindowRequestError> {
 	for (auto &session : sessions) {
 		if (const auto attached = attachRequestStream(session.options.requests); !attached) {
-			return false;
+			return std::unexpected(attached.error());
 		}
 	}
-	return true;
+	return {};
 }
 
 void drainSessionRequests(const std::shared_ptr<WindowSessionRuntime> &runtime) {

@@ -13,7 +13,7 @@ export module stana:application_window_options;
 export import :application_window_types;
 export import :application_window_requests;
 export import :platform_macos;
-import :primitives;
+export import :primitives;
 import :reactive;
 import :rendering;
 
@@ -124,14 +124,17 @@ class PlatformWindowOptions {
 	PlatformWindowOptions() = default;
 
 	/// @brief Stores a registered platform group when the build target accepts it.
+	///
+	/// Incompatible targets are removed from the overload set (`requires`), so misuse
+	/// fails at compile time without a runtime fallback path.
 	template <detail::RegisteredPlatformWindowOptions Options>
-	PlatformWindowOptions(Options options) {
-		static_assert(
-			detail::compatiblePlatformWindowOptions<std::remove_cvref_t<Options>>,
-			"PlatformWindowOptions rejected an extension for an incompatible target OS"
-		);
-		storage_ = std::move(options);
-	}
+		requires(detail::compatiblePlatformWindowOptions<std::remove_cvref_t<Options>>)
+	PlatformWindowOptions(Options options) : storage_(std::move(options)) {}
+
+	/// @brief Deleted overload that keeps the diagnostic anchored on `PlatformWindowOptions`.
+	template <detail::RegisteredPlatformWindowOptions Options>
+		requires(!detail::compatiblePlatformWindowOptions<std::remove_cvref_t<Options>>)
+	PlatformWindowOptions(Options) = delete;
 
 	[[nodiscard]] auto empty() const noexcept -> bool {
 		return std::holds_alternative<std::monostate>(storage_);
@@ -201,20 +204,13 @@ struct WindowConfigurationSnapshot {
 	TaskSwitcherParticipation taskSwitcher = TaskSwitcherParticipation::automatic;
 };
 
-/// @brief Why a configuration snapshot failed validation.
-enum class ConfigurationValidationError : std::uint8_t {
-	invalidGeometry,	 ///< Non-finite or negative sizes/origins.
-	invalidOpacity,		 ///< Opacity outside [0, 1] or non-finite.
-	invalidConstraints,	 ///< Min/max/aspect/increment contradict each other.
-	invalidOwnership,	 ///< Role ownership/modality relationships are nonsensical.
-	duplicateIdentity,	 ///< WindowId collides with another window in the run set.
-	invalidScreen,		 ///< Screen selection refers to an invalidated identity.
-	invalidRestoration	 ///< Restoration identity mutated after creation.
-};
-
 /// @brief Validates a fully resolved configuration transaction snapshot.
+///
+/// Recoverable validation failures use `stana::Error` via `std::expected`, matching
+/// other engine services. Geometry/opacity/constraint/screen problems map to
+/// `Error::invalidValue`; nonsensical role ownership maps to `Error::invalidStructure`.
 [[nodiscard]] auto validateConfiguration(const WindowConfigurationSnapshot &snapshot)
-	-> std::expected<void, ConfigurationValidationError>;
+	-> std::expected<void, Error>;
 
 /// @brief Samples mutable properties into a validation snapshot.
 [[nodiscard]] auto sampleConfiguration(WindowId id, const WindowOptions &options)

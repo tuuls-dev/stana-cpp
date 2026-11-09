@@ -3,6 +3,7 @@
 
 #include "../platform/native_contracts.hpp"
 
+#include <expected>
 #include <memory>
 #include <vector>
 
@@ -26,10 +27,12 @@ struct WindowSessionRuntime {
 };
 
 /// @brief Rejects duplicate identities across one `Application::run` set.
-[[nodiscard]] auto validateSessionIdentities(const std::vector<WindowSession> &sessions) -> bool;
+[[nodiscard]] auto validateSessionIdentities(const std::vector<WindowSession> &sessions)
+	-> std::expected<void, Error>;
 
-/// @brief Attaches request streams; returns false on duplicate-stream failure.
-[[nodiscard]] auto attachSessionRequestStreams(std::vector<WindowSession> &sessions) -> bool;
+/// @brief Attaches request streams; fails with `WindowRequestError` on duplicate attachment.
+[[nodiscard]] auto attachSessionRequestStreams(std::vector<WindowSession> &sessions)
+	-> std::expected<void, WindowRequestError>;
 
 /// @brief Samples options into the native configuration payload.
 [[nodiscard]] auto nativeConfigurationFromOptions(const WindowOptions &options)
