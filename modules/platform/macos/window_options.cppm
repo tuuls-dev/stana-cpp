@@ -4,9 +4,16 @@ module;
 #include <optional>
 #include <string>
 
-export module stana:application_platform_macos;
+export module stana:platform_macos;
 import :primitives;
 import :reactive;
+
+/// @file
+/// @brief Typed macOS window extension descriptors.
+///
+/// Lives under `modules/platform/macos/` with AppKit adapters in
+/// `src/platform/macos/`. Public namespace remains `stana::application::platform::macos`
+/// so portable consumers reach extensions through `import stana;` without native types.
 
 export namespace stana::application::platform::macos {
 

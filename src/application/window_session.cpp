@@ -160,6 +160,8 @@ void publishEvent(const std::shared_ptr<WindowSessionRuntime> &runtime, const Wi
 	};
 }
 
+} // namespace
+
 void pushConfiguration(const std::shared_ptr<WindowSessionRuntime> &runtime) {
 	if (!runtime || runtime->closed || runtime->options == nullptr || !runtime->hostControl ||
 		!runtime->hostControl->applyConfiguration) {
@@ -170,7 +172,9 @@ void pushConfiguration(const std::shared_ptr<WindowSessionRuntime> &runtime) {
 	runtime->hostControl->applyConfiguration(configuration);
 }
 
-void subscribePropertyUpdates(const std::shared_ptr<WindowSessionRuntime> &runtime) {
+namespace {
+
+void subscribePortablePropertyUpdates(const std::shared_ptr<WindowSessionRuntime> &runtime) {
 	if (runtime->options == nullptr) {
 		return;
 	}
@@ -239,33 +243,9 @@ void subscribePropertyUpdates(const std::shared_ptr<WindowSessionRuntime> &runti
 	);
 }
 
-void installMacosExtension(
-	WindowConfiguration &configuration,
-	const PlatformWindowOptions &platform
-) {
-	const auto *macos = platform.macos();
-	if (macos == nullptr) {
-		return;
-	}
-	configuration.macos.present = true;
-	configuration.macos.fullSizeContentView =
-		macos->titleBar.contentIntegration.get() ==
-		platform::macos::TitleBarContentIntegration::fullSizeContentView;
-	configuration.macos.transparentTitleBar = macos->titleBar.transparentTitleBar.get();
-	configuration.macos.titleVisible = macos->titleBar.titleVisible.get();
-	configuration.macos.hideTitleBarControls =
-		macos->titleBar.controls.get() == platform::macos::TitleBarControlVisibility::hidden;
-	configuration.macos.tabbingMode = static_cast<std::uint8_t>(macos->tabbing.mode.get());
-	configuration.macos.tabbingIdentifier = macos->tabbing.tabbingIdentifier.get();
-	configuration.macos.spacesBehavior =
-		static_cast<std::uint8_t>(macos->spaces.behavior.get());
-	configuration.macos.fullscreenBehavior =
-		static_cast<std::uint8_t>(macos->spaces.fullscreen.get());
-	configuration.macos.becomesKeyOnlyIfNeeded = macos->panel.becomesKeyOnlyIfNeeded.get();
-	configuration.macos.worksWhenModal = macos->panel.worksWhenModal.get();
-	configuration.macos.floatingPanel = macos->panel.floatingPanel.get();
-	configuration.macos.nativeLevel =
-		static_cast<std::uint8_t>(macos->nativeLevel.level.get());
+void subscribePropertyUpdates(const std::shared_ptr<WindowSessionRuntime> &runtime) {
+	subscribePortablePropertyUpdates(runtime);
+	subscribePlatformPropertyUpdates(runtime);
 }
 
 } // namespace
@@ -304,7 +284,7 @@ auto nativeConfigurationFromOptions(const WindowOptions &options) -> WindowConfi
 		.state = nativeState(snapshot.state),
 		.role = nativeRole(snapshot.role)
 	};
-	installMacosExtension(configuration, options.platform);
+	applyPlatformWindowOptions(configuration, options.platform);
 	return configuration;
 }
 

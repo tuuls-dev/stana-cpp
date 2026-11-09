@@ -35,6 +35,22 @@ struct WindowSessionRuntime {
 [[nodiscard]] auto nativeConfigurationFromOptions(const WindowOptions &options)
 	-> ::stana::platform::detail::WindowConfiguration;
 
+/// @brief Maps typed platform extensions into the module-free native configuration.
+///
+/// macOS field packing lives in `src/platform/macos/window_options.cpp`.
+void applyPlatformWindowOptions(
+	::stana::platform::detail::WindowConfiguration &configuration,
+	const PlatformWindowOptions &platform
+);
+
+/// @brief Observes platform-extension properties and pushes configuration updates.
+///
+/// macOS subscriptions live in `src/platform/macos/window_options.cpp`.
+void subscribePlatformPropertyUpdates(const std::shared_ptr<WindowSessionRuntime> &runtime);
+
+/// @brief Pushes the latest sampled configuration through the native host control.
+void pushConfiguration(const std::shared_ptr<WindowSessionRuntime> &runtime);
+
 /// @brief Installs configuration, close-gate, observation, and reactive update hooks.
 void installSessionController(
 	::stana::platform::detail::Window &window,

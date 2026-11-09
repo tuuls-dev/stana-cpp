@@ -19,8 +19,10 @@ import :primitives;
 /// This inventory records application-facing window facilities across macOS,
 /// Windows, and Linux window systems. Entries marked **portable** belong to the
 /// grouped `WindowOptions` surface. Entries marked **extension** belong to a
-/// typed `platform::*::WindowOptions` group. Windows/Linux native backends are
-/// not claimed by this issue; mappings document intent and availability only.
+/// typed `platform::*::WindowOptions` group (macOS descriptors live under
+/// `modules/platform/macos/` with adapters in `src/platform/macos/`).
+/// Windows/Linux native backends are not claimed by this issue; mappings
+/// document intent and availability only.
 ///
 /// Legend for lifecycle columns:
 /// - C: creation-only preference

@@ -16,7 +16,7 @@ export import :ui;
 export import :application_window_types;
 export import :application_window_requests;
 export import :application_window_events;
-export import :application_platform_macos;
+export import :platform_macos;
 export import :application_window_options;
 import :document;
 import :rendering_diagnostics;

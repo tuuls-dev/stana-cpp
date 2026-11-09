@@ -12,7 +12,7 @@ module;
 export module stana:application_window_options;
 export import :application_window_types;
 export import :application_window_requests;
-export import :application_platform_macos;
+export import :platform_macos;
 import :primitives;
 import :reactive;
 import :rendering;
