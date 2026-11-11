@@ -90,6 +90,28 @@ if(APPLE)
 	stana_apply_safety(stana-native-smoke)
 	option(STANA_NATIVE_TESTS "Run native tests requiring a logged-in window server" OFF)
 	if(STANA_NATIVE_TESTS)
+		add_executable(stana-native-window-configuration MACOSX_BUNDLE
+			platform/macos/window_configuration.mm platform/macos/window_fixture.mm)
+		set_target_properties(stana-native-window-configuration PROPERTIES
+			MACOSX_BUNDLE_GUI_IDENTIFIER "dev.stana.window-configuration")
+		target_compile_options(stana-native-window-configuration PRIVATE -fobjc-arc)
+		target_link_libraries(stana-native-window-configuration PRIVATE stana::stana "-framework AppKit")
+		stana_apply_safety(stana-native-window-configuration)
+		add_test(NAME stana.native.window-configuration COMMAND "${Python3_EXECUTABLE}"
+			"${CMAKE_CURRENT_SOURCE_DIR}/platform/macos/launch_native.py"
+			"$<TARGET_BUNDLE_DIR:stana-native-window-configuration>")
+		set_tests_properties(stana.native.window-configuration PROPERTIES TIMEOUT 45 LABELS native RUN_SERIAL TRUE)
+		add_executable(stana-native-window-requests MACOSX_BUNDLE
+			platform/macos/window_requests.cpp platform/macos/window_fixture.mm)
+		set_target_properties(stana-native-window-requests PROPERTIES
+			MACOSX_BUNDLE_GUI_IDENTIFIER "dev.stana.window-requests")
+		target_compile_options(stana-native-window-requests PRIVATE "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>")
+		target_link_libraries(stana-native-window-requests PRIVATE stana::stana)
+		stana_apply_safety(stana-native-window-requests)
+		add_test(NAME stana.native.window-requests COMMAND "${Python3_EXECUTABLE}"
+			"${CMAKE_CURRENT_SOURCE_DIR}/platform/macos/launch_native.py"
+			"$<TARGET_BUNDLE_DIR:stana-native-window-requests>")
+		set_tests_properties(stana.native.window-requests PROPERTIES TIMEOUT 45 LABELS native RUN_SERIAL TRUE)
 		add_test(NAME stana.native.window COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/platform/macos/launch_native.py" "$<TARGET_BUNDLE_DIR:stana-native-smoke>")
 		set_tests_properties(stana.native.window PROPERTIES TIMEOUT 45 LABELS native)

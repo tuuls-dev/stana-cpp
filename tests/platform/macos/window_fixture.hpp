@@ -9,6 +9,8 @@ struct PhysicalViewport {
 	double height = 0;
 };
 
+[[nodiscard]] auto windowOpacity(const std::string &title) -> double;
+
 void resizeWindow(const std::string &title, PhysicalViewport);
 void showWindow(const std::string &title, bool visible);
 void replaceAttachment(const std::string &title);

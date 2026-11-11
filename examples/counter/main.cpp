@@ -43,7 +43,7 @@ auto main() -> int {
 									)
 							},
 						.options = {
-							.contentSize = {.width = 480_pt, .height = 320_pt},
+							.contentSize = stana::Size{.width = 480_pt, .height = 320_pt},
 							.title = "Stana Counter"
 						}
 					};

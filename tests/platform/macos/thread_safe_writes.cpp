@@ -148,7 +148,8 @@ struct WorkerScenario : std::enable_shared_from_this<WorkerScenario> {
 						}}
 				},
 			.options = {
-				.contentSize = {.width = stana::Points{width}, .height = stana::Points{height}},
+				.contentSize =
+					stana::Size{.width = stana::Points{width}, .height = stana::Points{height}},
 				.title = "Stana thread-safe writes"
 			}
 		}
@@ -176,7 +177,8 @@ struct WorkerScenario : std::enable_shared_from_this<WorkerScenario> {
 						}}
 				},
 			.options = {
-				.contentSize = {.width = stana::Points{width}, .height = stana::Points{height}},
+				.contentSize =
+					stana::Size{.width = stana::Points{width}, .height = stana::Points{height}},
 				.title = "Stana queued shutdown"
 			}
 		}
@@ -210,7 +212,8 @@ struct WorkerScenario : std::enable_shared_from_this<WorkerScenario> {
 					}}
 				},
 			.options = {
-				.contentSize = {.width = stana::Points{width}, .height = stana::Points{height}},
+				.contentSize =
+					stana::Size{.width = stana::Points{width}, .height = stana::Points{height}},
 				.title = "Stana queued failure"
 			}
 		}

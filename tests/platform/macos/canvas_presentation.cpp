@@ -29,9 +29,7 @@ constexpr auto timeout = std::chrono::seconds{10};
  textureStore(next, vec2<i32>(0), vec4<f32>(textureLoad(history, vec2<i32>(0), 0).x + 1.0, 0.0, 0.0, 1.0));
 }
 )");
-	const auto state = stana::rendering::GPUStateSlot::create(
-		{.width = stana::Points{1}, .height = stana::Points{1}}
-	);
+	const auto state = stana::rendering::GPUStateSlot::create({.width = 1, .height = 1});
 	if (!shader || !state) {
 		throw std::runtime_error("Invalid canvas qualification resources");
 	}
@@ -211,9 +209,11 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 	scenario->queue();
 	std::vector<stana::application::detail::WindowSession> sessions(1);
 	sessions.at(0) = {
+		.id = stana::application::WindowId::create(),
 		.options =
 			{.renderingColorMode = stana::rendering::RenderingColorMode::sdr,
-				.contentSize = {.width = stana::Points{width}, .height = stana::Points{height}},
+				.contentSize =
+					stana::Size{.width = stana::Points{width}, .height = stana::Points{height}},
 				.title = "Stana canvas qualification"},
 		.document = scenario->document
 	};

@@ -16,6 +16,10 @@ namespace {
 }
 } // namespace
 
+auto windowOpacity(const std::string &title) -> double {
+	return findWindow(title).alphaValue;
+}
+
 void resizeWindow(const std::string &title, PhysicalViewport size) {
 	NSWindow *const window = findWindow(title);
 	[window setContentSize:NSMakeSize(

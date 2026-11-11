@@ -16,6 +16,12 @@ import stana;
 namespace {
 
 using namespace stana::literals;
+constexpr auto chartInset = 20_pt;
+constexpr auto barWidth = 40_pt;
+constexpr auto contentSpacing = 12_pt;
+constexpr auto chartBaseline = 160_pt;
+constexpr auto windowWidth = 720_pt;
+constexpr auto windowHeight = 370_pt;
 
 constexpr double peak = 2;
 constexpr std::uint32_t fieldSize = 128;
@@ -111,7 +117,7 @@ auto graphics(const stana::rendering::GPUProgram &value) -> stana::rendering::GP
 	drawing.drawMesh(checked(stana::rendering::GPUMesh::create(vertices, indices)));
 	const std::array points{
 		stana::Point{.x = 24_pt, .y = 156_pt},
-		stana::Point{.x = 160_pt, .y = 90_pt},
+		stana::Point{.x = chartBaseline, .y = 90_pt},
 		stana::Point{.x = 296_pt, .y = 24_pt}
 	};
 	drawing.strokePolyline(points, stana::Color::text(), 4_pt);
@@ -122,12 +128,12 @@ auto chart(int update) -> stana::rendering::Drawing {
 	stana::rendering::Drawing drawing;
 	constexpr int cycle = 4;
 	for (int index = 0; index < cycle; ++index) {
-		const auto height = 80_pt + static_cast<double>((update + index) % cycle) * 20_pt;
+		const auto height = 80_pt + static_cast<double>((update + index) % cycle) * chartInset;
 		drawing.fillRect(
 			{.origin =
-					{.x = 20_pt + static_cast<double>(index) * (40_pt + 12_pt),
-						.y = 160_pt - height},
-				.size = {.width = 40_pt, .height = height}},
+					{.x = chartInset + static_cast<double>(index) * (barWidth + contentSpacing),
+						.y = chartBaseline - height},
+				.size = {.width = barWidth, .height = height}},
 			stana::Color::accent()
 		);
 	}
@@ -156,8 +162,8 @@ auto main(int argc, char **) -> int {
 			stana::application::Window{
 				.content =
 					stana::ui::VStack{
-						.spacing = 12_pt,
-						.layout = {.padding = stana::Insets::all(20_pt)},
+						.spacing = contentSpacing,
+						.layout = {.padding = stana::Insets::all(chartInset)},
 						.children =
 							stana::ui::children(
 								stana::ui::Text{
@@ -165,7 +171,7 @@ auto main(int argc, char **) -> int {
 											"and round line"
 								},
 								stana::ui::HStack{
-									.spacing = 12_pt,
+									.spacing = contentSpacing,
 									.children = stana::ui::children(
 										stana::ui::CPUCanvas{
 											.drawing = updates.map(chart),
@@ -227,7 +233,7 @@ auto main(int argc, char **) -> int {
 							)
 					},
 				.options = {
-					.contentSize = {.width = 720_pt, .height = 370_pt},
+					.contentSize = stana::Size{.width = windowWidth, .height = windowHeight},
 					.title = "Stana CPU / GPU Canvas"
 				}
 			}

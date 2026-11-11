@@ -15,6 +15,12 @@ import stana;
 namespace {
 
 using namespace stana::literals;
+constexpr auto cardSpacing = 10_pt;
+constexpr auto cardPadding = 16_pt;
+constexpr auto cardRadius = 14_pt;
+constexpr auto shadowOffset = 5_pt;
+constexpr auto symbolSize = 36_pt;
+constexpr auto labelFontSize = 12_pt;
 
 constexpr double shadowOpacity = 0.32;
 constexpr double insetHighlightOpacity = 0.045;
@@ -36,7 +42,7 @@ constexpr stana::Frame headingFrame{
 };
 constexpr stana::Frame footerFrame{
 	.width = stana::Length::points(821_pt),
-	.height = stana::Length::points(16_pt)
+	.height = stana::Length::points(cardPadding)
 };
 
 constexpr stana::Color pageColor = stana::Color::rgb(0.035, 0.051, 0.078);
@@ -136,18 +142,18 @@ iconCard(const std::string &name, const stana::symbol::Asset &asset, stana::Colo
 	-> stana::ui::VStack<std::tuple<stana::symbol::Symbol, stana::ui::Text>> {
 	const std::string label = "Lucide " + name;
 	return {
-		.spacing = 10_pt,
+		.spacing = cardSpacing,
 		.alignment = stana::Alignment::center,
-		.layout = {.padding = stana::Insets::all(16_pt), .frame = cardFrame},
+		.layout = {.padding = stana::Insets::all(cardPadding), .frame = cardFrame},
 		.appearance =
 			{.background = cardColor,
 				.borderColor = cardBorder,
 				.borderWidth = 1_pt,
-				.cornerRadius = 14_pt,
+				.cornerRadius = cardRadius,
 				.boxShadows =
 					std::vector<stana::rendering::BoxShadow>{
-						{.offset = {.x = stana::Points{}, .y = 5_pt},
-							.blurRadius = 16_pt,
+						{.offset = {.x = stana::Points{}, .y = shadowOffset},
+							.blurRadius = cardPadding,
 							.color = stana::Color::rgb(0, 0, 0, shadowOpacity)},
 						{.offset = {.x = stana::Points{}, .y = 1_pt},
 							.color = stana::Color::rgb(1, 1, 1, insetHighlightOpacity),
@@ -156,7 +162,7 @@ iconCard(const std::string &name, const stana::symbol::Asset &asset, stana::Colo
 		.children = stana::ui::children(
 			stana::symbol::Symbol{
 				.asset = asset,
-				.size = 36_pt,
+				.size = symbolSize,
 				.color = tint,
 				.layout = {.frame = symbolFrame},
 				.accessibility = {.label = label},
@@ -165,7 +171,7 @@ iconCard(const std::string &name, const stana::symbol::Asset &asset, stana::Colo
 			stana::ui::Text{
 				.text = name,
 				.textStyle = {
-					.font = stana::Font::system(12_pt, stana::FontWeight{mediumWeight}),
+					.font = stana::Font::system(labelFontSize, stana::FontWeight{mediumWeight}),
 					.foreground = labelColor
 				}
 			}
@@ -210,19 +216,19 @@ auto main() -> int {
 															"Native macOS "
 															"rendering.",
 													.textStyle =
-														{.font = stana::Font::system(12_pt),
+														{.font = stana::Font::system(labelFontSize),
 															.foreground = subtitleColor}
 												}
 											)
 									},
 									stana::ui::VStack{
-										.spacing = 14_pt,
+										.spacing = cardRadius,
 										.children =
 											stana::
 												ui::children(
 													stana::
 														ui::HStack{
-															.spacing = 14_pt,
+															.spacing = cardRadius,
 															.children = stana::ui::children(
 																iconCard("Heart", heart, heartTint),
 																iconCard(
@@ -241,7 +247,7 @@ auto main() -> int {
 														},
 													stana::ui::
 														HStack{
-															.spacing = 14_pt,
+															.spacing = cardRadius,
 															.children = stana::ui::children(
 																iconCard(
 																	"Settings",
@@ -277,7 +283,7 @@ auto main() -> int {
 								)
 						},
 					.options = {
-						.contentSize = {.width = 877_pt, .height = 452_pt},
+						.contentSize = stana::Size{.width = 877_pt, .height = 452_pt},
 						.title = "Stana · Lucide icons"
 					}
 				};
