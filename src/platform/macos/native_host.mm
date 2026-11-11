@@ -42,15 +42,6 @@ namespace {
 	return windows;
 }
 
-[[nodiscard]] auto nativeString(const std::string &text) -> NSString * {
-	NSString *const value = [[NSString alloc] initWithBytes:text.data()
-													 length:text.size()
-												   encoding:NSUTF8StringEncoding];
-	if (value == nil) {
-		throw std::invalid_argument("Stana text must be valid UTF-8");
-	}
-	return value;
-}
 } // namespace
 
 /// @brief Copies the view's effective light or dark appearance into the document.
@@ -622,7 +613,7 @@ auto diagnostics() -> std::vector<WindowStatistics> {
 	return result;
 }
 
-auto createMailboxWakeup(std::function<void()> onWake)
+auto createMailboxWakeup(const std::function<void()> &onWake)
 	-> std::expected<MailboxWakeup, std::string> {
 	if (![NSThread isMainThread]) {
 		return std::unexpected("Native mailbox wakeup requires the main thread");
@@ -647,7 +638,7 @@ auto createMailboxWakeup(std::function<void()> onWake)
 	};
 
 	const auto state = std::make_shared<Source>();
-	state->handler = std::move(onWake);
+	state->handler = onWake;
 	constexpr uintptr_t unusedHandle = 0;
 	constexpr unsigned long unusedMask = 0;
 	state->source = dispatch_source_create(
@@ -689,7 +680,7 @@ auto createMailboxWakeup(std::function<void()> onWake)
 	};
 }
 
-void postAfter(std::chrono::milliseconds delay, std::function<void()> callback) {
+void postAfter(std::chrono::milliseconds delay, const std::function<void()> &callback) {
 	if (delay.count() < 0) {
 		throw std::invalid_argument("Stana delay cannot be negative");
 	}
@@ -697,7 +688,7 @@ void postAfter(std::chrono::milliseconds delay, std::function<void()> callback) 
 	if (delay.count() > std::numeric_limits<std::int64_t>::max() / nanosPerMillisecond) {
 		throw std::invalid_argument("Stana delay exceeds native range");
 	}
-	const auto action = std::move(callback);
+	const auto action = callback;
 	dispatch_after(
 		dispatch_time(DISPATCH_TIME_NOW, delay.count() * nanosPerMillisecond),
 		dispatch_get_main_queue(),
@@ -728,7 +719,8 @@ void stop() {
 	}
 }
 
-auto run(std::vector<Window> windows) -> std::expected<int, std::string> {
+auto run(const std::vector<Window> &descriptions) -> std::expected<int, std::string> {
+	auto windows = descriptions;
 	if (![NSThread isMainThread]) {
 		return std::unexpected("Application::run requires the main thread");
 	}
@@ -751,9 +743,9 @@ auto run(std::vector<Window> windows) -> std::expected<int, std::string> {
 		std::vector<std::shared_ptr<WindowState>> states;
 		NSMutableArray<NSWindow *> *const nativeWindows = [NSMutableArray array];
 		NSMutableArray<STANAWindowDelegate *> *const delegates = [NSMutableArray array];
-		for (auto &configuration : windows) {
+		for (auto &description : windows) {
 			auto state = std::make_shared<WindowState>();
-			state->callbacks = std::move(configuration);
+			state->callbacks = std::move(description);
 			states.push_back(state);
 			activeWindows().emplace_back(state);
 			state->traceRendering =
