@@ -57,9 +57,9 @@ if(APPLE)
         DEPENDS tools/embed_shader.py src/platform/macos/shaders/stana.metal VERBATIM)
     set_property(SOURCE src/platform/macos/gpu_resources.mm APPEND PROPERTY INCLUDE_DIRECTORIES "${CMAKE_CURRENT_BINARY_DIR}/generated")
     target_sources(stana PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated/stana_shader.hpp"
-        src/platform/macos/shadows.mm src/platform/macos/shader_compiler.cpp src/platform/macos/compositor.mm src/platform/macos/gpu_resources.mm src/platform/macos/gpu_programs.mm src/platform/macos/native_host.mm src/platform/macos/window_configuration.mm src/platform/macos/renderer.mm src/platform/macos/presentation.mm src/platform/macos/symbol_paths.mm)
+        src/platform/macos/shadows.mm src/platform/macos/shader_compiler.cpp src/platform/macos/compositor.mm src/platform/macos/gpu_resources.mm src/platform/macos/gpu_programs.mm src/platform/macos/native_host.mm src/platform/macos/window_configuration.mm src/platform/macos/window_facilities.mm src/platform/macos/renderer.mm src/platform/macos/presentation.mm src/platform/macos/symbol_paths.mm)
 	target_compile_options(stana PRIVATE "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>")
-	target_link_libraries(stana PRIVATE "-framework AppKit" "-framework CoreGraphics"
+	target_link_libraries(stana PRIVATE "-framework AppKit" "-framework UniformTypeIdentifiers" "-framework ApplicationServices" "-framework CoreGraphics"
 		"-framework CoreText" "-framework Metal" "-framework QuartzCore")
 else()
 	target_sources(stana PRIVATE src/platform/unsupported.cpp)

@@ -3,77 +3,90 @@
 
 #import <AppKit/AppKit.h>
 
+#include <algorithm>
 #include <cmath>
 #include <compare>
 #include <cstdint>
-#include <functional>
+#include <limits>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
+@protocol STANAWindowPolicy
+@property BOOL stanaAllowsFocus;
+@property BOOL stanaEnabled;
+@end
+
+@interface STANAConfiguredWindow : NSWindow <STANAWindowPolicy>
+@property BOOL stanaAllowsFocus;
+@property BOOL stanaEnabled;
+@end
+@implementation STANAConfiguredWindow
+
+- (BOOL)canBecomeKeyWindow {
+	return self.stanaAllowsFocus && self.stanaEnabled;
+}
+
+- (BOOL)canBecomeMainWindow {
+	return self.stanaAllowsFocus && self.stanaEnabled;
+}
+
+@end
+
+@interface STANAConfiguredPanel : NSPanel <STANAWindowPolicy>
+@property BOOL stanaAllowsFocus;
+@property BOOL stanaEnabled;
+@end
+@implementation STANAConfiguredPanel
+
+- (BOOL)canBecomeKeyWindow {
+	return self.stanaAllowsFocus && self.stanaEnabled;
+}
+
+@end
+
 namespace stana::platform::detail {
 namespace {
+inline constexpr double halfDimension = 0.5;
 
 [[nodiscard]] auto utf8String(const std::string &text) -> NSString * {
-	NSString *const value = [[NSString alloc] initWithBytes:text.data()
-													 length:text.size()
-												   encoding:NSUTF8StringEncoding];
-	return value == nil ? @"" : value;
+	return [[NSString alloc] initWithBytes:text.data()
+									length:text.size()
+								  encoding:NSUTF8StringEncoding];
 }
 
-[[nodiscard]] auto screenHeight(NSScreen *screen) -> double {
-	return screen == nil ? 0.0 : screen.frame.size.height;
+[[nodiscard]] auto primaryHeight() -> double {
+	return NSScreen.screens.firstObject.frame.size.height;
 }
 
-[[nodiscard]] auto stanaPointFromAppKit(NSPoint point, NSScreen *screen) -> LogicalPoint {
-	const double height = screenHeight(screen);
-	return {.x = point.x, .y = height - point.y};
+[[nodiscard]] auto screenId(NSScreen *screen) -> std::uint64_t {
+	return [screen.deviceDescription[@"NSScreenNumber"] unsignedLongLongValue];
 }
 
-[[nodiscard]] auto appKitPointFromStana(LogicalPoint point, NSScreen *screen) -> NSPoint {
-	const double height = screenHeight(screen);
-	return NSMakePoint(point.x, height - point.y);
-}
-
-[[nodiscard]] auto
-configurationChanged(const WindowConfiguration &previous, const WindowConfiguration &next) -> bool {
-	return previous.title != next.title ||
-		!std::is_eq(previous.contentWidth <=> next.contentWidth) ||
-		!std::is_eq(previous.contentHeight <=> next.contentHeight) ||
-		!std::is_eq(previous.opacity <=> next.opacity) || previous.hasShadow != next.hasShadow ||
-		previous.isVisible != next.isVisible || previous.acceptsFocus != next.acceptsFocus ||
-		previous.ignoresMouseEvents != next.ignoresMouseEvents ||
-		previous.presentWithoutActivation != next.presentWithoutActivation ||
-		previous.placement != next.placement || !std::is_eq(previous.originX <=> next.originX) ||
-		!std::is_eq(previous.originY <=> next.originY) || previous.level != next.level ||
-		previous.state != next.state || previous.style.closable != next.style.closable ||
-		previous.style.minimizable != next.style.minimizable ||
-		previous.style.maximizable != next.style.maximizable ||
-		previous.style.resizable != next.style.resizable ||
-		previous.style.titled != next.style.titled ||
-		previous.minimumContentSize != next.minimumContentSize ||
-		previous.maximumContentSize != next.maximumContentSize ||
-		previous.aspectRatio != next.aspectRatio ||
-		previous.resizeIncrement != next.resizeIncrement ||
-		previous.macos.present != next.macos.present ||
-		previous.macos.fullSizeContentView != next.macos.fullSizeContentView ||
-		previous.macos.transparentTitleBar != next.macos.transparentTitleBar ||
-		previous.macos.titleVisible != next.macos.titleVisible ||
-		previous.macos.hideTitleBarControls != next.macos.hideTitleBarControls ||
-		previous.macos.tabbingMode != next.macos.tabbingMode ||
-		previous.macos.tabbingIdentifier != next.macos.tabbingIdentifier ||
-		previous.macos.spacesBehavior != next.macos.spacesBehavior ||
-		previous.macos.fullscreenBehavior != next.macos.fullscreenBehavior ||
-		previous.macos.becomesKeyOnlyIfNeeded != next.macos.becomesKeyOnlyIfNeeded ||
-		previous.macos.worksWhenModal != next.macos.worksWhenModal ||
-		previous.macos.floatingPanel != next.macos.floatingPanel ||
-		previous.macos.nativeLevel != next.macos.nativeLevel;
+[[nodiscard]] auto selectedScreen(const WindowConfiguration &configuration, NSWindow *window)
+	-> NSScreen * {
+	if (configuration.screenSelection == 2) {
+		for (NSUInteger index = 0; index < NSScreen.screens.count; ++index) {
+			NSScreen *const screen = [NSScreen.screens objectAtIndex:index];
+			if (screenId(screen) == configuration.screenId) {
+				return screen;
+			}
+		}
+		return nil;
+	}
+	if (configuration.screenSelection == 1) {
+		return NSScreen.screens.firstObject;
+	}
+	return window.screen != nil ? window.screen : NSScreen.mainScreen;
 }
 
 [[nodiscard]] auto nativeLevelValue(MacosWindowLevel level) -> NSWindowLevel {
 	switch (level) {
+	case MacosWindowLevel::normal:
+		return NSNormalWindowLevel;
 	case MacosWindowLevel::floating:
 		return NSFloatingWindowLevel;
 	case MacosWindowLevel::submenu:
@@ -90,58 +103,43 @@ configurationChanged(const WindowConfiguration &previous, const WindowConfigurat
 		return NSPopUpMenuWindowLevel;
 	case MacosWindowLevel::screenSaver:
 		return NSScreenSaverWindowLevel;
-	case MacosWindowLevel::normal:
-		return NSNormalWindowLevel;
 	}
 	return NSNormalWindowLevel;
 }
 
 void applyCollectionBehavior(NSWindow *window, const WindowConfiguration &configuration) {
 	NSWindowCollectionBehavior behavior = NSWindowCollectionBehaviorDefault;
-	if (configuration.level == NativeWindowLevel::floating || configuration.macos.floatingPanel) {
+	switch (configuration.macos.spacesBehavior) {
+	case 1:
 		behavior |= NSWindowCollectionBehaviorCanJoinAllSpaces;
-		behavior |= NSWindowCollectionBehaviorFullScreenAuxiliary;
+		break;
+	case 2:
+		behavior |= NSWindowCollectionBehaviorMoveToActiveSpace;
+		break;
+	default:
+		break;
 	}
-	if (configuration.macos.present) {
-		switch (configuration.macos.spacesBehavior) {
-		case 1:
-			behavior |= NSWindowCollectionBehaviorCanJoinAllSpaces;
-			break;
-		case 2:
-			behavior |= NSWindowCollectionBehaviorMoveToActiveSpace;
-			break;
-		default:
-			break;
-		}
-		switch (configuration.macos.fullscreenBehavior) {
-		case 1:
-			behavior |= NSWindowCollectionBehaviorFullScreenAuxiliary;
-			break;
-		case 2:
-			behavior |= NSWindowCollectionBehaviorFullScreenNone;
-			break;
-		default:
-			behavior |= NSWindowCollectionBehaviorFullScreenPrimary;
-			break;
-		}
+	if (!configuration.style.fullscreens || configuration.macos.fullscreenBehavior == 2) {
+		behavior |= NSWindowCollectionBehaviorFullScreenNone;
+	} else if (configuration.macos.fullscreenBehavior == 1) {
+		behavior |= NSWindowCollectionBehaviorFullScreenAuxiliary;
+	} else {
+		behavior |= NSWindowCollectionBehaviorFullScreenPrimary;
 	}
 	window.collectionBehavior = behavior;
 }
 
 void applyMacosExtensions(NSWindow *window, const WindowConfiguration &configuration) {
-	if (!configuration.macos.present) {
-		return;
-	}
 	window.titlebarAppearsTransparent = configuration.macos.transparentTitleBar;
 	window.titleVisibility =
 		configuration.macos.titleVisible ? NSWindowTitleVisible : NSWindowTitleHidden;
 	if (configuration.macos.fullSizeContentView) {
 		window.styleMask |= NSWindowStyleMaskFullSizeContentView;
+	} else {
+		window.styleMask &= ~NSWindowStyleMaskFullSizeContentView;
 	}
-	if (configuration.macos.hideTitleBarControls) {
-		[[window standardWindowButton:NSWindowCloseButton] setHidden:YES];
-		[[window standardWindowButton:NSWindowMiniaturizeButton] setHidden:YES];
-		[[window standardWindowButton:NSWindowZoomButton] setHidden:YES];
+	for (const auto button : {NSWindowCloseButton, NSWindowMiniaturizeButton, NSWindowZoomButton}) {
+		[window standardWindowButton:button].hidden = configuration.macos.hideTitleBarControls;
 	}
 	switch (configuration.macos.tabbingMode) {
 	case 1:
@@ -154,49 +152,88 @@ void applyMacosExtensions(NSWindow *window, const WindowConfiguration &configura
 		window.tabbingMode = NSWindowTabbingModeAutomatic;
 		break;
 	}
-	if (configuration.macos.tabbingIdentifier) {
-		window.tabbingIdentifier = utf8String(*configuration.macos.tabbingIdentifier);
-	}
-	if ([window isKindOfClass:[NSPanel class]]) {
+	window.tabbingIdentifier = configuration.macos.tabbingIdentifier
+		? utf8String(*configuration.macos.tabbingIdentifier)
+		: @"";
+	if ([window isKindOfClass:NSPanel.class]) {
 		auto *const panel = static_cast<NSPanel *>(window);
 		panel.becomesKeyOnlyIfNeeded = configuration.macos.becomesKeyOnlyIfNeeded;
 		panel.worksWhenModal = configuration.macos.worksWhenModal;
 		panel.floatingPanel = configuration.macos.floatingPanel;
 	}
-	window.level = nativeLevelValue(configuration.macos.nativeLevel);
+	window.level = configuration.macos.nativeLevel
+		? nativeLevelValue(*configuration.macos.nativeLevel)
+		: (configuration.level == NativeWindowLevel::floating ? NSFloatingWindowLevel
+															  : NSNormalWindowLevel);
 }
 
 void applyPlacement(NSWindow *window, const WindowConfiguration &configuration) {
-	NSScreen *const screen = window.screen != nil ? window.screen : NSScreen.mainScreen;
-	const NSSize contentSize = NSMakeSize(configuration.contentWidth, configuration.contentHeight);
-	[window setContentSize:contentSize];
+	NSScreen *const screen = selectedScreen(configuration, window);
+	const NSRect content = [window contentRectForFrameRect:window.frame];
+	NSRect target = NSMakeRect(
+		content.origin.x,
+		content.origin.y,
+		configuration.contentWidth,
+		configuration.contentHeight
+	);
 	switch (configuration.placement) {
-	case NativePlacementKind::system:
-		break;
-	case NativePlacementKind::centered:
-		[window center];
-		break;
-	case NativePlacementKind::explicitOrigin: {
-		const NSPoint appKitOrigin = appKitPointFromStana(
-			{.x = configuration.originX, .y = configuration.originY + configuration.contentHeight},
-			screen
+	case NativePlacementKind::system: {
+		static thread_local std::map<std::uint64_t, NSPoint> cascade;
+		const auto id = screenId(screen);
+		const auto found = cascade.find(id);
+		const NSPoint origin = found == cascade.end()
+			? NSMakePoint(NSMinX(screen.visibleFrame), NSMaxY(screen.visibleFrame))
+			: found->second;
+		[window setContentSize:target.size];
+		cascade.insert_or_assign(id, [window cascadeTopLeftFromPoint:origin]);
+		return;
+	}
+	case NativePlacementKind::centered: {
+		const NSRect area = screen.visibleFrame;
+		target.origin = NSMakePoint(
+			NSMidX(area) - target.size.width * halfDimension,
+			NSMidY(area) - target.size.height * halfDimension
 		);
-		const NSRect frame = [window frameRectForContentRect:NSMakeRect(
-																 appKitOrigin.x,
-																 appKitOrigin.y,
-																 configuration.contentWidth,
-																 configuration.contentHeight
-															 )];
-		[window setFrame:frame display:YES];
 		break;
 	}
+	case NativePlacementKind::explicitOrigin:
+		target.origin = NSMakePoint(
+			configuration.originX,
+			primaryHeight() - configuration.originY - configuration.contentHeight
+		);
+		break;
 	}
+	[window setFrame:[window frameRectForContentRect:target] display:YES];
 }
 
-void applyState(NSWindow *window, NativeWindowState state) {
+inline constexpr std::chrono::seconds stateConfirmationDeadline{5};
+
+struct StateCompletion {
+	std::shared_ptr<NativeActionCompletion> callback;
+
+	void operator()(NativeActionResult result) const {
+		if (*callback) {
+			const auto complete = std::move(*callback);
+			*callback = {};
+			complete(std::move(result));
+		}
+	}
+};
+
+auto applyState(NSWindow *window, NativeWindowState state) -> bool {
+	if (state != NativeWindowState::fullscreen &&
+		(window.styleMask & NSWindowStyleMaskFullScreen) != 0) {
+		[window toggleFullScreen:nil];
+		return true;
+	}
+	if (state != NativeWindowState::minimized && window.miniaturized) {
+		[window deminiaturize:nil];
+	}
 	switch (state) {
 	case NativeWindowState::minimized:
-		[window miniaturize:nil];
+		if (!window.miniaturized) {
+			[window miniaturize:nil];
+		}
 		break;
 	case NativeWindowState::maximized:
 		if (!window.zoomed) {
@@ -209,17 +246,12 @@ void applyState(NSWindow *window, NativeWindowState state) {
 		}
 		break;
 	case NativeWindowState::normal:
-		if (window.miniaturized) {
-			[window deminiaturize:nil];
-		}
-		if ((window.styleMask & NSWindowStyleMaskFullScreen) != 0) {
-			[window toggleFullScreen:nil];
-		}
 		if (window.zoomed) {
 			[window zoom:nil];
 		}
 		break;
 	}
+	return false;
 }
 
 [[nodiscard]] auto currentState(NSWindow *window) -> NativeWindowState {
@@ -234,16 +266,11 @@ void applyState(NSWindow *window, NativeWindowState state) {
 	}
 	return NativeWindowState::normal;
 }
-
 } // namespace
 
 auto nativeStyleMask(const WindowConfiguration &configuration) -> NSWindowStyleMask {
-	NSWindowStyleMask mask = 0;
-	if (configuration.style.titled) {
-		mask |= NSWindowStyleMaskTitled;
-	} else {
-		mask |= NSWindowStyleMaskBorderless;
-	}
+	NSWindowStyleMask mask =
+		configuration.style.titled ? NSWindowStyleMaskTitled : NSWindowStyleMaskBorderless;
 	if (configuration.style.closable) {
 		mask |= NSWindowStyleMaskClosable;
 	}
@@ -259,53 +286,47 @@ auto nativeStyleMask(const WindowConfiguration &configuration) -> NSWindowStyleM
 	return mask;
 }
 
+auto validateNativeConfiguration(const WindowConfiguration &configuration) -> bool {
+	if (utf8String(configuration.title) == nil ||
+		(configuration.macos.tabbingIdentifier &&
+			utf8String(*configuration.macos.tabbingIdentifier) == nil)) {
+		return false;
+	}
+	if (configuration.state == NativeWindowState::fullscreen &&
+		(!configuration.style.fullscreens || configuration.macos.fullscreenBehavior == 2)) {
+		return false;
+	}
+	if (selectedScreen(configuration, nil) == nil) {
+		return false;
+	}
+	if (configuration.role != NativeWindowRole::utility &&
+		(configuration.macos.becomesKeyOnlyIfNeeded || configuration.macos.worksWhenModal ||
+			configuration.macos.floatingPanel)) {
+		return false;
+	}
+	return true;
+}
+
 auto createConfiguredWindow(const WindowConfiguration &configuration) -> NSWindow * {
-	const NSRect contentRect =
-		NSMakeRect(40, 40, configuration.contentWidth, configuration.contentHeight);
-	const NSWindowStyleMask mask = nativeStyleMask(configuration);
+	if (!validateNativeConfiguration(configuration)) {
+		return nil;
+	}
+	const NSRect rect = NSMakeRect(40, 40, configuration.contentWidth, configuration.contentHeight);
 	NSWindow *window = nil;
-	if (configuration.role == NativeWindowRole::utility ||
-		(configuration.macos.present && configuration.macos.floatingPanel)) {
-		window = [[NSPanel alloc] initWithContentRect:contentRect
-											styleMask:mask
-											  backing:NSBackingStoreBuffered
-												defer:NO];
+	if (configuration.role == NativeWindowRole::utility) {
+		STANAConfiguredPanel *const panel = [STANAConfiguredPanel alloc];
+		window = [panel initWithContentRect:rect
+								  styleMask:nativeStyleMask(configuration)
+									backing:NSBackingStoreBuffered
+									  defer:NO];
 	} else {
-		window = [[NSWindow alloc] initWithContentRect:contentRect
-											 styleMask:mask
-											   backing:NSBackingStoreBuffered
-												 defer:NO];
+		STANAConfiguredWindow *const ordinary = [STANAConfiguredWindow alloc];
+		window = [ordinary initWithContentRect:rect
+									 styleMask:nativeStyleMask(configuration)
+									   backing:NSBackingStoreBuffered
+										 defer:NO];
 	}
 	window.releasedWhenClosed = NO;
-	window.title = utf8String(configuration.title);
-	window.alphaValue = static_cast<CGFloat>(configuration.opacity);
-	window.hasShadow = configuration.hasShadow;
-	window.ignoresMouseEvents = configuration.ignoresMouseEvents;
-	if (configuration.minimumContentSize) {
-		window.contentMinSize = NSMakeSize(
-			configuration.minimumContentSize->width,
-			configuration.minimumContentSize->height
-		);
-	}
-	if (configuration.maximumContentSize) {
-		window.contentMaxSize = NSMakeSize(
-			configuration.maximumContentSize->width,
-			configuration.maximumContentSize->height
-		);
-	}
-	if (configuration.aspectRatio) {
-		window.contentAspectRatio = NSMakeSize(*configuration.aspectRatio, 1.0);
-	}
-	if (configuration.resizeIncrement) {
-		window.contentResizeIncrements =
-			NSMakeSize(configuration.resizeIncrement->width, configuration.resizeIncrement->height);
-	}
-	applyMacosExtensions(window, configuration);
-	applyCollectionBehavior(window, configuration);
-	applyPlacement(window, configuration);
-	if (configuration.level == NativeWindowLevel::floating && !configuration.macos.present) {
-		window.level = NSFloatingWindowLevel;
-	}
 	return window;
 }
 
@@ -317,80 +338,113 @@ void applyWindowConfiguration(
 	if (window == nil) {
 		return;
 	}
-	if (applied.hasApplied && !configurationChanged(applied.requested, requested)) {
-		return;
-	}
+	window.styleMask =
+		nativeStyleMask(requested) | (window.styleMask & NSWindowStyleMaskFullScreen);
 	window.title = utf8String(requested.title);
-	window.alphaValue = static_cast<CGFloat>(requested.opacity);
+	window.alphaValue = requested.opacity;
 	window.hasShadow = requested.hasShadow;
-	window.ignoresMouseEvents = requested.ignoresMouseEvents;
-	if (requested.minimumContentSize) {
-		window.contentMinSize =
-			NSMakeSize(requested.minimumContentSize->width, requested.minimumContentSize->height);
+	const auto policy = static_cast<id<STANAWindowPolicy>>(window);
+	policy.stanaAllowsFocus = requested.acceptsFocus;
+	policy.stanaEnabled = requested.isEnabled;
+	window.ignoresMouseEvents = requested.ignoresMouseEvents || !requested.isEnabled;
+	if ((!requested.acceptsFocus || !requested.isEnabled) && window.keyWindow) {
+		[window resignKeyWindow];
 	}
-	if (requested.maximumContentSize) {
-		window.contentMaxSize =
-			NSMakeSize(requested.maximumContentSize->width, requested.maximumContentSize->height);
-	}
-	if (requested.aspectRatio) {
-		window.contentAspectRatio = NSMakeSize(*requested.aspectRatio, 1.0);
-	}
-	if (requested.resizeIncrement) {
-		window.contentResizeIncrements =
-			NSMakeSize(requested.resizeIncrement->width, requested.resizeIncrement->height);
+	[window standardWindowButton:NSWindowCloseButton].enabled =
+		requested.style.closable && requested.isEnabled;
+	[window standardWindowButton:NSWindowMiniaturizeButton].enabled =
+		requested.style.minimizable && requested.isEnabled;
+	[window standardWindowButton:NSWindowZoomButton].enabled =
+		requested.style.maximizable && requested.isEnabled;
+	window.contentMinSize = requested.minimumContentSize
+		? NSMakeSize(requested.minimumContentSize->width, requested.minimumContentSize->height)
+		: NSZeroSize;
+	window.contentMaxSize = requested.maximumContentSize
+		? NSMakeSize(requested.maximumContentSize->width, requested.maximumContentSize->height)
+		: NSMakeSize(std::numeric_limits<CGFloat>::max(), std::numeric_limits<CGFloat>::max());
+	window.contentAspectRatio =
+		requested.aspectRatio ? NSMakeSize(*requested.aspectRatio, 1) : NSZeroSize;
+	window.contentResizeIncrements = requested.resizeIncrement
+		? NSMakeSize(requested.resizeIncrement->width, requested.resizeIncrement->height)
+		: NSMakeSize(1, 1);
+	window.appearance = requested.darkTheme
+		? [NSAppearance appearanceNamed:*requested.darkTheme ? NSAppearanceNameDarkAqua
+															 : NSAppearanceNameAqua]
+		: nil;
+	window.opaque = requested.backgroundKind != 2 &&
+		(requested.backgroundKind != 1 || requested.background.alpha >= 1.0);
+	switch (requested.backgroundKind) {
+	case 1:
+		window.backgroundColor = [NSColor colorWithSRGBRed:requested.background.red
+													 green:requested.background.green
+													  blue:requested.background.blue
+													 alpha:requested.background.alpha];
+		break;
+	case 2:
+		window.backgroundColor = NSColor.clearColor;
+		break;
+	default:
+		window.backgroundColor = NSColor.windowBackgroundColor;
+		break;
 	}
 	applyMacosExtensions(window, requested);
 	applyCollectionBehavior(window, requested);
-	if (!applied.hasApplied || applied.requested.placement != requested.placement ||
-		!std::is_eq(applied.requested.originX <=> requested.originX) ||
-		!std::is_eq(applied.requested.originY <=> requested.originY) ||
-		!std::is_eq(applied.requested.contentWidth <=> requested.contentWidth) ||
-		!std::is_eq(applied.requested.contentHeight <=> requested.contentHeight)) {
+	applyWindowFacilities(window, applied, requested);
+	const auto &previous = applied.requested;
+	if (!applied.hasApplied || previous.placement != requested.placement ||
+		!std::is_eq(previous.originX <=> requested.originX) ||
+		!std::is_eq(previous.originY <=> requested.originY) ||
+		previous.screenSelection != requested.screenSelection ||
+		previous.screenId != requested.screenId) {
 		applyPlacement(window, requested);
-	} else if (!std::is_eq(applied.requested.contentWidth <=> requested.contentWidth) ||
-		!std::is_eq(applied.requested.contentHeight <=> requested.contentHeight)) {
-		[window setContentSize:NSMakeSize(requested.contentWidth, requested.contentHeight)];
+	} else if (!std::is_eq(previous.contentWidth <=> requested.contentWidth) ||
+		!std::is_eq(previous.contentHeight <=> requested.contentHeight)) {
+		const NSRect content = [window contentRectForFrameRect:window.frame];
+		const NSRect target = NSMakeRect(
+			content.origin.x,
+			NSMaxY(content) - requested.contentHeight,
+			requested.contentWidth,
+			requested.contentHeight
+		);
+		[window setFrame:[window frameRectForContentRect:target] display:YES];
 	}
-	if (!applied.hasApplied || applied.requested.state != requested.state) {
-		applyState(window, requested.state);
-	}
-	if (requested.isVisible) {
-		if (!requested.presentWithoutActivation && requested.acceptsFocus && !applied.hasApplied) {
-			[window makeKeyAndOrderFront:nil];
-		} else {
-			[window orderFront:nil];
-		}
-	} else {
-		[window orderOut:nil];
-	}
-	if (requested.level == NativeWindowLevel::floating && !requested.macos.present) {
-		window.level = NSFloatingWindowLevel;
-	}
+	const bool stateChanged = !applied.hasApplied || previous.state != requested.state;
+	const bool visibilityChanged = !applied.hasApplied || previous.isVisible != requested.isVisible;
 	applied.requested = requested;
 	applied.hasApplied = true;
+	if (visibilityChanged && !applyRoleVisibility(window, requested, requested.isVisible)) {
+		if (requested.isVisible) {
+			if (!requested.presentWithoutActivation && requested.acceptsFocus &&
+				requested.isEnabled) {
+				[window makeKeyAndOrderFront:nil];
+			} else {
+				[window orderFront:nil];
+			}
+		} else {
+			[window orderOut:nil];
+		}
+	}
+	if (stateChanged && applyState(window, requested.state)) {
+		applied.transitionTarget = requested.state;
+	}
 }
 
 auto observeNativeWindow(NSWindow *window) -> NativeWindowObservation {
 	if (window == nil) {
 		return {};
 	}
-	NSScreen *const screen = window.screen != nil ? window.screen : NSScreen.mainScreen;
 	const NSRect content = [window contentRectForFrameRect:window.frame];
-	const auto topLeft = stanaPointFromAppKit(
-		NSMakePoint(content.origin.x, content.origin.y + content.size.height),
-		screen
-	);
 	return {
-		.contentX = topLeft.x,
-		.contentY = topLeft.y,
+		.contentX = content.origin.x,
+		.contentY = primaryHeight() - NSMaxY(content),
 		.contentWidth = content.size.width,
 		.contentHeight = content.size.height,
-		.screenId = screen == nil ? 0 : static_cast<std::uint64_t>(screen.hash),
+		.screenId = screenId(window.screen),
 		.state = currentState(window),
-		.isVisible = window.isVisible,
-		.isKey = window.isKeyWindow,
-		.isActive = window.isMainWindow,
-		.backingScale = screen == nil ? 1.0 : screen.backingScaleFactor
+		.isVisible = static_cast<bool>(window.visible),
+		.isKey = static_cast<bool>(window.keyWindow),
+		.isActive = static_cast<bool>(NSApp.active && (window.mainWindow || window.keyWindow)),
+		.backingScale = window.backingScaleFactor
 	};
 }
 
@@ -400,87 +454,165 @@ void installWindowHostControl(
 	const std::shared_ptr<WindowHostControl> &control,
 	const std::shared_ptr<AppliedWindowConfiguration> &applied
 ) {
-	if (control == nullptr || applied == nullptr) {
+	if (!control || !applied) {
 		return;
 	}
-	const auto weakState = std::weak_ptr{state};
+	const auto weak = std::weak_ptr{state};
 	control->applyConfiguration =
-		[window, applied, weakState](const WindowConfiguration &configuration) -> void {
-		if (const auto owner = weakState.lock(); !owner || owner->isClosed) {
-			return;
-		}
-		applyWindowConfiguration(window, *applied, configuration);
-	};
-	control->observe = [window] -> NativeWindowObservation {
-		return observeNativeWindow(window);
-	};
-	control->dispatchAction = [window, applied, weakState](
-								  NativeWindowActionKind kind,
-								  NativeWindowState stateValue,
-								  std::uint64_t token
-							  ) -> NativeWindowOutcome {
-		if (const auto owner = weakState.lock(); !owner || owner->isClosed) {
+		[window, weak, applied](const WindowConfiguration &configuration) -> NativeWindowOutcome {
+		const auto owner = weak.lock();
+		if (!owner || owner->isClosed) {
 			return NativeWindowOutcome::cancelled;
 		}
-		switch (kind) {
+		if (!validateNativeConfiguration(configuration)) {
+			return NativeWindowOutcome::invalid;
+		}
+		applyWindowConfiguration(window, *applied, configuration);
+		return NativeWindowOutcome::applied;
+	};
+	control->observe = [window, weak] -> NativeWindowObservation {
+		const auto owner = weak.lock();
+		return owner && !owner->isClosed ? observeNativeWindow(window) : NativeWindowObservation{};
+	};
+	control->dispatchAction = [window, weak, applied](
+								  const NativeWindowAction &action,
+								  NativeActionCompletion complete
+							  ) -> void {
+		const auto owner = weak.lock();
+		if (!owner || owner->isClosed) {
+			complete({.outcome = NativeWindowOutcome::cancelled});
+			return;
+		}
+		switch (action.kind) {
 		case NativeWindowActionKind::focus:
+			if (!applied->requested.acceptsFocus || !applied->requested.isEnabled) {
+				complete({.outcome = NativeWindowOutcome::denied});
+				return;
+			}
 			[window makeKeyAndOrderFront:nil];
-			return NativeWindowOutcome::applied;
+			complete(
+				{.outcome = window.keyWindow ? NativeWindowOutcome::applied
+											 : NativeWindowOutcome::denied}
+			);
+			return;
 		case NativeWindowActionKind::setState:
-			applyState(window, stateValue);
-			return NativeWindowOutcome::applied;
-		case NativeWindowActionKind::close:
-			[window performClose:nil];
-			return NativeWindowOutcome::pending;
+			applyState(window, action.state);
+			if (currentState(window) == action.state) {
+				complete({.outcome = NativeWindowOutcome::applied});
+			} else {
+				complete({.outcome = NativeWindowOutcome::pending});
+				const StateCompletion terminal{
+					std::make_shared<NativeActionCompletion>(std::move(complete))
+				};
+				applied->stateRequests.emplace_back(action.state, terminal);
+				postAfter(stateConfirmationDeadline, [weak, applied, terminal] -> void {
+					if (const auto current = weak.lock(); current && !current->isClosed) {
+						terminal({.outcome = NativeWindowOutcome::unconfirmed});
+						std::erase_if(applied->stateRequests, [](const auto &request) -> bool {
+							const auto *completion =
+								request.second.template target<StateCompletion>();
+							return completion != nullptr && !*completion->callback;
+						});
+					}
+				});
+			}
+			return;
+		case NativeWindowActionKind::close: {
+			const BOOL allowed = [window.delegate windowShouldClose:window];
+			if (allowed) {
+				applied->closeRequests.push_back(std::move(complete));
+				[window close];
+			} else if (applied->deferredCloseRequest != 0) {
+				complete({.outcome = NativeWindowOutcome::pending});
+				applied->closeRequests.push_back(std::move(complete));
+			} else {
+				complete({.outcome = NativeWindowOutcome::denied});
+			}
+			return;
+		}
 		case NativeWindowActionKind::respondDeferredClose:
-			if (token == 0 || token != applied->deferredCloseRequest) {
-				return NativeWindowOutcome::invalid;
+			if (action.token == 0 || action.token != applied->deferredCloseRequest) {
+				complete({.outcome = NativeWindowOutcome::invalid});
+				return;
 			}
 			applied->deferredCloseRequest = 0;
-			[window close];
-			return NativeWindowOutcome::applied;
+			if (action.closeDecision == NativeCloseDecision::deny) {
+				auto requests = std::move(applied->closeRequests);
+				applied->closeRequests.clear();
+				for (const auto &request : requests) {
+					request({.outcome = NativeWindowOutcome::denied});
+				}
+				complete({.outcome = NativeWindowOutcome::applied});
+			} else {
+				applied->closeRequests.push_back(std::move(complete));
+				[window close];
+			}
+			return;
 		case NativeWindowActionKind::beginInteractiveMove:
 		case NativeWindowActionKind::beginInteractiveResize:
 		case NativeWindowActionKind::showWindowMenu:
+			dispatchWindowGesture(window, owner, action, complete);
+			return;
 		case NativeWindowActionKind::capture:
 		case NativeWindowActionKind::print:
-			return NativeWindowOutcome::unsupported;
+			captureWindowContent(
+				window,
+				owner,
+				action.kind == NativeWindowActionKind::print,
+				std::move(complete)
+			);
+			return;
 		}
-		return NativeWindowOutcome::unsupported;
 	};
 }
 
-auto enumerateMacScreens() -> std::vector<NativeScreen> {
-	std::vector<NativeScreen> screens;
-	NSArray<NSScreen *> *const native = NSScreen.screens;
-	NSScreen *const primary = NSScreen.mainScreen;
-	for (NSUInteger index = 0; index < native.count; ++index) {
-		NSScreen *const screen = [native objectAtIndex:index];
-		const NSRect frame = screen.frame;
-		const NSRect visible = screen.visibleFrame;
-		const auto topLeft = stanaPointFromAppKit(
-			NSMakePoint(frame.origin.x, frame.origin.y + frame.size.height),
-			screen
-		);
-		const auto workTopLeft = stanaPointFromAppKit(
-			NSMakePoint(visible.origin.x, visible.origin.y + visible.size.height),
-			screen
-		);
-		const char *const name = screen.localizedName.UTF8String;
-		screens.push_back(
-			{.id = static_cast<std::uint64_t>(screen.hash),
-				.name = name != nullptr ? std::string{name} : std::string{},
-				.bounds =
-					{.origin = topLeft,
-						.size = {.width = frame.size.width, .height = frame.size.height}},
-				.workArea =
-					{.origin = workTopLeft,
-						.size = {.width = visible.size.width, .height = visible.size.height}},
-				.backingScale = screen.backingScaleFactor,
-				.isPrimary = screen == primary}
-		);
+void publishWindowObservation(const std::shared_ptr<WindowState> &state) {
+	if (!state || state->isClosed || state->nativeWindow == nil) {
+		return;
 	}
-	return screens;
+	auto observation = observeNativeWindow(state->nativeWindow);
+	if (state->appliedConfiguration->transitionTarget &&
+		observation.state != NativeWindowState::fullscreen) {
+		const auto target = *state->appliedConfiguration->transitionTarget;
+		state->appliedConfiguration->transitionTarget.reset();
+		static_cast<void>(applyState(state->nativeWindow, target));
+		observation = observeNativeWindow(state->nativeWindow);
+	}
+	const auto applied = state->appliedConfiguration;
+	auto pending = std::move(applied->stateRequests);
+	applied->stateRequests.clear();
+	for (auto &request : pending) {
+		if (request.first == observation.state) {
+			request.second({.outcome = NativeWindowOutcome::applied});
+		} else {
+			applied->stateRequests.push_back(std::move(request));
+		}
+	}
+	if (state->callbacks.stateChanged) {
+		state->callbacks.stateChanged(observation);
+	}
 }
 
+auto enumerateMacScreens() -> std::vector<NativeScreen> {
+	std::vector<NativeScreen> result;
+	for (NSUInteger index = 0; index < NSScreen.screens.count; ++index) {
+		NSScreen *const screen = [NSScreen.screens objectAtIndex:index];
+		const auto convert = [](NSRect rect) -> LogicalRect {
+			return {
+				.origin = {.x = rect.origin.x, .y = primaryHeight() - NSMaxY(rect)},
+				.size = {.width = rect.size.width, .height = rect.size.height}
+			};
+		};
+		const char *const name = screen.localizedName.UTF8String;
+		result.push_back(
+			{.id = screenId(screen),
+				.name = name == nullptr ? std::string{} : std::string{name},
+				.bounds = convert(screen.frame),
+				.workArea = convert(screen.visibleFrame),
+				.backingScale = screen.backingScaleFactor,
+				.isPrimary = screen == NSScreen.screens.firstObject}
+		);
+	}
+	return result;
+}
 } // namespace stana::platform::detail

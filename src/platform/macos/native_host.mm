@@ -232,7 +232,7 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 }
 
 - (BOOL)acceptsFirstResponder {
-	return YES;
+	return state_ && state_->appliedConfiguration->requested.isEnabled;
 }
 
 - (BOOL)acceptsFirstMouse:(NSEvent *)event {
@@ -311,6 +311,7 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 }
 
 - (void)dispatchPointerMove:(NSEvent *)event {
+	stana::platform::detail::publishWindowInteraction(state_, event, 1);
 	if (state_ == nullptr || state_->isClosed || !state_->allowsPointer() ||
 		!state_->callbacks.pointerMove) {
 		return;
@@ -320,7 +321,8 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 }
 
 - (void)dispatchKey:(NSEvent *)event released:(BOOL)released {
-	if (state_ == nullptr || state_->isClosed || !state_->callbacks.key) {
+	if (state_ == nullptr || state_->isClosed ||
+		!state_->appliedConfiguration->requested.isEnabled || !state_->callbacks.key) {
 		return;
 	}
 	using stana::platform::detail::KeyAction;
@@ -349,6 +351,7 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 }
 
 - (void)mouseDown:(NSEvent *)event {
+	stana::platform::detail::publishWindowInteraction(state_, event, 0);
 	if (state_ && state_->traceRendering) {
 		std::cerr << "Pointer gate=" << state_->allowsPointer()
 				  << " confirmed=" << state_->confirmedRevision << " epoch=" << state_->surfaceEpoch
@@ -364,6 +367,7 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 }
 
 - (void)mouseUp:(NSEvent *)event {
+	stana::platform::detail::publishWindowInteraction(state_, event, 2);
 	if (state_ && state_->traceRendering) {
 		std::cerr << "Pointer gate=" << state_->allowsPointer()
 				  << " confirmed=" << state_->confirmedRevision << " epoch=" << state_->surfaceEpoch
@@ -418,6 +422,31 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 	[self dispatchKey:event released:YES];
 }
 
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
+	return stana::platform::detail::negotiateWindowDrag(state_, sender, true, false);
+}
+
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender {
+	return stana::platform::detail::negotiateWindowDrag(state_, sender, false, false);
+}
+
+- (BOOL)prepareForDragOperation:(id<NSDraggingInfo>)sender {
+	return stana::platform::detail::negotiateWindowDrag(state_, sender, false, false) !=
+		NSDragOperationNone;
+}
+
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
+	return stana::platform::detail::negotiateWindowDrag(state_, sender, false, true) !=
+		NSDragOperationNone;
+}
+
+- (void)draggingExited:(id<NSDraggingInfo>)sender {
+	static_cast<void>(sender);
+	if (state_ && !state_->isClosed && state_->appliedConfiguration->requested.dropTarget.leave) {
+		state_->appliedConfiguration->requested.dropTarget.leave();
+	}
+}
+
 @end
 
 /// @brief Delegate connecting native closure to document disposal and final loop shutdown.
@@ -433,6 +462,9 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 	static_cast<void>(sender);
 	if (!state_ || state_->isClosed || !state_->callbacks.closeShouldProceed) {
 		return YES;
+	}
+	if (state_->appliedConfiguration && state_->appliedConfiguration->deferredCloseRequest != 0) {
+		return NO;
 	}
 	std::uint64_t requestId = 1;
 	if (state_->appliedConfiguration != nullptr) {
@@ -462,16 +494,63 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 	return YES;
 }
 
+- (void)window:(NSWindow *)window willEncodeRestorableState:(NSCoder *)coder {
+	static_cast<void>(window);
+	if (state_) {
+		stana::platform::detail::encodeWindowRestoration(state_, coder);
+	}
+}
+
+- (void)window:(NSWindow *)window didDecodeRestorableState:(NSCoder *)coder {
+	static_cast<void>(window);
+	if (state_) {
+		stana::platform::detail::decodeWindowRestoration(state_, coder);
+	}
+}
+
+- (void)applicationActivationChanged:(NSNotification *)notification {
+	static_cast<void>(notification);
+	stana::platform::detail::publishWindowObservation(state_);
+}
+
+- (void)windowDidBecomeMain:(NSNotification *)notification {
+	static_cast<void>(notification);
+	stana::platform::detail::publishWindowObservation(state_);
+}
+
+- (void)windowDidResignMain:(NSNotification *)notification {
+	static_cast<void>(notification);
+	stana::platform::detail::publishWindowObservation(state_);
+}
+
 - (void)windowDidBecomeKey:(NSNotification *)notification {
 	static_cast<void>(notification);
-	if (state_ && !state_->isClosed) {
-		stana::platform::detail::requestFrame(state_);
-		if (state_->callbacks.stateChanged) {
-			state_->callbacks.stateChanged(
-				stana::platform::detail::observeNativeWindow(notification.object)
-			);
-		}
-	}
+	stana::platform::detail::publishWindowObservation(state_);
+}
+
+- (void)windowDidResignKey:(NSNotification *)notification {
+	static_cast<void>(notification);
+	stana::platform::detail::publishWindowObservation(state_);
+}
+
+- (void)windowDidMove:(NSNotification *)notification {
+	static_cast<void>(notification);
+	stana::platform::detail::publishWindowObservation(state_);
+}
+
+- (void)windowDidResize:(NSNotification *)notification {
+	static_cast<void>(notification);
+	stana::platform::detail::publishWindowObservation(state_);
+}
+
+- (void)windowDidEnterFullScreen:(NSNotification *)notification {
+	static_cast<void>(notification);
+	stana::platform::detail::publishWindowObservation(state_);
+}
+
+- (void)windowDidExitFullScreen:(NSNotification *)notification {
+	static_cast<void>(notification);
+	stana::platform::detail::publishWindowObservation(state_);
 }
 
 - (void)windowDidChangeScreen:(NSNotification *)notification {
@@ -484,6 +563,7 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 		// change only remaps the cached linear packet; it must not step state.
 		stana::platform::detail::requestFrame(state_);
 	}
+	stana::platform::detail::publishWindowObservation(state_);
 }
 
 - (void)windowDidMiniaturize:(NSNotification *)notification {
@@ -491,6 +571,7 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 	if (state_ && !state_->isClosed && state_->view != nil) {
 		[static_cast<STANAView *>(state_->view) publishCurrentVisibility];
 	}
+	stana::platform::detail::publishWindowObservation(state_);
 }
 
 - (void)windowDidDeminiaturize:(NSNotification *)notification {
@@ -498,6 +579,7 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 	if (state_ && !state_->isClosed && state_->view != nil) {
 		[static_cast<STANAView *>(state_->view) publishCurrentVisibility];
 	}
+	stana::platform::detail::publishWindowObservation(state_);
 }
 
 - (void)screenParametersChanged:(NSNotification *)notification {
@@ -505,6 +587,7 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 	if (state_ && !state_->isClosed) {
 		stana::platform::detail::requestFrame(state_);
 	}
+	stana::platform::detail::publishWindowObservation(state_);
 }
 
 - (void)windowDidChangeOcclusionState:(NSNotification *)notification {
@@ -515,6 +598,7 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 		}
 		stana::platform::detail::requestFrame(state_);
 	}
+	stana::platform::detail::publishWindowObservation(state_);
 }
 
 - (void)windowWillClose:(NSNotification *)notification {
@@ -524,16 +608,33 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 	}
 	NSWindow *const closingWindow = notification.object;
 	if (state_ && !std::exchange(state_->isClosed, true)) {
+		state_->interactionToken = 0;
+		state_->interactionEvent = nil;
+		if (NSApp.modalWindow == closingWindow) {
+			[NSApp stopModal];
+		}
+		if (state_->modalSession != nullptr) {
+			[NSApp endModalSession:state_->modalSession];
+			state_->modalSession = nullptr;
+		}
+		if (closingWindow.sheetParent != nil) {
+			[closingWindow.sheetParent endSheet:closingWindow];
+		}
+		auto completed = std::move(state_->appliedConfiguration->closeRequests);
+		state_->appliedConfiguration->closeRequests.clear();
+		for (const auto &callback : completed) {
+			callback({.outcome = stana::platform::detail::NativeWindowOutcome::applied});
+		}
 		stana::platform::detail::closeRenderer(state_);
 		state_->callbacks.close();
 	}
 	bool hasOpenWindow = false;
-	for (NSUInteger index = 0; index < NSApp.windows.count; ++index) {
-		NSWindow *const window = [NSApp.windows objectAtIndex:index];
-		if (window != closingWindow && window.isVisible) {
+	for (const auto &weak : stana::platform::detail::activeWindows()) {
+		if (const auto owner = weak.lock(); owner && !owner->isClosed) {
 			hasOpenWindow = true;
 		}
 	}
+
 	if (!hasOpenWindow) {
 		stana::platform::detail::stop();
 	}
@@ -739,10 +840,36 @@ auto run(const std::vector<Window> &descriptions) -> std::expected<int, std::str
 		// Explicit C++ startup has no NSApplicationMain/nib lifecycle. Complete
 		// registration before exposing layer attachments or admitting drawables.
 		[NSApp finishLaunching];
-		[NSApp activate];
+
 		std::vector<std::shared_ptr<WindowState>> states;
 		NSMutableArray<NSWindow *> *const nativeWindows = [NSMutableArray array];
 		NSMutableArray<STANAWindowDelegate *> *const delegates = [NSMutableArray array];
+
+		const auto cleanupAction = [&](void *) noexcept -> void {
+			try {
+				for (NSUInteger index = 0; index < nativeWindows.count; ++index) {
+					[[nativeWindows objectAtIndex:index] close];
+				}
+				for (const auto &state : states) {
+					if (!state->isClosed) {
+						state->isClosed = true;
+						if (state->compositor) {
+							closeRenderer(state);
+						}
+						if (state->callbacks.close) {
+							state->callbacks.close();
+						}
+					}
+				}
+				unregisterConfiguredWindows();
+				stopRequested().store(false, std::memory_order_release);
+			} catch (const std::exception &error) {
+				std::cerr << "Stana cleanup failed: " << error.what() << '\n';
+			} catch (...) {
+				std::cerr << "Stana cleanup failed\n";
+			}
+		};
+		const std::shared_ptr<void> cleanup{nullptr, cleanupAction};
 		for (auto &description : windows) {
 			auto state = std::make_shared<WindowState>();
 			state->callbacks = std::move(description);
@@ -782,8 +909,12 @@ auto run(const std::vector<Window> &descriptions) -> std::expected<int, std::str
 			}
 			NSWindow *const window = createConfiguredWindow(configuration);
 			state->nativeWindow = window;
-			state->appliedConfiguration->requested = configuration;
-			state->appliedConfiguration->hasApplied = true;
+			if (window == nil) {
+				return std::unexpected(
+					"Invalid native window configuration or unavailable display"
+				);
+			}
+			registerConfiguredWindow(state);
 			STANAView *const view = [[STANAView alloc] initWithFrame:NSMakeRect(
 																		 0,
 																		 0,
@@ -803,6 +934,15 @@ auto run(const std::vector<Window> &descriptions) -> std::expected<int, std::str
 				   selector:@selector(screenParametersChanged:)
 					   name:NSApplicationDidChangeScreenParametersNotification
 					 object:nil];
+			for (const auto &name :
+				{NSApplicationDidBecomeActiveNotification,
+					NSApplicationDidResignActiveNotification}) {
+				[NSNotificationCenter.defaultCenter
+					addObserver:delegate
+					   selector:@selector(applicationActivationChanged:)
+						   name:name
+						 object:nil];
+			}
 			[delegates addObject:delegate];
 			[nativeWindows addObject:window];
 			installWindowHostControl(
@@ -818,29 +958,42 @@ auto run(const std::vector<Window> &descriptions) -> std::expected<int, std::str
 					requestFrame(current);
 				}
 			});
-			if (configuration.isVisible) {
-				if (configuration.presentWithoutActivation || !configuration.acceptsFocus) {
-					[window orderFront:nil];
-				} else {
-					[window makeKeyAndOrderFront:nil];
-				}
-			}
 			[window makeFirstResponder:view];
+		}
+		for (const auto &state : states) {
+			NSWindow *const window = state->nativeWindow;
+			auto initial = state->callbacks.configuration;
+			initial.isVisible = false;
+			initial.state = NativeWindowState::normal;
+			applyWindowConfiguration(window, *state->appliedConfiguration, initial);
+			if (!attachWindowRole(state)) {
+				return std::unexpected("Invalid window owner relationship");
+			}
+			applyWindowConfiguration(
+				window,
+				*state->appliedConfiguration,
+				state->callbacks.configuration
+			);
 			installSurface(state);
-			[view installFrameLink];
+			[static_cast<STANAView *>(state->view) installFrameLink];
 			requestFrame(state);
 			if (state->callbacks.configurationApplied) {
 				state->callbacks.configurationApplied();
 			}
-			if (state->callbacks.stateChanged) {
-				state->callbacks.stateChanged(observeNativeWindow(window));
-			}
+			publishWindowObservation(state);
 		}
+
 		if (windows.empty()) {
 			stopRequested().store(false, std::memory_order_release);
 			return 0;
 		}
-		[NSApp activate];
+		if (std::ranges::any_of(states, [](const auto &state) -> bool {
+				const auto &options = state->callbacks.configuration;
+				return options.isVisible && options.acceptsFocus && options.isEnabled &&
+					!options.presentWithoutActivation;
+			})) {
+			[NSApp activate];
+		}
 		// Honor Application::stop() issued during prepare/onMount, before this loop starts.
 		if (!stopRequested().exchange(false, std::memory_order_acq_rel)) {
 			[NSApp run];
@@ -848,6 +1001,7 @@ auto run(const std::vector<Window> &descriptions) -> std::expected<int, std::str
 		for (NSUInteger index = 0; index < nativeWindows.count; ++index) {
 			[[nativeWindows objectAtIndex:index] close];
 		}
+		unregisterConfiguredWindows();
 		// windowWillClose of the last window also requests stop; drop that for the next run().
 		stopRequested().store(false, std::memory_order_release);
 		for (const auto &state : states) {

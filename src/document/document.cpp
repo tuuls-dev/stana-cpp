@@ -270,6 +270,14 @@ void Document::resize(Size size) {
 	commit();
 }
 
+void Document::setSurfaceBackground(std::optional<Color> color) {
+	if (surfaceBackground_ == color) {
+		return;
+	}
+	surfaceBackground_ = color;
+	invalidate(root_, Dirty::snapshot);
+}
+
 void Document::setEnvironment(Environment environment) {
 	stana::detail::requireNonnegative(environment.textScale);
 	const bool textChanged = std::is_neq(environment.textScale <=> environment_.textScale);

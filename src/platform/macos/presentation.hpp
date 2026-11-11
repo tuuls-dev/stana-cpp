@@ -79,8 +79,13 @@ struct WindowState {
 	std::shared_ptr<AppliedWindowConfiguration> appliedConfiguration =
 		std::make_shared<AppliedWindowConfiguration>();
 	__weak NSWindow *nativeWindow = nil;
+	NSModalSession modalSession = nullptr;
+	std::uint64_t interactionToken = 0;
+	NSEvent *interactionEvent = nil;
 
-	[[nodiscard]] auto allowsPointer() const -> bool { return !isClosed && confirmedRevision != 0; }
+	[[nodiscard]] auto allowsPointer() const -> bool {
+		return !isClosed && confirmedRevision != 0 && appliedConfiguration->requested.isEnabled;
+	}
 };
 
 void rendererFailure(const std::shared_ptr<WindowState> &, const gpu::Failure &);

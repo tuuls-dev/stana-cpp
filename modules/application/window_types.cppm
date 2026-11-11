@@ -5,6 +5,7 @@ module;
 #include <functional>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <variant>
 #include <vector>
 
@@ -341,7 +342,18 @@ struct WindowToolbarItem {
 	std::string identifier{}; ///< Stable item identity within the toolbar.
 	std::string label{};	  ///< Owning UTF-8 label.
 	bool enabled = true;	  ///< Whether the item accepts activation.
-	[[nodiscard]] auto operator<=>(const WindowToolbarItem &) const = default;
+	std::function<void()>
+		onActivate{}; ///< UI-executor activation callback; not descriptor identity.
+
+	[[nodiscard]] auto operator<=>(const WindowToolbarItem &other) const {
+		return std::tie(identifier, label, enabled) <=>
+			std::tie(other.identifier, other.label, other.enabled);
+	}
+
+	[[nodiscard]] auto operator==(const WindowToolbarItem &other) const -> bool {
+		return std::tie(identifier, label, enabled) ==
+			std::tie(other.identifier, other.label, other.enabled);
+	}
 };
 
 /// @brief Owned toolbar description mapped by native adapters.
@@ -373,11 +385,18 @@ struct DragFormat {
 	[[nodiscard]] auto operator<=>(const DragFormat &) const = default;
 };
 
+/// @brief One owned drop representation copied before application delivery.
+struct DropPayloadItem {
+	DragFormat format{};			   ///< Source format identifier (UTI, MIME, or accepted alias).
+	std::vector<std::uint8_t> bytes{}; ///< Owned representation; never borrowed pasteboard storage.
+};
+
 /// @brief Snapshot of an inbound drag session without borrowed native objects.
 struct DragInfo {
 	std::vector<DragFormat> formats{}; ///< Formats offered by the drag source.
 	Point location{};				   ///< Location in window content coordinates.
 	DragOperation proposedOperation = DragOperation::copy; ///< Source-proposed default.
+	std::vector<DropPayloadItem> items{}; ///< Populated for onDrop; safe to retain after delivery.
 };
 
 /// @brief Typed drag-and-drop acceptance policy and lifecycle handlers.
@@ -428,7 +447,7 @@ enum class WindowOutcome : std::uint8_t {
 };
 
 /// @brief Identifiers for capability and configuration reporting.
-enum class WindowFeature : std::uint16_t {
+enum class WindowFeature : std::uint8_t {
 	role,
 	renderingColorMode,
 	contentSize,

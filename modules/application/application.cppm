@@ -39,6 +39,13 @@ export namespace stana::application {
 /// | `.renderingColorMode` | `.options.renderingColorMode` |
 /// | `.content` | remains `.content` |
 ///
+/// The six former `WindowOptions` groups are removed: concatenate their fields
+/// directly, e.g. `.options.geometry.contentSize` becomes `.options.contentSize`
+/// and `.options.appearance.title` becomes `.options.title`. `creation`, `behavior`,
+/// `desktop`, and `facilities` are likewise flattened; their wrapper types no longer
+/// exist. Platform extension groups remain typed under `.options.platform`.
+/// Rebuild consumers after this source/ABI-breaking aggregate layout change.
+///
 /// Do not keep duplicate legacy fields or competing precedence rules. Defaults:
 /// content size 800×600 logical points, centered placement, native decorations,
 /// system background, opacity `1`, normal state, visible/enabled/focusable.

@@ -510,6 +510,8 @@ class Document : public std::enable_shared_from_this<Document> {
 	void commit();
 	void resize(Size size);
 	void setEnvironment(Environment environment);
+	/// @brief Overrides the window surface fill; empty restores the system-theme default.
+	void setSurfaceBackground(std::optional<Color> color);
 
 	[[nodiscard]] auto environment() const noexcept -> Environment { return environment_; }
 
@@ -659,6 +661,7 @@ class Document : public std::enable_shared_from_this<Document> {
 	NodeId root_{};
 	Size viewport_{};
 	Environment environment_;
+	std::optional<Color> surfaceBackground_{};
 	std::map<std::uint64_t, std::unique_ptr<Node>> nodes_;
 	mutable std::vector<NodeSnapshot> snapshots_;
 	mutable bool hasNodeMaterialization_ = false;

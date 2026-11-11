@@ -392,33 +392,115 @@ struct NativeMacosExtension {
 	bool becomesKeyOnlyIfNeeded = false;
 	bool worksWhenModal = false;
 	bool floatingPanel = false;
-	MacosWindowLevel nativeLevel =
-		MacosWindowLevel::normal; ///< Matches portable NativeWindowLevel extension enum order.
+	std::optional<MacosWindowLevel> nativeLevel{};
+	[[nodiscard]] auto operator==(const NativeMacosExtension &) const
+		-> bool = default; ///< Matches portable NativeWindowLevel extension enum order.
 };
+
+/// @brief Owned module-free toolbar descriptor; callbacks dispatch through current options.
+struct NativeToolbarItem {
+	std::string identifier{};
+	std::string label{};
+	bool enabled = true;
+	[[nodiscard]] auto operator==(const NativeToolbarItem &) const -> bool = default;
+};
+
+struct NativeToolbar {
+	std::string identifier{};
+	std::vector<NativeToolbarItem> items{};
+	bool visible = true;
+	std::function<void(const std::string &)> activate{};
+};
+
+struct NativeDocument {
+	std::optional<std::string> representedPath{};
+	bool edited = false;
+};
+
+struct NativeDropItem {
+	std::string format{};
+	std::vector<std::uint8_t> bytes{};
+};
+
+struct NativeDragInfo {
+	std::vector<std::string> formats{};
+	LogicalPoint location{};
+	std::uint8_t operation = 0;
+	std::vector<NativeDropItem> items{};
+};
+
+struct NativeDropTarget {
+	std::vector<std::string> formats{};
+	std::uint8_t operation = 1;
+	std::function<std::uint8_t(const NativeDragInfo &, bool)> negotiate{};
+	std::function<void()> leave{};
+	std::function<bool(const NativeDragInfo &)> drop{};
+};
+
+struct NativeRestoration {
+	std::string key{};
+	bool enabled = false;
+	std::function<std::vector<std::uint8_t>()> save{};
+	std::function<void(std::vector<std::uint8_t>)> restore{};
+};
+
+struct NativeWindowAction {
+	NativeWindowActionKind kind = NativeWindowActionKind::close;
+	NativeWindowState state = NativeWindowState::normal;
+	std::uint64_t token = 0;
+	NativeCloseDecision closeDecision = NativeCloseDecision::allow;
+	std::uint8_t edge = 0;
+	LogicalPoint location{};
+};
+
+struct NativeActionResult {
+	NativeWindowOutcome outcome = NativeWindowOutcome::failed;
+	std::uint32_t width = 0;
+	std::uint32_t height = 0;
+	std::vector<std::uint8_t> pixels{};
+};
+
+using NativeActionCompletion = std::function<void(NativeActionResult)>;
 
 /// @brief Module-free configuration payload the host applies at creation and updates.
 struct WindowConfiguration {
 	double contentWidth = defaultWindowWidth;
 	double contentHeight = defaultWindowHeight;
-	std::string title{};
-	NativeWindowStyle style{};
 	double opacity = 1;
+	double originX = 0;
+	double originY = 0;
+	std::uint64_t id = 0;
+	std::uint64_t owner = 0;
+	std::uint64_t screenId = 0;
+	std::optional<double> aspectRatio{};
+	std::string title{};
+	std::optional<LogicalSize> minimumContentSize{};
+	std::optional<LogicalSize> maximumContentSize{};
+	std::optional<LogicalSize> resizeIncrement{};
+	LogicalRect anchor{};
+	SceneColor background{};
+	NativeMacosExtension macos{};
+	std::optional<NativeDocument> document{};
+	std::optional<NativeToolbar> toolbar{};
+	NativeRestoration restoration{};
+	NativeDropTarget dropTarget{};
 	bool hasShadow = true;
 	bool isVisible = true;
 	bool acceptsFocus = true;
 	bool ignoresMouseEvents = false;
 	bool presentWithoutActivation = false;
-	std::optional<LogicalSize> minimumContentSize{};
-	std::optional<LogicalSize> maximumContentSize{};
-	std::optional<double> aspectRatio{};
-	std::optional<LogicalSize> resizeIncrement{};
 	NativePlacementKind placement = NativePlacementKind::centered;
-	double originX = 0; ///< Stana global top-left x when placement is explicit.
-	double originY = 0; ///< Stana global top-left y-down when placement is explicit.
 	NativeWindowLevel level = NativeWindowLevel::normal;
 	NativeWindowState state = NativeWindowState::normal;
 	NativeWindowRole role = NativeWindowRole::standard;
-	NativeMacosExtension macos{};
+	bool modal = false;
+	std::uint8_t anchorEdge = 0;
+	std::uint8_t screenSelection = 0;
+	bool isEnabled = true;
+	std::uint8_t backgroundKind = 0;
+	std::uint8_t taskSwitcher = 0;
+	std::optional<bool> darkTheme{};
+	NativeWindowStyle style{};
 };
 
 /// @brief Observed native window state delivered to the portable session.
@@ -437,9 +519,8 @@ struct NativeWindowObservation {
 
 /// @brief Host-populated control surface for runtime updates and discrete actions.
 struct WindowHostControl {
-	std::function<void(const WindowConfiguration &)> applyConfiguration{};
-	std::function<NativeWindowOutcome(NativeWindowActionKind, NativeWindowState, std::uint64_t)>
-		dispatchAction{};
+	std::function<NativeWindowOutcome(const WindowConfiguration &)> applyConfiguration{};
+	std::function<void(const NativeWindowAction &, NativeActionCompletion)> dispatchAction{};
 	std::function<NativeWindowObservation()> observe{};
 };
 
@@ -486,6 +567,7 @@ struct Window {
 		frame{}; ///< Display-link sample. Not called while the host is hidden.
 	std::function<void(bool visible)>
 		hostVisible{}; ///< Explicit visibility only; occlusion is not hiding.
+	std::function<void(std::uint8_t phase, LogicalPoint, std::uint64_t token)> interaction{};
 	std::function<void()> configurationApplied{}; ///< Fired after initial native apply succeeds.
 	std::function<NativeCloseDecision(std::uint64_t closeRequestId)>
 		closeShouldProceed{}; ///< Close gate; defer keeps the window open.

@@ -4,7 +4,9 @@
 #include "../platform/native_contracts.hpp"
 
 #include <expected>
+#include <map>
 #include <memory>
+#include <optional>
 #include <vector>
 
 /// @brief Private portable session orchestration for window configuration and requests.
@@ -18,10 +20,19 @@ struct WindowSessionRuntime {
 	WindowId id{};
 	WindowOptions *options = nullptr; ///< Points at the owning `WindowSession::options`.
 	WindowEvents events{};
+	std::function<void(const WindowConfigurationSnapshot &)> acceptedChanged{};
+	std::optional<std::pair<ConfigurationRevision, WindowState>> pendingState{};
 	std::shared_ptr<::stana::platform::detail::WindowHostControl> hostControl =
 		std::make_shared<::stana::platform::detail::WindowHostControl>();
 	std::vector<::stana::reactive::Subscription> subscriptions{};
 	::stana::platform::detail::WindowConfiguration lastRequested{};
+	std::optional<WindowConfigurationSnapshot> accepted{};
+	std::map<std::uint64_t, PendingWindowRequest> outstanding{};
+	::stana::platform::detail::MailboxWakeup requestWakeup{};
+	std::uint64_t revision = 0;
+	bool refreshQueued = false;
+	bool ready = false;
+	bool draining = false;
 	bool closed = false;
 	std::uint64_t deferredCloseRequest = 0;
 };
@@ -52,6 +63,8 @@ void applyPlatformWindowOptions(
 void subscribePlatformPropertyUpdates(const std::shared_ptr<WindowSessionRuntime> &runtime);
 
 /// @brief Pushes the latest sampled configuration through the native host control.
+void scheduleConfiguration(const std::shared_ptr<WindowSessionRuntime> &runtime);
+
 void pushConfiguration(const std::shared_ptr<WindowSessionRuntime> &runtime);
 
 /// @brief Installs configuration, close-gate, observation, and reactive update hooks.

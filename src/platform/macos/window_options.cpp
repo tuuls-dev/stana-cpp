@@ -1,6 +1,8 @@
 module;
 
-#include "../../application/window_session.hpp"
+#include "../native_contracts.hpp"
+
+#include <map>
 
 #include <cstdint>
 #include <memory>
@@ -8,6 +10,8 @@ module;
 
 module stana;
 import :application;
+
+#include "../../application/window_session.hpp"
 
 namespace stana::application::detail {
 namespace {
@@ -50,8 +54,10 @@ void applyPlatformWindowOptions(
 	configuration.macos.becomesKeyOnlyIfNeeded = macos->panel.becomesKeyOnlyIfNeeded.get();
 	configuration.macos.worksWhenModal = macos->panel.worksWhenModal.get();
 	configuration.macos.floatingPanel = macos->panel.floatingPanel.get();
-	configuration.macos.nativeLevel =
-		static_cast<::stana::platform::detail::MacosWindowLevel>(macos->nativeLevel.level.get());
+	if (const auto level = macos->nativeLevel.level.get()) {
+		configuration.macos.nativeLevel =
+			static_cast<::stana::platform::detail::MacosWindowLevel>(*level);
+	}
 }
 
 void subscribePlatformPropertyUpdates(const std::shared_ptr<WindowSessionRuntime> &runtime) {
@@ -65,8 +71,7 @@ void subscribePlatformPropertyUpdates(const std::shared_ptr<WindowSessionRuntime
 	const auto weak = std::weak_ptr{runtime};
 	const auto refresh = [weak](const auto &) -> void {
 		if (const auto owner = weak.lock(); owner && !owner->closed) {
-			pushConfiguration(owner);
-			drainSessionRequests(owner);
+			scheduleConfiguration(owner);
 		}
 	};
 	observeMacos(runtime, macos->titleBar.contentIntegration, refresh);

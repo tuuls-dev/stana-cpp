@@ -112,9 +112,8 @@ enum class NativeWindowLevel : std::uint8_t {
 
 /// @brief macOS-only native stacking level preference.
 struct NativeLevelOptions {
-	::stana::reactive::Property<NativeWindowLevel> level{
-		NativeWindowLevel::normal
-	}; ///< Native level.
+	::stana::reactive::Property<std::optional<NativeWindowLevel>>
+		level{}; ///< Empty follows portable level.
 };
 
 /// @brief Typed macOS window extension groups; default requests no overrides beyond defaults.

@@ -8,6 +8,7 @@ module;
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
 
 export module stana:application_window_options;
 export import :application_window_types;
@@ -179,6 +180,11 @@ struct WindowConfigurationSnapshot {
 	WindowPointerPolicy pointerPolicy = NormalPointerPolicy{};
 	WindowLevel level = WindowLevel::normal;
 	TaskSwitcherParticipation taskSwitcher = TaskSwitcherParticipation::automatic;
+	std::optional<WindowToolbar> toolbar{};
+	std::optional<WindowDocument> document{};
+	std::vector<DragFormat> acceptedFormats{};
+	std::string restorationKey{};
+	WindowRestorationPolicy restorationPolicy = WindowRestorationPolicy::automatic;
 };
 
 /// @brief Validates a fully resolved configuration transaction snapshot.
