@@ -256,7 +256,8 @@ void ownedFacilities() {
 									 ++activations;
 								 }};
 	const WindowToolbarItem descriptor{.identifier = "save", .label = "Save"};
-	require(item == descriptor, "callbacks are not descriptor identity");
+	require(item.descriptorEquals(descriptor), "callbacks are not native descriptor identity");
+	require(item != descriptor, "callback identity propagates through reactive value equality");
 	item.onActivate();
 	require(activations == 1);
 	DragInfo received;

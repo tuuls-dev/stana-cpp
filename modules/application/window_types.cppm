@@ -1,11 +1,14 @@
 module;
 
 #include <compare>
+#include <concepts>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -337,23 +340,52 @@ enum class TaskSwitcherParticipation : std::uint8_t {
 	excluded   ///< Prefer exclusion; report unsupported when not controllable.
 };
 
+/// @brief Shared activation callback identity, distinct from native toolbar descriptors.
+/// Value equality tracks callback replacement so reactive Signal writes retain new handlers.
+class WindowToolbarActivation {
+  public:
+	WindowToolbarActivation() = default;
+
+	/// @brief Owns an invocable callback; copies share its identity and lifetime.
+	template <typename F>
+		requires std::constructible_from<std::function<void()>, F>
+	WindowToolbarActivation(F callback)
+		: callback_(std::make_shared<std::function<void()>>(std::move(callback))) {}
+
+	[[nodiscard]] explicit operator bool() const noexcept {
+		return callback_ && static_cast<bool>(*callback_);
+	}
+
+	/// @brief Dispatches the owned callback on the calling UI executor when nonempty.
+	void operator()() const {
+		if (*this) {
+			(*callback_)();
+		}
+	}
+
+	[[nodiscard]] auto operator<=>(const WindowToolbarActivation &) const = default;
+	[[nodiscard]] auto operator==(const WindowToolbarActivation &) const -> bool = default;
+
+  private:
+	std::shared_ptr<std::function<void()>> callback_{};
+};
+
 /// @brief Item shown in a portable toolbar description.
 struct WindowToolbarItem {
 	std::string identifier{}; ///< Stable item identity within the toolbar.
 	std::string label{};	  ///< Owning UTF-8 label.
 	bool enabled = true;	  ///< Whether the item accepts activation.
-	std::function<void()>
-		onActivate{}; ///< UI-executor activation callback; not descriptor identity.
+	WindowToolbarActivation
+		onActivate{}; ///< UI-executor callback; identity participates in value equality.
 
-	[[nodiscard]] auto operator<=>(const WindowToolbarItem &other) const {
-		return std::tie(identifier, label, enabled) <=>
-			std::tie(other.identifier, other.label, other.enabled);
-	}
-
-	[[nodiscard]] auto operator==(const WindowToolbarItem &other) const -> bool {
+	/// @brief Compares native metadata without treating handler replacement as a toolbar rebuild.
+	[[nodiscard]] auto descriptorEquals(const WindowToolbarItem &other) const -> bool {
 		return std::tie(identifier, label, enabled) ==
 			std::tie(other.identifier, other.label, other.enabled);
 	}
+
+	[[nodiscard]] auto operator<=>(const WindowToolbarItem &) const = default;
+	[[nodiscard]] auto operator==(const WindowToolbarItem &) const -> bool = default;
 };
 
 /// @brief Owned toolbar description mapped by native adapters.
