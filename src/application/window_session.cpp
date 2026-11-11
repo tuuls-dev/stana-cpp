@@ -187,54 +187,28 @@ void subscribePortablePropertyUpdates(const std::shared_ptr<WindowSessionRuntime
 	};
 
 	auto &options = *runtime->options;
+	runtime->subscriptions.push_back(::stana::reactive::observe(options.contentSize, refresh));
+	runtime->subscriptions.push_back(::stana::reactive::observe(options.placement, refresh));
 	runtime->subscriptions.push_back(
-		::stana::reactive::observe(options.geometry.contentSize, refresh)
+		::stana::reactive::observe(options.minimumContentSize, refresh)
 	);
 	runtime->subscriptions.push_back(
-		::stana::reactive::observe(options.geometry.placement, refresh)
+		::stana::reactive::observe(options.maximumContentSize, refresh)
 	);
-	runtime->subscriptions.push_back(
-		::stana::reactive::observe(options.geometry.minimumContentSize, refresh)
-	);
-	runtime->subscriptions.push_back(
-		::stana::reactive::observe(options.geometry.maximumContentSize, refresh)
-	);
-	runtime->subscriptions.push_back(
-		::stana::reactive::observe(options.geometry.aspectRatio, refresh)
-	);
-	runtime->subscriptions.push_back(
-		::stana::reactive::observe(options.geometry.resizeIncrement, refresh)
-	);
-	runtime->subscriptions.push_back(::stana::reactive::observe(options.appearance.title, refresh));
-	runtime->subscriptions.push_back(
-		::stana::reactive::observe(options.appearance.decorations, refresh)
-	);
-	runtime->subscriptions.push_back(
-		::stana::reactive::observe(options.appearance.opacity, refresh)
-	);
-	runtime->subscriptions.push_back(
-		::stana::reactive::observe(options.appearance.hasShadow, refresh)
-	);
-	runtime->subscriptions.push_back(
-		::stana::reactive::observe(options.behavior.isResizable, refresh)
-	);
-	runtime->subscriptions.push_back(
-		::stana::reactive::observe(options.behavior.controls, refresh)
-	);
-	runtime->subscriptions.push_back(::stana::reactive::observe(options.behavior.state, refresh));
-	runtime->subscriptions.push_back(
-		::stana::reactive::observe(options.behavior.isVisible, refresh)
-	);
-	runtime->subscriptions.push_back(
-		::stana::reactive::observe(options.behavior.acceptsFocus, refresh)
-	);
-	runtime->subscriptions.push_back(
-		::stana::reactive::observe(options.behavior.activation, refresh)
-	);
-	runtime->subscriptions.push_back(
-		::stana::reactive::observe(options.behavior.pointerPolicy, refresh)
-	);
-	runtime->subscriptions.push_back(::stana::reactive::observe(options.desktop.level, refresh));
+	runtime->subscriptions.push_back(::stana::reactive::observe(options.aspectRatio, refresh));
+	runtime->subscriptions.push_back(::stana::reactive::observe(options.resizeIncrement, refresh));
+	runtime->subscriptions.push_back(::stana::reactive::observe(options.title, refresh));
+	runtime->subscriptions.push_back(::stana::reactive::observe(options.decorations, refresh));
+	runtime->subscriptions.push_back(::stana::reactive::observe(options.opacity, refresh));
+	runtime->subscriptions.push_back(::stana::reactive::observe(options.hasShadow, refresh));
+	runtime->subscriptions.push_back(::stana::reactive::observe(options.isResizable, refresh));
+	runtime->subscriptions.push_back(::stana::reactive::observe(options.controls, refresh));
+	runtime->subscriptions.push_back(::stana::reactive::observe(options.state, refresh));
+	runtime->subscriptions.push_back(::stana::reactive::observe(options.isVisible, refresh));
+	runtime->subscriptions.push_back(::stana::reactive::observe(options.acceptsFocus, refresh));
+	runtime->subscriptions.push_back(::stana::reactive::observe(options.activation, refresh));
+	runtime->subscriptions.push_back(::stana::reactive::observe(options.pointerPolicy, refresh));
+	runtime->subscriptions.push_back(::stana::reactive::observe(options.level, refresh));
 }
 
 void subscribePropertyUpdates(const std::shared_ptr<WindowSessionRuntime> &runtime) {

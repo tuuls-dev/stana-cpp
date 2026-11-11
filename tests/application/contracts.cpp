@@ -2,6 +2,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 import stana;
@@ -13,6 +14,8 @@ void require(bool condition, const std::string &message = "application contract 
 		throw std::runtime_error(message);
 	}
 }
+
+static_assert(std::is_aggregate_v<stana::application::WindowOptions>);
 
 void defaults() {
 	const stana::application::WindowOptions options{};
@@ -85,10 +88,14 @@ void sampleReadsReactiveInputs() {
 	const stana::reactive::Signal size{
 		stana::Size{.width = stana::Points{320}, .height = stana::Points{240}}
 	};
-	stana::application::WindowOptions options{};
-	options.appearance.title = title;
-	options.geometry.contentSize = size;
-	options.appearance.opacity = 0.5;
+	const auto opacity = stana::reactive::Computed<double>{[] {
+		return 0.5;
+	}};
+	const stana::application::WindowOptions options{
+		.contentSize = size,
+		.title = title,
+		.opacity = opacity
+	};
 	const auto snapshot =
 		stana::application::detail::sampleConfiguration(stana::application::WindowId{}, options);
 	require(snapshot.title == "signal-title");

@@ -18,7 +18,7 @@ import :primitives;
 ///
 /// This inventory records application-facing window facilities across macOS,
 /// Windows, and Linux window systems. Entries marked **portable** belong to the
-/// grouped `WindowOptions` surface. Entries marked **extension** belong to a
+/// flat `WindowOptions` surface. Entries marked **extension** belong to a
 /// typed `platform::*::WindowOptions` group (macOS descriptors live under
 /// `modules/platform/macos/` with adapters in `src/platform/macos/`).
 /// Windows/Linux native backends are not claimed by this issue; mappings
@@ -33,14 +33,14 @@ import :primitives;
 /// ### Appearance
 /// | Facility | Abstraction | macOS | Windows | Linux (Wayland/X11) | C/L/A/O |
 /// |---|---|---|---|---|---|
-/// | Title | portable `appearance.title` | `NSWindow.title` | `SetWindowText` | xdg-toplevel title
-/// / `_NET_WM_NAME` | L, O | | Native chrome | portable `appearance.decorations` |
+/// | Title | portable `title` | `NSWindow.title` | `SetWindowText` | xdg-toplevel title
+/// / `_NET_WM_NAME` | L, O | | Native chrome | portable `decorations` |
 /// titled/borderless style mask | WS_CAPTION / chrome | SSD vs CSD; compositor may override | C/L,
-/// O | | Background | portable `appearance.background` | opaque/clear window + layer | DWM/backdrop
-/// brush | surface opaque region | L, O | | Opacity | portable `appearance.opacity` | `alphaValue`
-/// | layered alpha | alpha in surface/compositor | L, O | | Theme | portable `appearance.theme` |
+/// O | | Background | portable `background` | opaque/clear window + layer | DWM/backdrop
+/// brush | surface opaque region | L, O | | Opacity | portable `opacity` | `alphaValue`
+/// | layered alpha | alpha in surface/compositor | L, O | | Theme | portable `theme` |
 /// appearance override | immersive dark mode | portal/settings; often app-side | L, O | | Shadow |
-/// portable `appearance.hasShadow` | `hasShadow` | DWM shadow | compositor decoration | L;
+/// portable `hasShadow` | `hasShadow` | DWM shadow | compositor decoration | L;
 /// unsupported when CSD | | Title-bar integration | **extension** macOS | transparent titlebar /
 /// full-size content | n/a portable | n/a | C/L | | Material/backdrop | **extension** (future) |
 /// vibrancy/NSVisualEffect | Acrylic/Mica | blur protocols vary | L |
@@ -48,38 +48,38 @@ import :primitives;
 /// ### Geometry and placement
 /// | Facility | Abstraction | macOS | Windows | Linux | C/L/A/O |
 /// |---|---|---|---|---|---|
-/// | Content size | portable `geometry.contentSize` | content layout size | client rect | window
-/// geometry; Wayland may adjust | L, O | | Placement | portable `geometry.placement` |
+/// | Content size | portable `contentSize` | content layout size | client rect | window
+/// geometry; Wayland may adjust | L, O | | Placement | portable `placement` |
 /// cascade/center/frame origin | `ShowWindow`/placement | xdg positioner / X11 gravity | C/L, O |
 /// | Screen selection | portable `Screen`/`ScreenId` | `NSScreen` | monitor handle | wl_output /
 /// Xinerama | C/L, O | | Min/max content size | portable constraints | `contentMin/MaxSize` |
 /// min/max track | xdg min/max; may be ignored | L, O | | Aspect ratio | portable
-/// `geometry.aspectRatio` | content aspect | aspect hints | size hints; compositor override | L, O
-/// | | Resize increment | portable `geometry.resizeIncrement` | resize increments | uncommon | size
+/// `aspectRatio` | content aspect | aspect hints | size hints; compositor override | L, O
+/// | | Resize increment | portable `resizeIncrement` | resize increments | uncommon | size
 /// hints | L | | Interactive move/resize | portable actions | performWindowDrag | `WM_SYSCOMMAND` |
 /// xdg move/resize | A, O |
 ///
 /// ### State, visibility, and focus
 /// | Facility | Abstraction | macOS | Windows | Linux | C/L/A/O |
 /// |---|---|---|---|---|---|
-/// | Window state | portable `behavior.state` | miniaturize/zoom/fullscreen | min/max/fullscreen |
-/// xdg states | L/A, O | | Visibility | portable `behavior.isVisible` |
+/// | Window state | portable `state` | miniaturize/zoom/fullscreen | min/max/fullscreen |
+/// xdg states | L/A, O | | Visibility | portable `isVisible` |
 /// `orderOut`/`makeKeyAndOrderFront` | Show/Hide | map/unmap | L, O | | Enabled | portable
-/// `behavior.isEnabled` | ignore mouse + key | `EnableWindow` | input inhibit patterns | L, O | |
-/// Accepts focus | portable `behavior.acceptsFocus` | `canBecomeKey` | WS_EX_NOACTIVATE |
-/// activation policy | C/L, O | | Activation policy | portable `behavior.activation` | activate vs
+/// `isEnabled` | ignore mouse + key | `EnableWindow` | input inhibit patterns | L, O | |
+/// Accepts focus | portable `acceptsFocus` | `canBecomeKey` | WS_EX_NOACTIVATE |
+/// activation policy | C/L, O | | Activation policy | portable `activation` | activate vs
 /// order front | flash/foreground rules | xdg activation token | C/L/A, O | | Resizable | portable
-/// `behavior.isResizable` | style mask | thickframe | resize edges | L, O | | Controls | portable
-/// `behavior.controls` | traffic lights / collection | system menu buttons | SSD buttons / CSD |
-/// C/L, O | | Pointer policy | portable `behavior.pointerPolicy` | ignoresMouseEvents |
+/// `isResizable` | style mask | thickframe | resize edges | L, O | | Controls | portable
+/// `controls` | traffic lights / collection | system menu buttons | SSD buttons / CSD |
+/// C/L, O | | Pointer policy | portable `pointerPolicy` | ignoresMouseEvents |
 /// WS_EX_TRANSPARENT | input region | L, O |
 ///
 /// ### Desktop integration
 /// | Facility | Abstraction | macOS | Windows | Linux | C/L/A/O |
 /// |---|---|---|---|---|---|
-/// | Level (portable) | `desktop.level` normal/floating | floating panel intent | TOPMOST intent |
+/// | Level (portable) | `level` normal/floating | floating panel intent | TOPMOST intent |
 /// above layer intent | L, O | | Native levels | **extension** macOS | `NSWindow.Level` | Win32
-/// HWND_z | stacking; limited Wayland | L | | Task switcher | portable `desktop.taskSwitcher` |
+/// HWND_z | stacking; limited Wayland | L | | Task switcher | portable `taskSwitcher` |
 /// policy / LSUIElement limits | WS_EX_TOOLWINDOW | skip-taskbar; often global | L; may be
 /// unsupported per-window | | Spaces / virtual desktop | **extension** | collectionBehavior /
 /// Spaces | virtual desktop APIs | xdg workspace protocols | C/L, O | | Fullscreen Spaces |
@@ -99,11 +99,11 @@ import :primitives;
 /// ### Toolbars, documents, drag-and-drop, restoration
 /// | Facility | Abstraction | macOS | Windows | Linux | C/L/A/O |
 /// |---|---|---|---|---|---|
-/// | Toolbar | portable `facilities.toolbar` | `NSToolbar` mapping | toolbar host | app chrome | L,
-/// O | | Represented document | portable `facilities.document` | represented file + edited |
+/// | Toolbar | portable `toolbar` | `NSToolbar` mapping | toolbar host | app chrome | L,
+/// O | | Represented document | portable `document` | represented file + edited |
 /// AppUserModelID / title | portal document state | L, O | | Drag and drop | portable
-/// `facilities.dragAndDrop` | NSDragging* | OLE/DragDrop | xdnd / data-device | L/A, O | | State
-/// restoration | portable `facilities.restoration` | restorable identifier | session APIs |
+/// `dragAndDrop` | NSDragging* | OLE/DragDrop | xdnd / data-device | L/A, O | | State
+/// restoration | portable `restoration` | restorable identifier | session APIs |
 /// compositor-dependent | C + hooks |
 ///
 /// ### Capture, printing, menus
@@ -132,7 +132,7 @@ export namespace stana::application {
 ///
 /// Creating an identity only reserves a process-local token. Duplicate identities
 /// across windows prepared for one `Application::run` are rejected before native
-/// creation. Zero denotes an empty/unspecified identity.
+///  Zero denotes an empty/unspecified identity.
 struct WindowId {
 	std::uint64_t value = 0; ///< Never-reused process-local token; zero is empty.
 
@@ -280,7 +280,7 @@ struct TransparentBackground {
 /// @brief Structured window background alternatives.
 using WindowBackground = std::variant<SystemBackground, SolidBackground, TransparentBackground>;
 
-/// @brief Typed native control affordances; defaults preserve current host behavior.
+/// @brief Typed native control affordances; defaults preserve current host
 struct WindowControls {
 	bool closes = true;		 ///< Shows/enables the close affordance when supported.
 	bool minimizes = true;	 ///< Shows/enables minimize when supported.

@@ -219,7 +219,7 @@ auto runWindows(std::vector<WindowSession> &sessions) -> int {
 				.width = initial.contentWidth,
 				.height = initial.contentHeight,
 				.configuration = initial,
-				.colorMode = convertMode(session.options.creation.renderingColorMode),
+				.colorMode = convertMode(session.options.renderingColorMode),
 				.gpuError = [weakDocument](stana::gpu::detail::Diagnostic diagnostic) -> void {
 					if (const auto owner = weakDocument.lock()) {
 						owner->queueGPUDiagnostic(

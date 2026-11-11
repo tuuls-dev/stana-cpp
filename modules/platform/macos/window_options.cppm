@@ -39,7 +39,7 @@ struct TitleBarOptions {
 	}; ///< Content versus title-bar geometry relationship.
 	::stana::reactive::Property<bool> transparentTitleBar{
 		false
-	};													  ///< Transparent title-bar material.
+	}; ///< Transparent title-bar material.
 	::stana::reactive::Property<bool> titleVisible{true}; ///< Whether the title text is shown.
 	::stana::reactive::Property<TitleBarControlVisibility> controls{
 		TitleBarControlVisibility::visible

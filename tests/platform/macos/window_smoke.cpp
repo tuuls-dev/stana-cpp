@@ -338,20 +338,16 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 	std::vector<stana::application::detail::WindowSession> sessions(2);
 	sessions.at(0) = {
 		.options =
-			{.geometry =
-					{.contentSize =
-							{.width = stana::Points{initialWidth},
-								.height = stana::Points{initialHeight}}},
-				.appearance = {.title = primaryTitle}},
+			{.contentSize =
+					{.width = stana::Points{initialWidth}, .height = stana::Points{initialHeight}},
+				.title = primaryTitle},
 		.document = scenario->document
 	};
 	sessions.at(1) = {
 		.options =
-			{.geometry =
-					{.contentSize =
-							{.width = stana::Points{smallWidth},
-								.height = stana::Points{smallHeight}}},
-				.appearance = {.title = secondaryTitle}},
+			{.contentSize =
+					{.width = stana::Points{smallWidth}, .height = stana::Points{smallHeight}},
+				.title = secondaryTitle},
 		.document = scenario->otherDocument
 	};
 	const int status = stana::application::detail::runWindows(sessions);

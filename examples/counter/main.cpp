@@ -43,8 +43,8 @@ auto main() -> int {
 									)
 							},
 						.options = {
-							.geometry = {.contentSize = {.width = 480_pt, .height = 320_pt}},
-							.appearance = {.title = "Stana Counter"}
+							.contentSize = {.width = 480_pt, .height = 320_pt},
+							.title = "Stana Counter"
 						}
 					};
 		return stana::application::Application::run(window);

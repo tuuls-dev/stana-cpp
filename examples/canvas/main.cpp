@@ -166,70 +166,69 @@ auto main(int argc, char **) -> int {
 								},
 								stana::ui::HStack{
 									.spacing = 12_pt,
-									.children =
-										stana::ui::children(
-											stana::ui::CPUCanvas{
-												.drawing = updates.map(chart),
-												.layout = fixed,
-												.accessibility =
-													{.label = "Four bars; each update rotates "
-															  "heights from 80 "
-															  "to 140 points"}
-											},
-											stana::ui::GPUCanvas{
-												.drawing = gpu,
-												.layout = fixed,
-												.accessibility =
-													{.label = "Generated red-green gradient with a "
-															  "colored "
-															  "triangle and rising line"},
-												.onError = [](const stana::rendering::GPUDiagnostic
-																   &error) -> void {
-													std::cerr << error.message << '\n';
-												}
+									.children = stana::ui::children(
+										stana::ui::CPUCanvas{
+											.drawing = updates.map(chart),
+											.layout = fixed,
+											.accessibility =
+												{.label = "Four bars; each update rotates "
+														  "heights from 80 "
+														  "to 140 points"}
+										},
+										stana::ui::GPUCanvas{
+											.drawing = gpu,
+											.layout = fixed,
+											.accessibility =
+												{.label = "Generated red-green gradient with a "
+														  "colored "
+														  "triangle and rising line"},
+											.onError = [](const stana::rendering::GPUDiagnostic
+															   &error) -> void {
+												std::cerr << error.message << '\n';
 											}
-										)
+										}
+									)
 								},
-								stana::ui::
-									Text{
-										.text = updates.map(
-											[](int value) -> std::string {
-												return "Updates: " + std::to_string(value) +
-													". Gradient brightness alternates; temporal "
-													"history advances once "
-													"per new program version.";
-											}
-										)
-									},
+								stana::ui::Text{
+									.text = updates.map(
+										[](int value) -> std::string {
+											return "Updates: " + std::to_string(value) +
+												". Gradient brightness alternates; temporal "
+												"history advances once "
+												"per new program version.";
+										}
+									)
+								},
 								stana::ui::Button{
 									.text = "Update charts",
 									.accessibility =
 										{.label = "Update both charts and advance the GPU history"},
 									.events =
-										{stana::
-												ui::on(
-													stana::ui::Event::click,
-													[updates,
-														gpu,
-														current =
-															std::move(initial)]() mutable -> void {
-														const auto value = updates.get() + 1;
-														const float strength = value % 2 == 0
-															? 1.0F
-															: static_cast<float>(peak);
-														current = checked(current.updatingResources(
-															{{"level", uniform(strength)}}
-														));
-														gpu.set(graphics(current));
-														updates.set(value);
-													}
-												)}
+										{
+											stana::ui::on(
+												stana::ui::Event::click,
+												[updates,
+													gpu,
+													current =
+														std::move(initial)]() mutable -> void {
+													const auto value = updates.get() + 1;
+													const float strength = value % 2 == 0
+														? 1.0F
+														: static_cast<float>(peak);
+													current = checked(current.updatingResources(
+														{{"level", uniform(strength)}}
+													));
+													gpu.set(graphics(current));
+													updates.set(value);
+												}
+											)
+										}
 								}
 							)
 					},
 				.options = {
-					.geometry = {.contentSize = {.width = 720_pt, .height = 370_pt}},
-					.appearance = {.title = "Stana CPU / GPU Canvas"}
+					.contentSize = {.width = 720_pt, .height = 370_pt},
+					.title = "Stana CPU / GPU Canvas"
 				}
 			}
 		);

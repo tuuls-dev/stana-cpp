@@ -212,11 +212,9 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 	std::vector<stana::application::detail::WindowSession> sessions(1);
 	sessions.at(0) = {
 		.options =
-			{.creation = {.renderingColorMode = stana::rendering::RenderingColorMode::sdr},
-				.geometry =
-					{.contentSize =
-							{.width = stana::Points{width}, .height = stana::Points{height}}},
-				.appearance = {.title = "Stana canvas qualification"}},
+			{.renderingColorMode = stana::rendering::RenderingColorMode::sdr,
+				.contentSize = {.width = stana::Points{width}, .height = stana::Points{height}},
+				.title = "Stana canvas qualification"},
 		.document = scenario->document
 	};
 	const int status = stana::application::detail::runWindows(sessions);
