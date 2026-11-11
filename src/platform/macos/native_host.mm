@@ -350,6 +350,14 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 	}
 }
 
+- (void)rightMouseDown:(NSEvent *)event {
+	stana::platform::detail::publishWindowInteraction(state_, event, 0);
+}
+
+- (void)rightMouseUp:(NSEvent *)event {
+	stana::platform::detail::publishWindowInteraction(state_, event, 2);
+}
+
 - (void)mouseDown:(NSEvent *)event {
 	stana::platform::detail::publishWindowInteraction(state_, event, 0);
 	if (state_ && state_->traceRendering) {
@@ -608,6 +616,7 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 	}
 	NSWindow *const closingWindow = notification.object;
 	if (state_ && !std::exchange(state_->isClosed, true)) {
+		stana::platform::detail::closeOwnedWindows(state_->callbacks.configuration.id);
 		state_->interactionToken = 0;
 		state_->interactionEvent = nil;
 		if (NSApp.modalWindow == closingWindow) {
@@ -804,6 +813,9 @@ void stop() {
 	if (NSApp == nil) {
 		return;
 	}
+	if (NSApp.modalWindow != nil) {
+		[NSApp stopModal];
+	}
 	[NSApp stop:nil];
 	// AppKit's run loop may be waiting for an event; waking it lets stop take effect.
 	NSEvent *const wake = [NSEvent otherEventWithType:NSEventTypeApplicationDefined
@@ -839,7 +851,6 @@ auto run(const std::vector<Window> &descriptions) -> std::expected<int, std::str
 
 		// Explicit C++ startup has no NSApplicationMain/nib lifecycle. Complete
 		// registration before exposing layer attachments or admitting drawables.
-		[NSApp finishLaunching];
 
 		std::vector<std::shared_ptr<WindowState>> states;
 		NSMutableArray<NSWindow *> *const nativeWindows = [NSMutableArray array];
@@ -966,14 +977,27 @@ auto run(const std::vector<Window> &descriptions) -> std::expected<int, std::str
 			initial.isVisible = false;
 			initial.state = NativeWindowState::normal;
 			applyWindowConfiguration(window, *state->appliedConfiguration, initial);
+		}
+		// Restoration resolves declared identities and decodes owning hooks before presentation.
+		[NSApp finishLaunching];
+		for (const auto &state : states) {
 			if (!attachWindowRole(state)) {
 				return std::unexpected("Invalid window owner relationship");
 			}
+		}
+		for (const auto &state : states) {
+			if (state->isClosed) {
+				continue;
+			}
+			NSWindow *const window = state->nativeWindow;
 			applyWindowConfiguration(
 				window,
 				*state->appliedConfiguration,
 				state->callbacks.configuration
 			);
+			if (!state->callbacks.configuration.isVisible) {
+				[window orderOut:nil];
+			}
 			installSurface(state);
 			[static_cast<STANAView *>(state->view) installFrameLink];
 			requestFrame(state);
@@ -989,8 +1013,8 @@ auto run(const std::vector<Window> &descriptions) -> std::expected<int, std::str
 		}
 		if (std::ranges::any_of(states, [](const auto &state) -> bool {
 				const auto &options = state->callbacks.configuration;
-				return options.isVisible && options.acceptsFocus && options.isEnabled &&
-					!options.presentWithoutActivation;
+				return !state->isClosed && options.isVisible && options.acceptsFocus &&
+					options.isEnabled && !options.presentWithoutActivation;
 			})) {
 			[NSApp activate];
 		}

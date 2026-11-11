@@ -69,6 +69,8 @@
 namespace stana::testing::fixtures::platform::macos {
 namespace {
 using namespace ::stana::platform::detail;
+inline constexpr double dropX = 3;
+inline constexpr double dropY = 4;
 inline constexpr double initialWidth = 320;
 inline constexpr double initialHeight = 240;
 inline constexpr double originX = 120;
@@ -96,6 +98,7 @@ void configurationContracts() {
 	configuration.originY = originY;
 	NSWindow *const window = createConfiguredWindow(configuration);
 	require(window != nil, "native window created");
+	NSString *const defaultTabbingIdentifier = window.tabbingIdentifier;
 	AppliedWindowConfiguration applied;
 	applyWindowConfiguration(window, applied, configuration);
 	const auto initial = observeNativeWindow(window);
@@ -158,7 +161,8 @@ void configurationContracts() {
 	);
 	require(![window standardWindowButton:NSWindowCloseButton].hidden, "controls restored");
 	require(
-		window.level == NSFloatingWindowLevel && window.tabbingIdentifier.length == 0,
+		window.level == NSFloatingWindowLevel &&
+			[window.tabbingIdentifier isEqualToString:defaultTabbingIdentifier],
 		"portable level and tabbing restored"
 	);
 	require(
@@ -187,6 +191,13 @@ void configurationContracts() {
 		window.canBecomeKeyWindow && !window.ignoresMouseEvents,
 		"interaction policies reversed"
 	);
+	const auto restyled = observeNativeWindow(window);
+	require(
+		std::is_eq(restyled.contentWidth <=> configuration.contentWidth) &&
+			std::is_eq(restyled.contentHeight <=> configuration.contentHeight),
+		"chrome changes preserve requested content dimensions"
+	);
+	configuration.style.titled = true;
 	int activated = 0;
 	configuration.toolbar = NativeToolbar{
 		.identifier = "tools",
@@ -270,7 +281,7 @@ void ownedDropAndGestureContracts() {
 	STANATestDragInfo *const drag = [[STANATestDragInfo alloc] init];
 	drag.draggingPasteboard = pasteboard;
 	drag.draggingSourceOperationMask = NSDragOperationCopy;
-	drag.draggingLocation = [view convertPoint:NSMakePoint(3, 4) toView:nil];
+	drag.draggingLocation = [view convertPoint:NSMakePoint(dropX, dropY) toView:nil];
 	require(
 		negotiateWindowDrag(state, drag, true, false) == NSDragOperationCopy,
 		"accepted MIME format negotiates copy"
@@ -287,8 +298,23 @@ void ownedDropAndGestureContracts() {
 		"drop bytes survive pasteboard clearing"
 	);
 	require(
-		std::is_eq(delivered.location.x <=> 3.0) && std::is_eq(delivered.location.y <=> 4.0),
+		std::is_eq(delivered.location.x <=> dropX) && std::is_eq(delivered.location.y <=> dropY),
 		"drop uses content-local top-left coordinates"
+	);
+	[pasteboard declareTypes:@[ NSPasteboardTypeString ] owner:nil];
+	[pasteboard setString:@"owned" forType:NSPasteboardTypeString];
+	state->appliedConfiguration->requested.dropTarget.formats = {"public.text"};
+	require(
+		negotiateWindowDrag(state, drag, false, true) == NSDragOperationCopy,
+		"UTI conformance accepts text subtype"
+	);
+	const char *const nativeFormat = NSPasteboardTypeString.UTF8String;
+	if (nativeFormat == nullptr) {
+		throw std::runtime_error("Missing native text format");
+	}
+	require(
+		delivered.items.front().format == nativeFormat,
+		"conforming payload reports its actual encoding format"
 	);
 	std::uint64_t token = 0;
 	state->callbacks.interaction =
@@ -315,12 +341,12 @@ void ownedDropAndGestureContracts() {
 	};
 	NativeWindowOutcome outcome = NativeWindowOutcome::applied;
 	const auto other = std::make_shared<WindowState>();
-	dispatchWindowGesture(window, other, action, [&](NativeActionResult result) -> void {
+	dispatchWindowGesture(window, other, action, [&](const NativeActionResult &result) -> void {
 		outcome = result.outcome;
 	});
 	require(outcome == NativeWindowOutcome::invalid, "cross-window gesture token rejected");
 	publishWindowInteraction(state, press, 2);
-	dispatchWindowGesture(window, state, action, [&](NativeActionResult result) -> void {
+	dispatchWindowGesture(window, state, action, [&](const NativeActionResult &result) -> void {
 		outcome = result.outcome;
 	});
 	require(outcome == NativeWindowOutcome::invalid, "released gesture token rejected");

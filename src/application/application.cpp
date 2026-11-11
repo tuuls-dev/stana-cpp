@@ -133,6 +133,8 @@ NativeExecutorSession::~NativeExecutorSession() {
 	if (state_ && state_->endpoint) {
 		state_->endpoint->close();
 	}
+	// Preparation can fail before runWindows installs its cleanup guard.
+	stana::tasks::detail::TaskScheduler::current().dispatcher = {};
 }
 
 auto NativeExecutorSession::complete(int code) const -> int {

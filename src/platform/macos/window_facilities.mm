@@ -68,6 +68,24 @@ inline constexpr std::chrono::milliseconds captureInterval{10};
 	return value;
 }
 
+[[nodiscard]] auto offeredFormat(NSPasteboardItem *item, NSString *accepted) -> NSString * {
+	if ([item.types containsObject:accepted]) {
+		return accepted;
+	}
+	UTType *const target = [UTType typeWithIdentifier:accepted];
+	if (target == nil) {
+		return nil;
+	}
+	for (NSUInteger index = 0; index < item.types.count; ++index) {
+		NSString *const offered = [item.types objectAtIndex:index];
+		UTType *const source = [UTType typeWithIdentifier:offered];
+		if (source != nil && [source conformsToType:target]) {
+			return offered;
+		}
+	}
+	return nil;
+}
+
 [[nodiscard]] auto nativeOperation(std::uint8_t operation) -> NSDragOperation {
 	switch (operation) {
 	case 1:
@@ -154,6 +172,24 @@ void registerConfiguredWindow(const std::shared_ptr<WindowState> &state) {
 	windowsById().insert_or_assign(configuration.id, state);
 	if (configuration.restoration.enabled) {
 		windowsByKey().insert_or_assign(configuration.restoration.key, state);
+	}
+}
+
+void closeOwnedWindows(std::uint64_t owner) {
+	if (owner == 0) {
+		return;
+	}
+	std::vector<std::shared_ptr<WindowState>> children;
+	children.reserve(windowsById().size());
+	for (const auto &[id, weak] : windowsById()) {
+		static_cast<void>(id);
+		if (const auto child = weak.lock();
+			child && !child->isClosed && child->callbacks.configuration.owner == owner) {
+			children.push_back(child);
+		}
+	}
+	for (const auto &child : children) {
+		[child->nativeWindow close];
 	}
 }
 
@@ -296,6 +332,12 @@ void applyWindowFacilities(
 			window.toolbar = toolbar;
 		}
 		window.toolbar.visible = descriptor.visible;
+		for (NSUInteger index = 0;
+			index < window.toolbar.items.count && index < descriptor.items.size();
+			++index) {
+			[window.toolbar.items objectAtIndex:index].enabled =
+				descriptor.items.at(index).enabled && configuration.isEnabled;
+		}
 	}
 	if (configuration.document && configuration.document->representedPath) {
 		NSString *const path = nativeText(*configuration.document->representedPath);
@@ -374,13 +416,14 @@ auto negotiateWindowDrag(
 			++index) {
 			NSPasteboardItem *const item =
 				[sender.draggingPasteboard.pasteboardItems objectAtIndex:index];
-			if ([item.types containsObject:type]) {
+			NSString *const offered = offeredFormat(item, type);
+			if (offered != nil) {
 				info.formats.push_back(format);
 				if (dropping) {
-					NSData *const data = [item dataForType:type];
+					NSData *const data = [item dataForType:offered];
 					if (data != nil) {
 						NativeDropItem payload{
-							.format = format,
+							.format = [offered isEqualToString:type] ? format : ownedText(offered),
 							.bytes = std::vector<std::uint8_t>(data.length)
 						};
 						[data getBytes:payload.bytes.data() length:payload.bytes.size()];
@@ -390,10 +433,13 @@ auto negotiateWindowDrag(
 			}
 		}
 	}
-	if (info.formats.empty()) {
+	if (info.formats.empty() || (dropping && info.items.empty())) {
 		return NSDragOperationNone;
 	}
 	const auto proposed = target.negotiate ? target.negotiate(info, entered) : target.operation;
+	if (state->isClosed) {
+		return NSDragOperationNone;
+	}
 	const auto operation = nativeOperation(proposed);
 	if (proposed != target.operation || (sender.draggingSourceOperationMask & operation) == 0) {
 		return NSDragOperationNone;
@@ -452,10 +498,12 @@ void dispatchWindowGesture(
 		NSMenu *const menu =
 			[[NSMenu alloc] initWithTitle:NSLocalizedString(@"Window", @"Window menu title")];
 		for (const auto &[title, selector] : std::array<std::pair<NSString *, SEL>, 4>{
-				 {{@"Minimize", @selector(performMiniaturize:)},
-					 {@"Zoom", @selector(performZoom:)},
-					 {@"Enter Full Screen", @selector(toggleFullScreen:)},
-					 {@"Close", @selector(performClose:)}}
+				 {{NSLocalizedString(@"Minimize", @"Window menu action"),
+					  @selector(performMiniaturize:)},
+					 {NSLocalizedString(@"Zoom", @"Window menu action"), @selector(performZoom:)},
+					 {NSLocalizedString(@"Enter Full Screen", @"Window menu action"),
+						 @selector(toggleFullScreen:)},
+					 {NSLocalizedString(@"Close", @"Window menu action"), @selector(performClose:)}}
 			 }) {
 			NSMenuItem *const item = [[NSMenuItem alloc] initWithTitle:title
 																action:selector
@@ -463,6 +511,14 @@ void dispatchWindowGesture(
 			item.target = window;
 			[menu addItem:item];
 		}
+		[menu addItem:NSMenuItem.separatorItem];
+		NSMenuItem *const arrange = [[NSMenuItem alloc]
+			initWithTitle:NSLocalizedString(@"Bring All to Front", @"Window menu action")
+				   action:@selector(arrangeInFront:)
+			keyEquivalent:@""];
+		arrange.target = NSApp;
+		[menu addItem:arrange];
+		NSApp.windowsMenu = menu;
 		[menu popUpMenuPositioningItem:nil
 							atLocation:NSMakePoint(action.location.x, action.location.y)
 								inView:state->view];
@@ -564,7 +620,9 @@ struct CaptureJob : std::enable_shared_from_this<CaptureJob> {
 				}
 				color = ::stana::gpu::detail::displayMap(color, 1);
 				for (std::size_t channel = 0; channel < 3; ++channel) {
-					color.at(channel) = ::stana::gpu::detail::encodeSRGB(color.at(channel));
+					color.at(channel) = color.at(3) > 0.0
+						? ::stana::gpu::detail::encodeSRGB(color.at(channel) / color.at(3))
+						: 0.0;
 				}
 			} else {
 				constexpr double maximum = 255;
@@ -583,10 +641,16 @@ struct CaptureJob : std::enable_shared_from_this<CaptureJob> {
 					)) / maximum
 				};
 			}
+			if (source.format != gpu::Format::rgba16) {
+				for (std::size_t channel = 0; channel < 3; ++channel) {
+					color.at(channel) = color.at(3) > 0.0 ? color.at(channel) / color.at(3) : 0.0;
+				}
+			}
 			for (std::size_t channel = 0; channel < channels; ++channel) {
-				result.pixels.at(pixel * channels + channel) = static_cast<std::uint8_t>(
-					std::lround(std::clamp(color.at(channel), 0.0, 1.0) * maximumByte)
-				);
+				const double normalized =
+					std::isnan(color.at(channel)) ? 0.0 : std::clamp(color.at(channel), 0.0, 1.0);
+				result.pixels.at(pixel * channels + channel) =
+					static_cast<std::uint8_t>(std::lround(normalized * maximumByte));
 			}
 		}
 		if (printing) {
@@ -599,7 +663,7 @@ struct CaptureJob : std::enable_shared_from_this<CaptureJob> {
 								hasAlpha:YES
 								isPlanar:NO
 						  colorSpaceName:NSCalibratedRGBColorSpace
-							bitmapFormat:0
+							bitmapFormat:NSBitmapFormatAlphaNonpremultiplied
 							 bytesPerRow:static_cast<NSInteger>(source.width) * 4
 							bitsPerPixel:32];
 			if (bitmap == nil) {
@@ -646,6 +710,11 @@ struct CaptureJob : std::enable_shared_from_this<CaptureJob> {
 			complete({.outcome = NativeWindowOutcome::cancelled});
 			return;
 		}
+		if (owner->grid.viewport.width != grid.viewport.width ||
+			owner->grid.viewport.height != grid.viewport.height) {
+			complete({.outcome = NativeWindowOutcome::cancelled});
+			return;
+		}
 		if (++attempts > captureAttempts) {
 			complete({.outcome = NativeWindowOutcome::failed});
 			return;
@@ -657,17 +726,19 @@ struct CaptureJob : std::enable_shared_from_this<CaptureJob> {
 		}
 		if (!packet) {
 			const auto activeCompositor = owner->hybridSurface ? owner->compositor : compositor;
+			activeCompositor->desired(scene->source);
 			const auto prepared = activeCompositor->prepare(
 				scene,
 				grid,
 				owner->presentationEpoch,
-				::stana::gpu::detail::ColorMode::sdr
+				owner->hybridSurface ? owner->callbacks.colorMode
+									 : ::stana::gpu::detail::ColorMode::sdr
 			);
 			if (!prepared) {
 				complete({.outcome = NativeWindowOutcome::failed});
 				return;
 			}
-			packet = activeCompositor->readyPacket();
+			packet = *prepared ? activeCompositor->readyPacket() : nullptr;
 		}
 		if (!packet) {
 			const auto job = shared_from_this();

@@ -22,7 +22,7 @@ def main() -> int:
         result = directory / "result"
         output = directory / "stdout"
         error = directory / "stderr"
-        validation = [item for key in ("MTL_DEBUG_LAYER", "MTL_SHADER_VALIDATION")
+        validation = [item for key in ("MTL_DEBUG_LAYER", "MTL_SHADER_VALIDATION", "STANA_MANUAL_FACILITIES")
                       if key in os.environ for item in ("--env", f"{key}={os.environ[key]}")]
         try:
             launch = subprocess.Popen(

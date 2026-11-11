@@ -184,7 +184,8 @@ namespace {
 			support = FeatureSupport::unsupported;
 		}
 		if (feature == WindowFeature::state || feature == WindowFeature::placement ||
-			feature == WindowFeature::focus) {
+			feature == WindowFeature::focus || feature == WindowFeature::toolbar ||
+			feature == WindowFeature::controls || feature == WindowFeature::titleBarIntegration) {
 			support = FeatureSupport::partial;
 		}
 #endif
@@ -415,6 +416,46 @@ void pushConfiguration(const std::shared_ptr<WindowSessionRuntime> &runtime) {
 						);
 					}
 					row.effective = actual;
+				}
+				if (row.feature == WindowFeature::placement && runtime->hostControl->observe) {
+					const auto observation = runtime->hostControl->observe();
+					const Point origin{
+						.x = Points{observation.contentX},
+						.y = Points{observation.contentY}
+					};
+					if (const auto *explicitPlacement =
+							std::get_if<ExplicitPlacement>(&snapshot.placement)) {
+						if (explicitPlacement->origin != origin) {
+							row.outcome = WindowOutcome::adjusted;
+						}
+					} else if (std::holds_alternative<PopupWindow>(snapshot.role) ||
+						(std::holds_alternative<DialogWindow>(snapshot.role) &&
+							std::get<DialogWindow>(snapshot.role).modal &&
+							std::get<DialogWindow>(snapshot.role).owner)) {
+						row.outcome = WindowOutcome::adjusted;
+					}
+					row.effective = WindowPlacement{ExplicitPlacement{
+						.origin = origin,
+						.screen = observation.screenId == 0
+							? ScreenSelection{AutomaticScreen{}}
+							: ScreenSelection{SpecificScreen{.id = {.value = observation.screenId}}}
+					}};
+				}
+				if (row.feature == WindowFeature::controls &&
+					(std::holds_alternative<BorderlessDecorations>(snapshot.decorations) ||
+						(std::holds_alternative<DialogWindow>(snapshot.role) &&
+							std::get<DialogWindow>(snapshot.role).modal &&
+							std::get<DialogWindow>(snapshot.role).owner))) {
+					const WindowControls actual{
+						.closes = false,
+						.minimizes = false,
+						.maximizes = false,
+						.fullscreens = false
+					};
+					row.effective = actual;
+					if (actual != snapshot.controls) {
+						row.outcome = WindowOutcome::adjusted;
+					}
 				}
 				if (row.feature == WindowFeature::contentSize && runtime->hostControl->observe) {
 					const auto observation = runtime->hostControl->observe();
@@ -665,8 +706,10 @@ auto validateSessionIdentities(const std::vector<WindowSession> &sessions)
 		if (session.id.value == 0 || owners.contains(session.id.value)) {
 			return std::unexpected(Error::invalidStructure);
 		}
-		if (!validateConfiguration(sampleConfiguration(session.id, session.options))) {
-			return std::unexpected(Error::invalidValue);
+		if (const auto validation =
+				validateConfiguration(sampleConfiguration(session.id, session.options));
+			!validation) {
+			return std::unexpected(validation.error());
 		}
 		const auto configuration = nativeConfigurationFromOptions(session.options);
 		owners.emplace(session.id.value, configuration.owner);
@@ -717,96 +760,101 @@ void drainSessionRequests(const std::shared_ptr<WindowSessionRuntime> &runtime) 
 		return;
 	}
 	runtime->draining = true;
-	auto pending = channel->drain();
-	for (auto &request : pending) {
-		runtime->outstanding.emplace(request.id.value, request);
-	}
-	std::vector<std::uint64_t> ids;
-	ids.reserve(pending.size());
-	for (const auto &request : pending) {
-		ids.push_back(request.id.value);
-	}
-	for (const auto id : ids) {
-		if (runtime->closed) {
+	while (!runtime->closed) {
+		auto pending = channel->drain();
+		if (pending.empty()) {
 			break;
 		}
-		const auto found = runtime->outstanding.find(id);
-		if (found == runtime->outstanding.end()) {
-			continue;
+		for (auto &request : pending) {
+			runtime->outstanding.emplace(request.id.value, request);
 		}
-		::stana::platform::detail::NativeWindowAction native;
-		std::visit(
-			[&](const auto &action) -> void {
-				using Action = std::decay_t<decltype(action)>;
-				if constexpr (std::same_as<Action, FocusWindow>) {
-					native.kind = NativeWindowActionKind::focus;
-					native.token = action.interaction ? action.interaction->value : 0;
-				} else if constexpr (std::same_as<Action, SetWindowState>) {
-					native.kind = NativeWindowActionKind::setState;
-					native.state = nativeState(action.state);
-				} else if constexpr (std::same_as<Action, CloseWindow>) {
-					native.kind = NativeWindowActionKind::close;
-				} else if constexpr (std::same_as<Action, BeginInteractiveMove>) {
-					native.kind = NativeWindowActionKind::beginInteractiveMove;
-					native.token = action.interaction.value;
-				} else if constexpr (std::same_as<Action, BeginInteractiveResize>) {
-					native.kind = NativeWindowActionKind::beginInteractiveResize;
-					native.token = action.interaction.value;
-					native.edge = static_cast<std::uint8_t>(action.edge);
-				} else if constexpr (std::same_as<Action, ShowWindowMenu>) {
-					native.kind = NativeWindowActionKind::showWindowMenu;
-					native.token = action.interaction.value;
-					native.location = {
-						.x = action.location.x.value(),
-						.y = action.location.y.value()
-					};
-				} else if constexpr (std::same_as<Action, CaptureWindow>) {
-					native.kind = NativeWindowActionKind::capture;
-				} else if constexpr (std::same_as<Action, PrintWindow>) {
-					native.kind = NativeWindowActionKind::print;
-				} else if constexpr (std::same_as<Action, RespondDeferredClose>) {
-					native.kind = NativeWindowActionKind::respondDeferredClose;
-					native.token = action.request.value;
-					native.closeDecision = action.decision == CloseDecision::allow
-						? NativeCloseDecision::allow
-						: NativeCloseDecision::deny;
+		std::vector<std::uint64_t> ids;
+		ids.reserve(pending.size());
+		for (const auto &request : pending) {
+			ids.push_back(request.id.value);
+		}
+		for (const auto id : ids) {
+			if (runtime->closed) {
+				break;
+			}
+			const auto found = runtime->outstanding.find(id);
+			if (found == runtime->outstanding.end()) {
+				continue;
+			}
+			::stana::platform::detail::NativeWindowAction native;
+			std::visit(
+				[&](const auto &action) -> void {
+					using Action = std::decay_t<decltype(action)>;
+					if constexpr (std::same_as<Action, FocusWindow>) {
+						native.kind = NativeWindowActionKind::focus;
+						native.token = action.interaction ? action.interaction->value : 0;
+					} else if constexpr (std::same_as<Action, SetWindowState>) {
+						native.kind = NativeWindowActionKind::setState;
+						native.state = nativeState(action.state);
+					} else if constexpr (std::same_as<Action, CloseWindow>) {
+						native.kind = NativeWindowActionKind::close;
+					} else if constexpr (std::same_as<Action, BeginInteractiveMove>) {
+						native.kind = NativeWindowActionKind::beginInteractiveMove;
+						native.token = action.interaction.value;
+					} else if constexpr (std::same_as<Action, BeginInteractiveResize>) {
+						native.kind = NativeWindowActionKind::beginInteractiveResize;
+						native.token = action.interaction.value;
+						native.edge = static_cast<std::uint8_t>(action.edge);
+					} else if constexpr (std::same_as<Action, ShowWindowMenu>) {
+						native.kind = NativeWindowActionKind::showWindowMenu;
+						native.token = action.interaction.value;
+						native.location = {
+							.x = action.location.x.value(),
+							.y = action.location.y.value()
+						};
+					} else if constexpr (std::same_as<Action, CaptureWindow>) {
+						native.kind = NativeWindowActionKind::capture;
+					} else if constexpr (std::same_as<Action, PrintWindow>) {
+						native.kind = NativeWindowActionKind::print;
+					} else if constexpr (std::same_as<Action, RespondDeferredClose>) {
+						native.kind = NativeWindowActionKind::respondDeferredClose;
+						native.token = action.request.value;
+						native.closeDecision = action.decision == CloseDecision::allow
+							? NativeCloseDecision::allow
+							: NativeCloseDecision::deny;
+					}
+				},
+				found->second.action
+			);
+			const auto completed = [weak = std::weak_ptr{runtime}, id](
+									   ::stana::platform::detail::NativeActionResult result
+								   ) -> void {
+				const auto owner = weak.lock();
+				if (!owner || owner->closed) {
+					return;
 				}
-			},
-			found->second.action
-		);
-		const auto completed = [weak = std::weak_ptr{runtime}, id](
-								   ::stana::platform::detail::NativeActionResult result
-							   ) -> void {
-			const auto owner = weak.lock();
-			if (!owner || owner->closed) {
-				return;
-			}
-			const auto entry = owner->outstanding.find(id);
-			if (entry == owner->outstanding.end()) {
-				return;
-			}
-			WindowRequestResult portable{
-				.id = {.value = id},
-				.outcome = portableOutcome(result.outcome),
-				.action = entry->second.action
-			};
-			if (!result.pixels.empty()) {
-				portable.payload = CapturePixels{
-					.width = result.width,
-					.height = result.height,
-					.bytes = std::move(result.pixels)
+				const auto entry = owner->outstanding.find(id);
+				if (entry == owner->outstanding.end()) {
+					return;
+				}
+				WindowRequestResult portable{
+					.id = {.value = id},
+					.outcome = portableOutcome(result.outcome),
+					.action = entry->second.action
 				};
+				if (!result.pixels.empty()) {
+					portable.payload = CapturePixels{
+						.width = result.width,
+						.height = result.height,
+						.bytes = std::move(result.pixels)
+					};
+				}
+				if (result.outcome != NativeWindowOutcome::pending) {
+					owner->outstanding.erase(entry);
+				}
+				publishEvent(owner, WindowRequestCompleted{.result = std::move(portable)});
+			};
+			if (runtime->hostControl && runtime->hostControl->dispatchAction) {
+				const auto dispatch = runtime->hostControl->dispatchAction;
+				dispatch(native, completed);
+			} else {
+				completed({.outcome = NativeWindowOutcome::unsupported});
 			}
-			if (result.outcome != NativeWindowOutcome::pending) {
-				owner->outstanding.erase(entry);
-			}
-			publishEvent(owner, WindowRequestCompleted{.result = std::move(portable)});
-		};
-		if (runtime->hostControl && runtime->hostControl->dispatchAction) {
-			const auto dispatch = runtime->hostControl->dispatchAction;
-			dispatch(native, completed);
-		} else {
-			completed({.outcome = NativeWindowOutcome::unsupported});
 		}
 	}
 	runtime->draining = false;
@@ -853,7 +901,9 @@ void installSessionController(
 					.capabilities = capabilities(*owner->options)
 				}
 			);
-			pushConfiguration(owner);
+			::stana::reactive::Transaction::perform([&] -> void {
+				pushConfiguration(owner);
+			});
 			drainSessionRequests(owner);
 		}
 	};
@@ -876,7 +926,7 @@ void installSessionController(
 		return NativeCloseDecision::deny;
 	};
 	window.stateChanged = [weak](const NativeWindowObservation &observation) -> void {
-		if (const auto owner = weak.lock()) {
+		if (const auto owner = weak.lock(); owner && owner->ready && !owner->closed) {
 			if (owner->pendingState &&
 				owner->pendingState->second == portableState(observation.state)) {
 				const auto revision = owner->pendingState->first;
@@ -947,6 +997,28 @@ void teardownSessionRuntime(const std::shared_ptr<WindowSessionRuntime> &runtime
 		return;
 	}
 	runtime->closed = true;
+	if (runtime->requestWakeup.close) {
+		runtime->requestWakeup.close();
+	}
+	auto cancelled = std::move(runtime->outstanding);
+	if (runtime->options != nullptr) {
+		if (const auto channel = requestStreamChannel(runtime->options->requests)) {
+			// Seal the producer under its mutex before draining or invoking application callbacks.
+			channel->close();
+			for (const auto &request : channel->drain()) {
+				cancelled.emplace(request.id.value, request);
+			}
+		}
+	}
+	for (auto &subscription : runtime->subscriptions) {
+		subscription.cancel();
+	}
+	runtime->subscriptions.clear();
+	if (runtime->hostControl) {
+		runtime->hostControl->applyConfiguration = {};
+		runtime->hostControl->dispatchAction = {};
+		runtime->hostControl->observe = {};
+	}
 	if (runtime->pendingState) {
 		const auto revision = runtime->pendingState->first;
 		runtime->pendingState.reset();
@@ -963,18 +1035,7 @@ void teardownSessionRuntime(const std::shared_ptr<WindowSessionRuntime> &runtime
 			}
 		);
 	}
-	if (runtime->requestWakeup.close) {
-		runtime->requestWakeup.close();
-	}
-	auto cancelled = std::move(runtime->outstanding);
-	if (runtime->options != nullptr) {
-		if (const auto channel = requestStreamChannel(runtime->options->requests)) {
-			for (auto &request : channel->drain()) {
-				cancelled.emplace(request.id.value, request);
-			}
-		}
-	}
-	for (auto &[id, request] : cancelled) {
+	for (const auto &[id, request] : cancelled) {
 		static_cast<void>(id);
 		publishEvent(
 			runtime,
@@ -986,18 +1047,6 @@ void teardownSessionRuntime(const std::shared_ptr<WindowSessionRuntime> &runtime
 				}
 			}
 		);
-	}
-	for (auto &subscription : runtime->subscriptions) {
-		subscription.cancel();
-	}
-	runtime->subscriptions.clear();
-	if (runtime->hostControl) {
-		runtime->hostControl->applyConfiguration = {};
-		runtime->hostControl->dispatchAction = {};
-		runtime->hostControl->observe = {};
-	}
-	if (runtime->options != nullptr) {
-		closeRequestStream(runtime->options->requests);
 	}
 	publishEvent(runtime, WindowClosed{.id = runtime->id});
 }

@@ -129,7 +129,11 @@ void applyCollectionBehavior(NSWindow *window, const WindowConfiguration &config
 	window.collectionBehavior = behavior;
 }
 
-void applyMacosExtensions(NSWindow *window, const WindowConfiguration &configuration) {
+void applyMacosExtensions(
+	NSWindow *window,
+	const WindowConfiguration &configuration,
+	const std::string &defaultTabbingIdentifier
+) {
 	window.titlebarAppearsTransparent = configuration.macos.transparentTitleBar;
 	window.titleVisibility =
 		configuration.macos.titleVisible ? NSWindowTitleVisible : NSWindowTitleHidden;
@@ -154,7 +158,7 @@ void applyMacosExtensions(NSWindow *window, const WindowConfiguration &configura
 	}
 	window.tabbingIdentifier = configuration.macos.tabbingIdentifier
 		? utf8String(*configuration.macos.tabbingIdentifier)
-		: @"";
+		: utf8String(defaultTabbingIdentifier);
 	if ([window isKindOfClass:NSPanel.class]) {
 		auto *const panel = static_cast<NSPanel *>(window);
 		panel.becomesKeyOnlyIfNeeded = configuration.macos.becomesKeyOnlyIfNeeded;
@@ -287,6 +291,28 @@ auto nativeStyleMask(const WindowConfiguration &configuration) -> NSWindowStyleM
 }
 
 auto validateNativeConfiguration(const WindowConfiguration &configuration) -> bool {
+	if (configuration.role == NativeWindowRole::dialog && configuration.modal &&
+		configuration.owner != 0 && configuration.state != NativeWindowState::normal) {
+		return false;
+	}
+	if (!configuration.style.titled &&
+		(configuration.toolbar || configuration.macos.fullSizeContentView ||
+			configuration.macos.transparentTitleBar || !configuration.macos.titleVisible ||
+			configuration.macos.hideTitleBarControls)) {
+		return false;
+	}
+	if (configuration.macos.tabbingMode > 2 || configuration.macos.spacesBehavior > 2 ||
+		configuration.macos.fullscreenBehavior > 2 ||
+		(configuration.macos.nativeLevel &&
+			*configuration.macos.nativeLevel > MacosWindowLevel::screenSaver)) {
+		return false;
+	}
+	if (configuration.document && configuration.document->representedPath) {
+		NSString *const path = utf8String(*configuration.document->representedPath);
+		if ([path containsString:@"://"] && [NSURL URLWithString:path] == nil) {
+			return false;
+		}
+	}
 	if (utf8String(configuration.title) == nil ||
 		(configuration.macos.tabbingIdentifier &&
 			utf8String(*configuration.macos.tabbingIdentifier) == nil)) {
@@ -338,8 +364,22 @@ void applyWindowConfiguration(
 	if (window == nil) {
 		return;
 	}
-	window.styleMask =
-		nativeStyleMask(requested) | (window.styleMask & NSWindowStyleMaskFullScreen);
+	if (!applied.hasApplied) {
+		const char *const identifier = window.tabbingIdentifier.UTF8String;
+		applied.defaultTabbingIdentifier = identifier == nullptr ? "" : identifier;
+	}
+	const NSRect previousContent = [window contentRectForFrameRect:window.frame];
+	const NSWindowStyleMask targetStyle = nativeStyleMask(requested) |
+		(window.styleMask & NSWindowStyleMaskFullScreen) |
+		(requested.macos.fullSizeContentView ? NSWindowStyleMaskFullSizeContentView : 0);
+	const bool styleChanged = window.styleMask != targetStyle;
+	if (styleChanged) {
+		window.styleMask = targetStyle;
+	}
+	const bool toolbarChanged =
+		applied.requested.toolbar.has_value() != requested.toolbar.has_value() ||
+		(applied.requested.toolbar && requested.toolbar &&
+			applied.requested.toolbar->visible != requested.toolbar->visible);
 	window.title = utf8String(requested.title);
 	window.alphaValue = requested.opacity;
 	window.hasShadow = requested.hasShadow;
@@ -375,10 +415,12 @@ void applyWindowConfiguration(
 		(requested.backgroundKind != 1 || requested.background.alpha >= 1.0);
 	switch (requested.backgroundKind) {
 	case 1:
-		window.backgroundColor = [NSColor colorWithSRGBRed:requested.background.red
-													 green:requested.background.green
-													  blue:requested.background.blue
-													 alpha:requested.background.alpha];
+		window.backgroundColor = requested.background.alpha < 1.0
+			? NSColor.clearColor
+			: [NSColor colorWithSRGBRed:requested.background.red
+								  green:requested.background.green
+								   blue:requested.background.blue
+								  alpha:requested.background.alpha];
 		break;
 	case 2:
 		window.backgroundColor = NSColor.clearColor;
@@ -387,7 +429,7 @@ void applyWindowConfiguration(
 		window.backgroundColor = NSColor.windowBackgroundColor;
 		break;
 	}
-	applyMacosExtensions(window, requested);
+	applyMacosExtensions(window, requested, applied.defaultTabbingIdentifier);
 	applyCollectionBehavior(window, requested);
 	applyWindowFacilities(window, applied, requested);
 	const auto &previous = applied.requested;
@@ -397,9 +439,10 @@ void applyWindowConfiguration(
 		previous.screenSelection != requested.screenSelection ||
 		previous.screenId != requested.screenId) {
 		applyPlacement(window, requested);
-	} else if (!std::is_eq(previous.contentWidth <=> requested.contentWidth) ||
+	} else if (styleChanged || toolbarChanged ||
+		!std::is_eq(previous.contentWidth <=> requested.contentWidth) ||
 		!std::is_eq(previous.contentHeight <=> requested.contentHeight)) {
-		const NSRect content = [window contentRectForFrameRect:window.frame];
+		const NSRect content = previousContent;
 		const NSRect target = NSMakeRect(
 			content.origin.x,
 			NSMaxY(content) - requested.contentHeight,
@@ -468,6 +511,14 @@ void installWindowHostControl(
 			return NativeWindowOutcome::invalid;
 		}
 		applyWindowConfiguration(window, *applied, configuration);
+		if (!configuration.isEnabled) {
+			owner->interactionToken = 0;
+			owner->interactionEvent = nil;
+		}
+		owner->layer.opaque = window.opaque;
+		for (const auto &tile : owner->tileLayers) {
+			tile.opaque = window.opaque;
+		}
 		return NativeWindowOutcome::applied;
 	};
 	control->observe = [window, weak] -> NativeWindowObservation {
@@ -496,6 +547,11 @@ void installWindowHostControl(
 			);
 			return;
 		case NativeWindowActionKind::setState:
+			if (applied->requested.role == NativeWindowRole::dialog && applied->requested.modal &&
+				applied->requested.owner != 0 && action.state != NativeWindowState::normal) {
+				complete({.outcome = NativeWindowOutcome::denied});
+				return;
+			}
 			applyState(window, action.state);
 			if (currentState(window) == action.state) {
 				complete({.outcome = NativeWindowOutcome::applied});

@@ -120,7 +120,6 @@ auto WindowRequestChannel::attach() -> std::expected<void, WindowRequestError> {
 void WindowRequestChannel::close() {
 	const std::scoped_lock lock(state->mutex);
 	state->closed = true;
-	state->pending.clear();
 	state->wakeup = {};
 }
 
@@ -199,9 +198,25 @@ auto validateWindowAction(const WindowAction &action) -> std::expected<void, Win
 	return std::visit(
 		[&](const auto &value) -> std::expected<void, WindowRequestError> {
 			using Alternative = std::decay_t<decltype(value)>;
-			if constexpr (std::same_as<Alternative, BeginInteractiveMove> ||
+			if constexpr (std::same_as<Alternative, SetWindowState>) {
+				if (std::to_underlying(value.state) > std::to_underlying(WindowState::fullscreen)) {
+					return std::unexpected(WindowRequestError::invalidAction);
+				}
+				return {};
+			} else if constexpr (std::same_as<Alternative, CaptureWindow>) {
+				if (value.format != CapturePixelFormat::rgba8Unorm) {
+					return std::unexpected(WindowRequestError::invalidAction);
+				}
+				return {};
+			} else if constexpr (std::same_as<Alternative, BeginInteractiveMove> ||
 				std::same_as<Alternative, BeginInteractiveResize> ||
 				std::same_as<Alternative, ShowWindowMenu>) {
+				if constexpr (std::same_as<Alternative, BeginInteractiveResize>) {
+					if (std::to_underlying(value.edge) >
+						std::to_underlying(ResizeEdge::bottomTrailing)) {
+						return std::unexpected(WindowRequestError::invalidAction);
+					}
+				}
 				if constexpr (std::same_as<Alternative, ShowWindowMenu>) {
 					if (!std::isfinite(value.location.x.value()) ||
 						!std::isfinite(value.location.y.value())) {
@@ -229,6 +244,9 @@ auto validateWindowAction(const WindowAction &action) -> std::expected<void, Win
 
 auto validateConfiguration(const WindowConfigurationSnapshot &snapshot)
 	-> std::expected<void, Error> {
+	if (std::to_underlying(snapshot.state) > std::to_underlying(WindowState::fullscreen)) {
+		return std::unexpected(Error::invalidValue);
+	}
 	if (!finiteNonnegative(snapshot.contentSize) || snapshot.contentSize.width.value() <= 0.0 ||
 		snapshot.contentSize.height.value() <= 0.0) {
 		return std::unexpected(Error::invalidValue);
@@ -317,7 +335,8 @@ auto validateConfiguration(const WindowConfigurationSnapshot &snapshot)
 		}
 		std::set<std::string> identifiers;
 		for (const auto &item : snapshot.toolbar->items) {
-			if (!validIdentifier(item.identifier) || !identifiers.insert(item.identifier).second) {
+			if (!validIdentifier(item.identifier) || !validText(item.label) ||
+				!identifiers.insert(item.identifier).second) {
 				return std::unexpected(Error::invalidValue);
 			}
 		}

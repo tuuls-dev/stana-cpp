@@ -751,11 +751,13 @@ void rasterScene(
 	}
 	CGContextSaveGState(context);
 	const auto color = scene.source->background;
-	CGContextSetRGBFillColor(context, color.red, color.green, color.blue, 1);
+	CGContextSetBlendMode(context, kCGBlendModeCopy);
+	CGContextSetRGBFillColor(context, color.red, color.green, color.blue, color.alpha);
 	CGContextFillRect(
 		context,
 		CGRectMake(0, 0, static_cast<double>(pixels.width), static_cast<double>(pixels.height))
 	);
+	CGContextSetBlendMode(context, kCGBlendModeNormal);
 	CGContextTranslateCTM(context, 0, static_cast<double>(pixels.height));
 	CGContextScaleCTM(context, scene.scale, -scene.scale);
 	CGContextTranslateCTM(
