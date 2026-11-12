@@ -533,6 +533,12 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 
 - (void)windowDidBecomeKey:(NSNotification *)notification {
 	static_cast<void>(notification);
+	if (state_ && !state_->isClosed) {
+		if (state_->view != nil) {
+			[static_cast<STANAView *>(state_->view) publishCurrentVisibility];
+		}
+		stana::platform::detail::requestFrame(state_);
+	}
 	stana::platform::detail::publishWindowObservation(state_);
 }
 
