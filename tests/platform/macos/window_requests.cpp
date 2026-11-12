@@ -413,6 +413,10 @@ auto menuAndPrintContracts() -> int {
 				.requests = requests->stream()},
 		.events = {.onEvent = [requests, completed, menuShown](const WindowEvent &event) -> void {
 			if (std::holds_alternative<WindowReady>(event)) {
+				const auto path = stana::testing::fixtures::platform::macos::resultPath();
+				if (!path.empty()) {
+					std::ofstream{path + ".ready"} << 1;
+				}
 				Application::postAfter(presentationDelay(), [] -> void {
 					stana::testing::fixtures::platform::macos::pressWindow(
 						"Stana menu and print contracts"
@@ -432,9 +436,9 @@ auto menuAndPrintContracts() -> int {
 						.has_value(),
 					"gesture menu request accepted"
 				);
-				Application::postAfter(presentationDelay(), [] -> void {
-					stana::testing::fixtures::platform::macos::dismissWindowMenu();
-				});
+				stana::testing::fixtures::platform::macos::dismissWindowMenuAfter(
+					presentationDelay()
+				);
 			}
 			if (const auto *completion = std::get_if<WindowRequestCompleted>(&event)) {
 				if (std::holds_alternative<ShowWindowMenu>(completion->result.action) &&
@@ -443,9 +447,9 @@ auto menuAndPrintContracts() -> int {
 					require(requests->emit(PrintWindow{}).has_value(), "print request accepted");
 					// Poll only the real modal panel; cancellation must not submit a print job.
 					for (int attempt = 1; attempt <= 4; ++attempt) {
-						Application::postAfter(presentationDelay() * attempt, [] -> void {
-							stana::testing::fixtures::platform::macos::cancelPrintPanel();
-						});
+						stana::testing::fixtures::platform::macos::cancelPrintPanelAfter(
+							presentationDelay() * attempt
+						);
 					}
 				} else if (std::holds_alternative<PrintWindow>(completion->result.action) &&
 					completion->result.outcome == WindowOutcome::cancelled) {
@@ -513,27 +517,37 @@ auto ownerClosureContracts() -> int {
 } // namespace
 
 auto main() -> int {
-	int result = 1;
 	try {
-		result = runContracts();
-		if (result == 0) {
-			result = mixedCaptureContracts();
+		const auto path = stana::testing::fixtures::platform::macos::resultPath();
+		if (!path.empty()) {
+			std::ofstream{path + ".pid"}
+				<< stana::testing::fixtures::platform::macos::processIdentity();
 		}
-		if (result == 0) {
-			result = transparentCaptureContracts();
+		int result = 1;
+		try {
+			result = runContracts();
+			if (result == 0) {
+				result = mixedCaptureContracts();
+			}
+			if (result == 0) {
+				result = transparentCaptureContracts();
+			}
+			if (result == 0) {
+				result = menuAndPrintContracts();
+			}
+			if (result == 0) {
+				result = ownerClosureContracts();
+			}
+		} catch (const std::exception &error) {
+			result = 1;
+			std::cerr << error.what() << '\n';
 		}
-		if (result == 0) {
-			result = menuAndPrintContracts();
+		if (!path.empty()) {
+			std::ofstream{path} << result;
 		}
-		if (result == 0) {
-			result = ownerClosureContracts();
-		}
+		return result;
 	} catch (const std::exception &error) {
 		std::cerr << error.what() << '\n';
+		return 1;
 	}
-	const auto path = stana::testing::fixtures::platform::macos::resultPath();
-	if (!path.empty()) {
-		std::ofstream{path} << result;
-	}
-	return result;
 }

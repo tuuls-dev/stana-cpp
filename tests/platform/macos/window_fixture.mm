@@ -96,28 +96,28 @@ void pressWindow(const std::string &title) {
 	[NSApp postEvent:event atStart:NO];
 }
 
-void dismissWindowMenu() {
-	constexpr unsigned short escapeKey = 53;
-	NSEvent *const event = [NSEvent keyEventWithType:NSEventTypeKeyDown
-											location:NSZeroPoint
-									   modifierFlags:0
-										   timestamp:NSProcessInfo.processInfo.systemUptime
-										windowNumber:0
-											 context:nil
-										  characters:@"\033"
-						 charactersIgnoringModifiers:@"\033"
-										   isARepeat:NO
-											 keyCode:escapeKey];
-	if (event == nil) {
-		throw std::runtime_error("Unable to create fixture escape event");
-	}
-	[NSApp postEvent:event atStart:YES];
+void dismissWindowMenuAfter(std::chrono::milliseconds delay) {
+	// A main-queue callback cannot reenter that queue while AppKit tracks a menu.
+	// A common-mode run-loop timer keeps this fixture active during native tracking.
+	NSTimer *const timer =
+		[NSTimer timerWithTimeInterval:std::chrono::duration<double>(delay).count()
+							   repeats:NO
+								 block:^(NSTimer *) {
+								   [NSApp.windowsMenu cancelTracking];
+								 }];
+	[NSRunLoop.mainRunLoop addTimer:timer forMode:NSRunLoopCommonModes];
 }
 
-void cancelPrintPanel() {
-	if (NSApp.modalWindow != nil) {
-		[NSApp stopModalWithCode:NSModalResponseCancel];
-	}
+void cancelPrintPanelAfter(std::chrono::milliseconds delay) {
+	NSTimer *const timer =
+		[NSTimer timerWithTimeInterval:std::chrono::duration<double>(delay).count()
+							   repeats:NO
+								 block:^(NSTimer *) {
+								   if (NSApp.modalWindow != nil) {
+									   [NSApp stopModalWithCode:NSModalResponseCancel];
+								   }
+								 }];
+	[NSRunLoop.mainRunLoop addTimer:timer forMode:NSRunLoopCommonModes];
 }
 
 void closeWindow(const std::string &title) {

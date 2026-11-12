@@ -46,9 +46,9 @@ def main() -> int:
                 if launch.poll() is None:
                     launch.terminate()
                     launch.wait(timeout=5)
-            for log in (output, error):
-                if log.exists():
-                    print(log.read_text(), end="")
+                for log in (output, error):
+                    if log.exists():
+                        print(log.read_text(), end="", flush=True)
             if not result.exists():
                 print("Native process exited without an explicit result", file=sys.stderr)
                 return 1
