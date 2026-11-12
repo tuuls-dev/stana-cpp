@@ -122,6 +122,18 @@ struct WindowClosed {
 	WindowId id{}; ///< Identity of the closed window.
 };
 
+/// @brief Phase of a window-scoped pointer interaction.
+enum class WindowInteractionPhase : std::uint8_t { press, move, release };
+
+/// @brief Content-local pointer event with single-use gesture authorization.
+/// Tokens expire on release or closure and cannot authorize another window.
+struct WindowInteraction {
+	WindowId window{};											 ///< Originating window.
+	WindowInteractionPhase phase = WindowInteractionPhase::move; ///< Pointer phase.
+	Point location{};											 ///< Content-local logical point.
+	std::optional<InteractionToken> token{};					 ///< Present on press only.
+};
+
 /// @brief Typed window observation delivered on the UI executor.
 using WindowEvent = std::variant<
 	WindowReady,
@@ -130,6 +142,7 @@ using WindowEvent = std::variant<
 	WindowConfigurationCompleted,
 	WindowRequestCompleted,
 	WindowFacilityEvent,
+	WindowInteraction,
 	WindowClosed>;
 
 /// @brief Observation callbacks for one window; invoked on the UI executor.

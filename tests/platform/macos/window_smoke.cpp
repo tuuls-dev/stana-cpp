@@ -24,8 +24,8 @@ constexpr auto primaryTitle = "Stana tile qualification";
 constexpr auto secondaryTitle = "Stana independent window";
 
 constexpr stana::testing::fixtures::platform::macos::PhysicalViewport edgeViewport{
-	.width = stana::Points{1025},
-	.height = stana::Points{769}
+	.width = 1025,
+	.height = 769
 };
 enum class Stage : std::uint8_t {
 	initial,
@@ -212,7 +212,7 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 				record(current);
 				before = current;
 				constexpr stana::testing::fixtures::platform::macos::PhysicalViewport
-					restoredViewport{.width = stana::Points{1200}, .height = stana::Points{900}};
+					restoredViewport{.width = 1200, .height = 900};
 				stana::testing::fixtures::platform::macos::resizeWindow(
 					primaryTitle,
 					restoredViewport
@@ -337,21 +337,25 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 	scenario->queue();
 	std::vector<stana::application::detail::WindowSession> sessions(2);
 	sessions.at(0) = {
+		.id = stana::application::WindowId::create(),
 		.options =
-			{.geometry =
-					{.contentSize =
-							{.width = stana::Points{initialWidth},
-								.height = stana::Points{initialHeight}}},
-				.appearance = {.title = primaryTitle}},
+			{.contentSize =
+					stana::Size{
+						.width = stana::Points{initialWidth},
+						.height = stana::Points{initialHeight}
+					},
+				.title = primaryTitle},
 		.document = scenario->document
 	};
 	sessions.at(1) = {
+		.id = stana::application::WindowId::create(),
 		.options =
-			{.geometry =
-					{.contentSize =
-							{.width = stana::Points{smallWidth},
-								.height = stana::Points{smallHeight}}},
-				.appearance = {.title = secondaryTitle}},
+			{.contentSize =
+					stana::Size{
+						.width = stana::Points{smallWidth},
+						.height = stana::Points{smallHeight}
+					},
+				.title = secondaryTitle},
 		.document = scenario->otherDocument
 	};
 	const int status = stana::application::detail::runWindows(sessions);

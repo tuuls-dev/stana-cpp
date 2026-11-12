@@ -534,7 +534,9 @@ void Document::commit() {
 			}
 			draft->revision = metrics_.sceneRevisions + 1;
 			draft->size = viewport_;
-			draft->background = environment_.theme == Theme::dark ? Color::black() : Color::white();
+			draft->background = surfaceBackground_
+				? surfaceBackground_->resolved(environment_.theme, environment_.highContrast)
+				: (environment_.theme == Theme::dark ? Color::black() : Color::white());
 			draft->textEnvironment = textEnvironment_;
 			draft->geometry =
 				render_ ? render_->geometry : stana::rendering::detail::GeometryRoot{};

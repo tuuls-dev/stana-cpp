@@ -88,7 +88,7 @@ auto builtinScenes() -> std::vector<std::shared_ptr<const stana::platform::detai
 		{.origin = {.x = stana::Points{quarter}, .y = stana::Points{quarter}},
 			.size = {.width = stana::Points{rounded}, .height = stana::Points{rounded}}},
 		stana::rendering::ExtendedColor{1, 0, 0},
-		radius
+		stana::Points{radius}
 	);
 	picture.fillEllipse(
 		{.origin = {.x = stana::Points{ellipseX + quarter}, .y = stana::Points{top + quarter}},
@@ -102,14 +102,14 @@ auto builtinScenes() -> std::vector<std::shared_ptr<const stana::platform::detai
 		},
 		stana::rendering::GPUVertex{
 			.position =
-				{.x = stana::Points{meshX + meshExtent} + quarter,
+				{.x = stana::Points{meshX + meshExtent + quarter},
 					.y = stana::Points{top + quarter}},
 			.color = stana::rendering::ExtendedColor{0, 1, 0}
 		},
 		stana::rendering::GPUVertex{
 			.position =
 				{.x = stana::Points{meshX + quarter},
-					.y = stana::Points{top + meshExtent} + quarter},
+					.y = stana::Points{top + meshExtent + quarter}},
 			.color = stana::rendering::ExtendedColor{0, 0, 1}
 		}
 	};
@@ -130,10 +130,14 @@ auto builtinScenes() -> std::vector<std::shared_ptr<const stana::platform::detai
 		stana::Point{.x = stana::Points{lineEnd}, .y = stana::Points{lineY}},
 		stana::Point{.x = stana::Points{lineEnd}, .y = stana::Points{lineBottom}}
 	};
-	picture.strokePolyline(line, stana::rendering::ExtendedColor{1, 0, 1}, lineWidth);
+	picture.strokePolyline(
+		line,
+		stana::rendering::ExtendedColor{1, 0, 1},
+		stana::Points{lineWidth}
+	);
 	constexpr double dotX = 700;
 	const std::array point{stana::Point{.x = stana::Points{dotX}, .y = stana::Points{lineY}}};
-	picture.strokePolyline(point, stana::rendering::ExtendedColor{0, 1, 1}, radius);
+	picture.strokePolyline(point, stana::rendering::ExtendedColor{0, 1, 1}, stana::Points{radius});
 	const stana::reactive::Signal model{picture};
 	const stana::Frame fill{.width = stana::Length::fill(), .height = stana::Length::fill()};
 	auto document = stana::document::detail::Document::create(

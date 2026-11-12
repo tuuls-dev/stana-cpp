@@ -22,7 +22,7 @@ def main() -> int:
         result = directory / "result"
         output = directory / "stdout"
         error = directory / "stderr"
-        validation = [item for key in ("MTL_DEBUG_LAYER", "MTL_SHADER_VALIDATION")
+        validation = [item for key in ("MTL_DEBUG_LAYER", "MTL_SHADER_VALIDATION", "STANA_MANUAL_FACILITIES")
                       if key in os.environ for item in ("--env", f"{key}={os.environ[key]}")]
         try:
             launch = subprocess.Popen(
@@ -46,9 +46,9 @@ def main() -> int:
                 if launch.poll() is None:
                     launch.terminate()
                     launch.wait(timeout=5)
-            for log in (output, error):
-                if log.exists():
-                    print(log.read_text(), end="")
+                for log in (output, error):
+                    if log.exists():
+                        print(log.read_text(), end="", flush=True)
             if not result.exists():
                 print("Native process exited without an explicit result", file=sys.stderr)
                 return 1

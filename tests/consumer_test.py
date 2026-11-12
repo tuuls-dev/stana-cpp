@@ -65,6 +65,7 @@ def main() -> None:
 		run("ctest", "--test-dir", str(consumer_build), "--output-on-failure")
 		rejects = [
 			("old-canvas", "Canvas"),
+			("grouped_window_options", "geometry"),
 			("native_shader", "metalSource"),
 			("native_library", "metalLibrary"),
 			("raw_points", "Points"),

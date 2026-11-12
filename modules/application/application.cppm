@@ -34,10 +34,17 @@ export namespace stana::application {
 /// ## Breaking migration from the prior flat fields
 /// | Existing field | Replacement |
 /// |---|---|
-/// | `.title` | `.options.appearance.title` |
-/// | `.size` | `.options.geometry.contentSize` |
-/// | `.renderingColorMode` | `.options.creation.renderingColorMode` |
+/// | `.title` | `.options.title` |
+/// | `.size` | `.options.contentSize` |
+/// | `.renderingColorMode` | `.options.renderingColorMode` |
 /// | `.content` | remains `.content` |
+///
+/// The six former `WindowOptions` groups are removed: concatenate their fields
+/// directly, e.g. `.options.geometry.contentSize` becomes `.options.contentSize`
+/// and `.options.appearance.title` becomes `.options.title`. `creation`, `behavior`,
+/// `desktop`, and `facilities` are likewise flattened; their wrapper types no longer
+/// exist. Platform extension groups remain typed under `.options.platform`.
+/// Rebuild consumers after this source/ABI-breaking aggregate layout change.
 ///
 /// Do not keep duplicate legacy fields or competing precedence rules. Defaults:
 /// content size 800×600 logical points, centered placement, native decorations,
@@ -48,7 +55,7 @@ template <::stana::ui::Component Content> struct Window {
 	WindowId id =
 		WindowId::create();	 ///< Opaque identity; creating it allocates no native resources.
 	Content content;		 ///< Root description mounted once when the application starts.
-	WindowOptions options{}; ///< Grouped creation, geometry, appearance, and facilities.
+	WindowOptions options{}; ///< Flat creation, geometry, appearance, and facilities.
 	WindowEvents events{};	 ///< UI-executor observation and close-decision callbacks.
 };
 
@@ -61,7 +68,7 @@ namespace detail {
 /// properties without reconstructing the declaration value.
 struct WindowSession {
 	WindowId id{};			 ///< Portable identity correlating events and native attachments.
-	WindowOptions options{}; ///< Live grouped configuration, including the request stream.
+	WindowOptions options{}; ///< Live flat configuration, including the request stream.
 	WindowEvents events{};	 ///< Observation callbacks for this session.
 	std::shared_ptr<::stana::document::detail::Document>
 		document{}; ///< Authoritative retained window state.

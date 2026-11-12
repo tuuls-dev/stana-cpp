@@ -12,9 +12,45 @@ struct WindowState;
 /// @brief Tracks last-applied requested values so unchanged updates skip native writes.
 struct AppliedWindowConfiguration {
 	WindowConfiguration requested{};
+	std::string defaultTabbingIdentifier{};
 	bool hasApplied = false;
+	std::optional<NativeWindowState> transitionTarget{};
 	std::uint64_t deferredCloseRequest = 0;
+	id toolbarDelegate = nil;
+	std::vector<NativeActionCompletion> closeRequests{};
+	std::vector<std::pair<NativeWindowState, NativeActionCompletion>> stateRequests{};
 };
+
+[[nodiscard]] auto validateNativeConfiguration(const WindowConfiguration &) -> bool;
+void applyWindowFacilities(NSWindow *, AppliedWindowConfiguration &, const WindowConfiguration &);
+void dispatchWindowGesture(
+	NSWindow *,
+	const std::shared_ptr<WindowState> &,
+	const NativeWindowAction &,
+	const NativeActionCompletion &
+);
+void captureWindowContent(
+	NSWindow *,
+	const std::shared_ptr<WindowState> &,
+	bool printing,
+	NativeActionCompletion
+);
+void publishWindowObservation(const std::shared_ptr<WindowState> &);
+void registerConfiguredWindow(const std::shared_ptr<WindowState> &);
+[[nodiscard]] auto attachWindowRole(const std::shared_ptr<WindowState> &) -> bool;
+void unregisterConfiguredWindows();
+void closeOwnedWindows(std::uint64_t owner);
+[[nodiscard]] auto applyRoleVisibility(NSWindow *, const WindowConfiguration &, bool visible)
+	-> bool;
+void encodeWindowRestoration(const std::shared_ptr<WindowState> &, NSCoder *);
+void decodeWindowRestoration(const std::shared_ptr<WindowState> &, NSCoder *);
+[[nodiscard]] auto negotiateWindowDrag(
+	const std::shared_ptr<WindowState> &,
+	id<NSDraggingInfo>,
+	bool entered,
+	bool dropping
+) -> NSDragOperation;
+void publishWindowInteraction(const std::shared_ptr<WindowState> &, NSEvent *, std::uint8_t phase);
 
 /// @brief Builds the AppKit style mask for the requested role and chrome flags.
 [[nodiscard]] auto nativeStyleMask(const WindowConfiguration &configuration) -> NSWindowStyleMask;

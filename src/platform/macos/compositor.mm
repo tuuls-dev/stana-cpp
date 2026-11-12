@@ -1295,10 +1295,13 @@ auto Compositor::prepare(
 		color.storeAction = samples_ > 1 ? MTLStoreActionMultisampleResolve : MTLStoreActionStore;
 		const auto background = packet->scene->source->background;
 		color.clearColor = MTLClearColorMake(
-			linear ? stana::gpu::detail::decodeSRGB(background.red) : background.red,
-			linear ? stana::gpu::detail::decodeSRGB(background.green) : background.green,
-			linear ? stana::gpu::detail::decodeSRGB(background.blue) : background.blue,
-			1
+			(linear ? stana::gpu::detail::decodeSRGB(background.red) : background.red) *
+				background.alpha,
+			(linear ? stana::gpu::detail::decodeSRGB(background.green) : background.green) *
+				background.alpha,
+			(linear ? stana::gpu::detail::decodeSRGB(background.blue) : background.blue) *
+				background.alpha,
+			background.alpha
 		);
 		id<MTLRenderCommandEncoder> const encoder =
 			[commands renderCommandEncoderWithDescriptor:descriptor];

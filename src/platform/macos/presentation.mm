@@ -185,7 +185,7 @@ void replaceGrid(const std::shared_ptr<WindowState> &state) {
 	CALayer *const root = [CALayer layer];
 	root.geometryFlipped = YES;
 	root.masksToBounds = YES;
-	root.opaque = YES;
+	root.opaque = state->nativeWindow == nil || state->nativeWindow.opaque;
 	root.frame = NSRectToCGRect(view.bounds);
 	root.contentsScale = scale;
 	root.edgeAntialiasingMask = 0;
@@ -212,7 +212,7 @@ void replaceGrid(const std::shared_ptr<WindowState> &state) {
 			state->linearOutput ? MTLPixelFormatRGBA16Float : MTLPixelFormatBGRA8Unorm;
 		layer.wantsExtendedDynamicRangeContent = state->linearOutput;
 		layer.colorspace = colorspace.get();
-		layer.opaque = YES;
+		layer.opaque = root.opaque;
 		layer.framebufferOnly = NO;
 		layer.maximumDrawableCount = tileDrawableCount;
 		layer.displaySyncEnabled = YES;
@@ -676,9 +676,12 @@ void render(const std::shared_ptr<WindowState> &state) {
 	  });
 	}];
 	const auto background = scene->background;
-	const CoreOwner color{
-		CGColorCreateGenericRGB(background.red, background.green, background.blue, 1)
-	};
+	const CoreOwner color{CGColorCreateGenericRGB(
+		background.red,
+		background.green,
+		background.blue,
+		background.alpha >= 1.0 ? 1.0 : 0.0
+	)};
 	state->layer.backgroundColor = color.get();
 	state->submittedRevision = target->source->revision;
 	state->work.copiedBytes += copiedBytes;

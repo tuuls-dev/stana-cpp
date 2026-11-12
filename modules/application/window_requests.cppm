@@ -2,6 +2,7 @@ module;
 
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -59,7 +60,8 @@ struct ShowWindowMenu {
 
 /// @brief Pixel format for an owned window capture result.
 enum class CapturePixelFormat : std::uint8_t {
-	rgba8Unorm ///< 8-bit RGBA in top-left row-major order; owned by the result payload.
+	rgba8Unorm ///< Straight-alpha SDR sRGB RGBA8 in top-left row-major order; owned by the result
+			   ///< payload.
 };
 
 /// @brief Requests an owned raster capture of the window contents.
@@ -209,6 +211,9 @@ struct WindowRequestChannel {
 
 	/// @brief Marks the channel closed; further emissions fail with `windowClosed`.
 	void close();
+
+	/// @brief Installs a producer-safe wakeup; invoked outside the channel mutex.
+	void setWakeup(std::function<void()> wakeup);
 
 	/// @brief Moves queued requests out for ordered session dispatch.
 	[[nodiscard]] auto drain() -> std::vector<PendingWindowRequest>;

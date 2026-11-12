@@ -133,6 +133,8 @@ NativeExecutorSession::~NativeExecutorSession() {
 	if (state_ && state_->endpoint) {
 		state_->endpoint->close();
 	}
+	// Preparation can fail before runWindows installs its cleanup guard.
+	stana::tasks::detail::TaskScheduler::current().dispatcher = {};
 }
 
 auto NativeExecutorSession::complete(int code) const -> int {
@@ -151,6 +153,30 @@ void installNativeTaskDispatcher() {
 }
 
 auto runWindows(std::vector<WindowSession> &sessions) -> int {
+	std::vector<std::shared_ptr<WindowSessionRuntime>> runtimes;
+	bool streamsAttached = false;
+
+	const auto cleanupAction = [&](void *) noexcept -> void {
+		try {
+			stana::tasks::detail::TaskScheduler::current().dispatcher = {};
+			for (const auto &runtime : runtimes) {
+				teardownSessionRuntime(runtime);
+			}
+			for (const auto &session : sessions) {
+				if (streamsAttached) {
+					closeRequestStream(session.options.requests);
+				}
+				if (session.document) {
+					session.document->close();
+				}
+			}
+		} catch (const std::exception &error) {
+			std::cerr << "Stana cleanup failed: " << error.what() << '\n';
+		} catch (...) {
+			std::cerr << "Stana cleanup failed\n";
+		}
+	};
+	const std::shared_ptr<void> cleanup{nullptr, cleanupAction};
 	try {
 		if (const auto identities = validateSessionIdentities(sessions); !identities) {
 			std::cerr << "Stana: invalid or duplicate WindowId values in Application::run\n";
@@ -160,8 +186,8 @@ auto runWindows(std::vector<WindowSession> &sessions) -> int {
 			std::cerr << "Stana: window request stream attachment failed\n";
 			return 1;
 		}
+		streamsAttached = true;
 		std::vector<stana::platform::detail::Window> windows;
-		std::vector<std::shared_ptr<WindowSessionRuntime>> runtimes;
 		runtimes.reserve(sessions.size());
 		for (auto &session : sessions) {
 			if (!session.document) {
@@ -172,6 +198,20 @@ auto runWindows(std::vector<WindowSession> &sessions) -> int {
 			runtime->id = session.id;
 			runtime->options = &session.options;
 			runtime->events = session.events;
+			runtime->acceptedChanged = [weakDocument = std::weak_ptr{session.document}](
+										   const WindowConfigurationSnapshot &snapshot
+									   ) -> void {
+				if (const auto document = weakDocument.lock()) {
+					std::optional<Color> color;
+					if (const auto *solid = std::get_if<SolidBackground>(&snapshot.background)) {
+						color = solid->color;
+					} else if (std::holds_alternative<TransparentBackground>(snapshot.background)) {
+						color = Color::clear();
+					}
+					document->setSurfaceBackground(color);
+					document->commit();
+				}
+			};
 			runtimes.push_back(runtime);
 
 			const auto sessionDocument = session.document;
@@ -219,7 +259,7 @@ auto runWindows(std::vector<WindowSession> &sessions) -> int {
 				.width = initial.contentWidth,
 				.height = initial.contentHeight,
 				.configuration = initial,
-				.colorMode = convertMode(session.options.creation.renderingColorMode),
+				.colorMode = convertMode(session.options.renderingColorMode),
 				.gpuError = [weakDocument](stana::gpu::detail::Diagnostic diagnostic) -> void {
 					if (const auto owner = weakDocument.lock()) {
 						owner->queueGPUDiagnostic(
