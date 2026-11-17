@@ -1,16 +1,14 @@
 #include "../../src/diagnostics/log.hpp"
 #include <array>
 #include <atomic>
-#include <condition_variable>
 #include <cstdint>
 #include <exception>
 #include <future>
 #include <iostream>
+#include <latch>
 #include <memory>
-#include <mutex>
 #include <stdexcept>
 #include <string_view>
-#include <thread>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -130,8 +128,8 @@ void lazyPreparation() {
 }
 
 struct InFlight {
-	std::promise<void> filtering;
-	std::future<void> resume;
+	std::latch filtering{1};
+	std::latch resume{1};
 	std::atomic<unsigned> writes{0};
 };
 
@@ -140,7 +138,7 @@ class BlockingSink final : public LogSink {
 	explicit BlockingSink(std::shared_ptr<InFlight> state) : state_(std::move(state)) {}
 
 	[[nodiscard]] auto enabled(LogLevel, std::string_view) const noexcept -> bool override {
-		state_->filtering.set_value();
+		state_->filtering.count_down();
 		state_->resume.wait();
 		return true;
 	}
@@ -153,24 +151,21 @@ class BlockingSink final : public LogSink {
 
 void replaceInFlight() {
 	const auto state = std::make_shared<InFlight>();
-	std::promise<void> resume;
-	state->resume = resume.get_future();
-	const auto filtering = state->filtering.get_future();
 	auto first = std::make_shared<BlockingSink>(state);
 	const std::weak_ptr lifetime{first};
 	const auto replacement = std::make_shared<CountingSink>(true);
 	setLogSink(std::move(first));
-	std::jthread emitter{[] -> void {
+	auto emitter = std::async(std::launch::async, [] -> void {
 		log(Level::trace, category, "in-flight event");
-	}};
-	filtering.wait();
+	});
+	state->filtering.wait();
 	setLogSink(replacement);
 	log(Level::trace, category, "replacement event");
 	setLogSink({});
 	log(Level::trace, category, "removed sink");
 	const bool retained = !lifetime.expired();
-	resume.set_value();
-	emitter.join();
+	state->resume.count_down();
+	emitter.get();
 
 	require(retained && lifetime.expired(), "old sink lives exactly through in-flight delivery");
 	require(state->writes == 1, "in-flight record stays with the sink that filtered it");
@@ -184,36 +179,28 @@ class ConcurrentSink final : public LogSink {
 	}
 
 	void write(const LogRecord &) noexcept override {
-		std::unique_lock lock{mutex_};
+		arrivals_.arrive_and_wait();
 		++writes_;
-		arrivals_.notify_all();
-		arrivals_.wait(lock, [this] -> bool {
-			return writes_ == expectedWrites;
-		});
 	}
 
-	[[nodiscard]] auto completed() const noexcept -> bool {
-		const std::scoped_lock lock{mutex_};
-		return writes_ == expectedWrites;
-	}
+	[[nodiscard]] auto completed() const noexcept -> bool { return writes_ == expectedWrites; }
 
   private:
 	static constexpr unsigned expectedWrites = 2;
-	mutable std::mutex mutex_;
-	std::condition_variable arrivals_;
-	unsigned writes_ = 0;
+	std::latch arrivals_{expectedWrites};
+	std::atomic<unsigned> writes_{0};
 };
 
 void concurrentDelivery() {
 	const auto sink = std::make_shared<ConcurrentSink>();
 	setLogSink(sink);
-	{
-		const auto emit = [] -> void {
-			log(Level::trace, category, "concurrent event");
-		};
-		const std::jthread first{emit};
-		const std::jthread second{emit};
-	}
+	const auto emit = [] -> void {
+		log(Level::trace, category, "concurrent event");
+	};
+	auto first = std::async(std::launch::async, emit);
+	auto second = std::async(std::launch::async, emit);
+	first.get();
+	second.get();
 	setLogSink({});
 	require(sink->completed(), "both threads delivered to the same sink");
 }
