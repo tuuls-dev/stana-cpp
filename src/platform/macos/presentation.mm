@@ -1,10 +1,12 @@
 #include "presentation.hpp"
+#include "../../diagnostics/log.hpp"
 #import <QuartzCore/CATransaction.h>
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <functional>
-#include <iostream>
 #include <limits>
 #include <map>
 #include <stdexcept>
@@ -12,6 +14,10 @@
 
 namespace stana::platform::detail {
 namespace {
+using stana::diagnostics::detail::Field;
+using stana::diagnostics::detail::Level;
+using stana::diagnostics::detail::log;
+
 [[nodiscard]] auto now() -> FrameScheduler::Time {
 	return std::chrono::duration_cast<FrameScheduler::Time>(
 		std::chrono::steady_clock::now().time_since_epoch()
@@ -102,8 +108,12 @@ void processTransition(
 			++state->work.recoveries;
 		}
 		if (state->traceRendering) {
-			std::cerr << "Recovery epoch=" << state->presentationEpoch
-					  << " phase=" << static_cast<unsigned>(phase) << '\n';
+			log(Level::trace, "macos.presentation", "Presentation recovery", [&] -> auto {
+				return std::array{
+					Field{"epoch", state->presentationEpoch},
+					Field{"phase", static_cast<std::uint64_t>(phase)}
+				};
+			});
 		}
 	}
 	switch (action) {
@@ -273,8 +283,12 @@ void confirmed(const std::shared_ptr<WindowState> &state, FrameIdentity attempt)
 	state->active.reset();
 	advance(state->timerGeneration);
 	if (state->traceRendering) {
-		std::cerr << "Confirmed revision=" << attempt.sceneRevision
-				  << " sequence=" << attempt.sequence << '\n';
+		log(Level::trace, "macos.presentation", "Presentation confirmed", [&] -> auto {
+			return std::array{
+				Field{"revision", attempt.sceneRevision},
+				Field{"sequence", attempt.sequence}
+			};
+		});
 	}
 	requestFrame(state);
 }
@@ -294,8 +308,15 @@ retryUnknownPresentation(const std::shared_ptr<WindowState> &state, FrameIdentit
 	state->callbacks.abandonPresentation(attempt);
 	state->active.reset();
 	if (state->traceRendering) {
-		std::cerr << "Unknown presentation timestamp retry epoch=" << attempt.epoch
-				  << " sequence=" << attempt.sequence << '\n';
+		log(Level::trace,
+			"macos.presentation",
+			"Retrying after an unknown presentation timestamp",
+			[&] -> auto {
+				return std::array{
+					Field{"epoch", attempt.epoch},
+					Field{"sequence", attempt.sequence}
+				};
+			});
 	}
 	processTransition(state, before, action);
 	return true;
@@ -364,9 +385,16 @@ void render(const std::shared_ptr<WindowState> &state) {
 	}
 	if (!state->scheduler.canBuild(visible(*state))) {
 		if (state->traceRendering) {
-			std::cerr << "Frame deferred phase=" << static_cast<unsigned>(state->scheduler.phase())
-					  << " visible=" << state->view.window.isVisible
-					  << " occlusion=" << state->view.window.occlusionState << '\n';
+			log(Level::trace, "macos.presentation", "Frame deferred", [&] -> auto {
+				return std::array{
+					Field{"phase", static_cast<std::uint64_t>(state->scheduler.phase())},
+					Field{"visible", state->view.window.isVisible != NO},
+					Field{
+						"occlusionState",
+						static_cast<std::uint64_t>(state->view.window.occlusionState)
+					}
+				};
+			});
 		}
 		return;
 	}
@@ -613,8 +641,14 @@ void render(const std::shared_ptr<WindowState> &state) {
 		[[drawables objectAtIndex:index] addPresentedHandler:^(id<MTLDrawable> presented) {
 		  const double timestamp = presented.presentedTime;
 		  if (tracing) {
-			  std::cerr << "Tile time epoch=" << attempt.epoch << " sequence=" << attempt.sequence
-						<< " tile=" << tile.value << " time=" << timestamp << '\n';
+			  log(Level::trace, "macos.presentation", "Tile presentation timestamp", [&] -> auto {
+				  return std::array{
+					  Field{"epoch", attempt.epoch},
+					  Field{"sequence", attempt.sequence},
+					  Field{"tile", static_cast<std::uint64_t>(tile.value)},
+					  Field{"timestamp", timestamp}
+				  };
+			  });
 		  }
 		  dispatch_async(dispatch_get_main_queue(), ^{
 			if (const auto current = weak.lock(); current && !current->isClosed &&
@@ -656,8 +690,13 @@ void render(const std::shared_ptr<WindowState> &state) {
 	  resources->target.reset();
 	  resources->composite.reset();
 	  if (tracing) {
-		  std::cerr << "GPU epoch=" << attempt.epoch << " sequence=" << attempt.sequence
-					<< " status=" << static_cast<long>(completed.status) << '\n';
+		  log(Level::trace, "macos.presentation", "GPU command buffer completed", [&] -> auto {
+			  return std::array{
+				  Field{"epoch", attempt.epoch},
+				  Field{"sequence", attempt.sequence},
+				  Field{"status", static_cast<std::int64_t>(completed.status)}
+			  };
+		  });
 	  }
 	  dispatch_async(dispatch_get_main_queue(), ^{
 		if (const auto current = weak.lock(); current && !current->isClosed) {
@@ -689,12 +728,20 @@ void render(const std::shared_ptr<WindowState> &state) {
 		++state->work.anchorAttempts;
 	}
 	if (tracing) {
-		std::cerr << "Submit revision=" << scene->revision << " surface=" << surface
-				  << " epoch=" << attempt.epoch << " sequence=" << attempt.sequence
-				  << " active=" << NSApp.isActive
-				  << " onSpace=" << state->view.window.isOnActiveSpace
-				  << " tiles=" << expected.size() << " proofTile=" << proofTile.value
-				  << " raster=" << rasterDirty.count() << " bytes=" << copiedBytes << '\n';
+		log(Level::trace, "macos.presentation", "Frame submitted", [&] -> auto {
+			return std::array{
+				Field{"revision", scene->revision},
+				Field{"surfaceEpoch", surface},
+				Field{"epoch", attempt.epoch},
+				Field{"sequence", attempt.sequence},
+				Field{"active", NSApp.isActive != NO},
+				Field{"onActiveSpace", state->view.window.isOnActiveSpace != NO},
+				Field{"tiles", static_cast<std::uint64_t>(expected.size())},
+				Field{"proofTile", static_cast<std::uint64_t>(proofTile.value)},
+				Field{"rasterizedTiles", static_cast<std::uint64_t>(rasterDirty.count())},
+				Field{"copiedBytes", copiedBytes}
+			};
+		});
 	}
 	[buffer commit];
 	armNextWake(state);

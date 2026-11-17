@@ -1,17 +1,41 @@
 #include <array>
 #include <cstdint>
 #include <future>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <variant>
 #include <vector>
 
 import stana;
 
+namespace {
+class FilteredSink final : public stana::diagnostics::LogSink {
+  public:
+	[[nodiscard]] auto enabled(stana::diagnostics::LogLevel, std::string_view) const noexcept
+		-> bool override {
+		return false;
+	}
+
+	void write(const stana::diagnostics::LogRecord &) noexcept override {}
+};
+} // namespace
+
 auto main() -> int {
 	using namespace std::string_view_literals;
 	using namespace stana::literals;
+	auto sink = std::make_shared<FilteredSink>();
+	const std::weak_ptr lifetime{sink};
+	stana::diagnostics::setLogSink(std::move(sink));
+	if (lifetime.expired()) {
+		return 1;
+	}
+	stana::diagnostics::setLogSink({});
+	if (!lifetime.expired()) {
+		return 1;
+	}
 	constexpr std::array tiles{stana::rendering::TileId{0}, stana::rendering::TileId{1}};
 	stana::rendering::PresentationTracker tracker;
 	const auto attempt = tracker.begin(1, 1, tiles);
