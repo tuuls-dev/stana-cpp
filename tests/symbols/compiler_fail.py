@@ -3,64 +3,32 @@
 import argparse
 import json
 from pathlib import Path
-import shlex
 import subprocess
 import sys
-
-
-def compiler_arguments(build: Path, source: Path, output: Path) -> list[str]:
-	commands = json.loads((build / "compile_commands.json").read_text())
-	command = next(
-		entry["command"]
-		for entry in commands
-		if entry["file"].endswith("tests/symbols/compiler.cpp")
-	)
-	arguments = shlex.split(command)
-	skip_next = False
-	filtered: list[str] = []
-	drop_with_value = {"-o", "-c", "-MF", "-MT"}
-	for argument in arguments:
-		if skip_next:
-			skip_next = False
-			continue
-		if argument in drop_with_value or argument in {"-MD"}:
-			skip_next = argument in drop_with_value
-			continue
-		if argument.startswith("--") or argument.endswith("compiler.cpp"):
-			continue
-		filtered.append(argument)
-	return [*filtered, "-c", str(source), "-o", str(output)]
+import tempfile
 
 
 def main() -> None:
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--build", required=True)
-	parser.add_argument("--root", required=True)
+	parser.add_argument("--command", type=Path, required=True)
+	parser.add_argument("--root", type=Path, required=True)
 	args = parser.parse_args()
-	build = Path(args.build)
-	fixtures = sorted((Path(args.root) / "tests/symbols/fail").glob("*.cpp"))
+	command = json.loads(args.command.read_text(encoding="utf-8"))
+	compiler = command["arguments"][0]
+	fixtures = sorted((args.root / "tests/symbols/fail").glob("*.cpp"))
 	if not fixtures:
 		sys.exit("no symbol compile-fail fixtures")
-	if not (build / "compile_commands.json").is_file():
-		sys.exit("missing compile_commands.json; configure the debug preset first")
 	accepted: list[str] = []
-	for fixture in fixtures:
-		output = build / "symbol-fail" / f"{fixture.stem}.o"
-		output.parent.mkdir(exist_ok=True)
-		result = subprocess.run(
-			compiler_arguments(build, fixture, output),
-			cwd=build,
-			capture_output=True,
-			text=True,
-			check=False,
-		)
-		if result.returncode == 0:
-			accepted.append(fixture.name)
-			continue
-		diagnostic = result.stderr
-		if "constant expression" not in diagnostic and "not a constant expression" not in diagnostic:
-			sys.stderr.write(diagnostic)
-			sys.exit(f"{fixture.name} failed for a reason other than constant evaluation")
+	with tempfile.TemporaryDirectory(prefix="stana-symbol-fail-") as work:
+		for fixture in fixtures:
+			output = Path(work) / f"{fixture.stem}.o"
+			result = subprocess.run([compiler, *command["flags"], "-c", str(fixture), "-o", str(output)],
+				cwd=command["directory"], capture_output=True, text=True)
+			if result.returncode == 0:
+				accepted.append(fixture.name)
+			elif "constant expression" not in result.stderr:
+				sys.stderr.write(result.stderr)
+				sys.exit(f"{fixture.name} failed for a reason other than constant evaluation")
 	if accepted:
 		sys.exit("expected these fixtures to fail constant evaluation: " + ", ".join(accepted))
 

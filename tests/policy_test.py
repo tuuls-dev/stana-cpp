@@ -3,10 +3,9 @@
 import argparse
 import importlib.util
 import json
-import os
 from pathlib import Path
-import shlex
 import subprocess
+import tempfile
 
 
 CASES = {
@@ -48,57 +47,28 @@ export module policy_fixture;
 """
 
 
-def compiler_flags(build: Path) -> list[str]:
-	database = json.loads((build / "compile_commands.json").read_text())
-	entry = next(row for row in database if row["file"].endswith("stana.cppm"))
-	command = entry.get("arguments") or shlex.split(entry["command"], posix=os.name != "nt")
-	command = [arg.strip('"') for arg in command]
-	flags = []
-	skip = False
-	for arg in command[1:]:
-		if skip:
-			skip = False
-		elif arg in ("-o", "-MF", "-MT", "-MQ"):
-			skip = True
-		elif (arg in ("-c", "-MD", "-MMD", "/c", "-nologo") or arg == entry["file"]
-			  or arg.startswith(("@", "-fmodule-output=", "/Fo", "/Fd", "/showIncludes"))):
-			continue
-		else:
-			flags.append(arg)
-	if os.name == "nt":
-		flags.insert(0, "--driver-mode=cl")
-	return flags
-
-
-def main() -> None:
-	parser = argparse.ArgumentParser()
-	for arg in ("root", "build", "tidy", "compiler"):
-		parser.add_argument(f"--{arg}", required=True)
-	args = parser.parse_args()
-	root, build = Path(args.root), Path(args.build)
-	work = build / "policy-fixtures"
-	work.mkdir(exist_ok=True)
-	flags = compiler_flags(build)
+def run_fixtures(args: argparse.Namespace, work: Path) -> None:
+	root = args.root
+	interface = json.loads(args.interface.read_text(encoding="utf-8"))
+	implementation = json.loads(args.implementation.read_text(encoding="utf-8"))
 	for name, (source, diagnostic) in {**CASES, "modern": (MODERN, "")}.items():
 		for suffix in (".cppm", ".cpp"):
 			# Check both exported interfaces and implementation-unit bodies.
 			path = work / f"{name}{suffix}"
 			if suffix == ".cppm":
 				text = PREFIX + source
-				extra = []
+				command = interface
+				flags = [flag for flag in command["flags"] if not flag.startswith("-fmodule-file=")]
 			else:
 				text = PREFIX.replace("export module policy_fixture;", "module stana;")
 				text += source.replace("export ", "")
-				# Only a build-generated module map is allowed; no stale shared BMI cache.
-				maps = list((build / "CMakeFiles/stana.dir/src").glob("version.cpp.*.modmap"))
-				if len(maps) != 1:
-					raise RuntimeError(f"Expected one implementation module map, found {maps}")
-				extra = [f"@{maps[0]}"]
+				command = implementation
+				flags = command["flags"]
 			path.write_text(text, encoding="utf-8")
 			result = subprocess.run(
 				[args.tidy, "--experimental-custom-checks", f"--config-file={root / '.clang-tidy'}",
-				 str(path), "--", *flags, *extra],
-				cwd=build, text=True, capture_output=True,
+				 str(path), "--", *flags],
+				cwd=command["directory"], text=True, capture_output=True,
 			)
 			output = result.stdout + result.stderr
 			if diagnostic:
@@ -124,6 +94,15 @@ def main() -> None:
 		if not policy.violations(path):
 			raise RuntimeError(f"Suppression escaped policy: {source}")
 	print(f"Passed {len(CASES) * 2} AST rejection cases, modern alternatives and suppression checks.")
+
+
+def main() -> None:
+	parser = argparse.ArgumentParser()
+	for name in ("root", "interface", "implementation", "tidy"):
+		parser.add_argument(f"--{name}", type=Path, required=True)
+	args = parser.parse_args()
+	with tempfile.TemporaryDirectory(prefix="stana-policy-") as work:
+		run_fixtures(args, Path(work))
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ Stana combines Signals, declarative composition, explicit resource lifetimes, an
 layout and rendering.
 
 [Quick start](#quick-start) · [Example](#a-reactive-counter) ·
-[CMake integration](#use-stana-in-your-project) · [Development](#development)
+[Zig integration](#use-stana-in-your-project) · [Development](#development)
 
 ## Status and platforms
 
@@ -108,8 +108,7 @@ for module, namespace, and ownership rules.
 | --------------------------------------------------------------- | ------------------------ |
 | Upstream LLVM: Clang, clang-tidy, clang-format, clang-scan-deps | **22.1.8**, all matching |
 | ICU4C (`uc`, `i18n`, `data`)                                    | **78.3**, exact          |
-| CMake                                                           | **4.4+**                 |
-| Ninja                                                           | **1.11+**                |
+| Zig                                                             | **0.17.1**              |
 | Python                                                          | **3.11+**                |
 | Just                                                            | Optional command runner  |
 
@@ -135,20 +134,20 @@ export ICU_ROOT="$PWD/.tools/icu"
 python3 tools/bootstrap_tint.py --compiler "$LLVM_ROOT/bin/clang++"
 ```
 
-The bootstrap scripts download SHA-256-pinned archives. ICU and Tint are built from
-source on Unix; LLVM is also built from source on Intel macOS. Allow time and disk
-space for these initial builds. Normal Stana CMake configuration does not fetch
-dependencies.
+The bootstrap scripts download SHA-256-pinned archives. The Tint bootstrap and the
+LLVM source bootstrap on Intel macOS require CMake and Ninja to build their upstream
+projects. ICU builds from source on Unix with Make. Once the dependencies are
+provisioned, Stana builds and tests offline with Zig.
 
-If you already have matching LLVM and ICU installations, set `LLVM_ROOT` and
-`ICU_ROOT` to their installation prefixes and skip those two bootstrap scripts.
-Tint must still be provisioned before configuring Stana.
+Set `LLVM_ROOT`, `ICU_ROOT`, and `STANA_TINT_ROOT` to use matching provisioned
+dependencies. The defaults use the repository's `.tools/` directory and look
+for matching LLVM and ICU installations from Homebrew on macOS.
 
 <details>
 <summary>Windows setup (PowerShell in a Visual Studio developer shell)</summary>
 
-Install CMake, Ninja, Python, and the platform prerequisites first, then run from
-the cloned repository:
+Install Zig, Python, and the platform prerequisites. The Tint bootstrap also
+requires CMake and Ninja. Run these commands from the cloned repository.
 
 ```powershell
 python tools/bootstrap_llvm.py
@@ -164,7 +163,7 @@ python tools/bootstrap_tint.py --compiler "$env:LLVM_ROOT/bin/clang-cl.exe" --co
 
 On Windows, Tint's configuration and CRT must match Stana's: provision with
 `--config Debug` for `debug`, or `--config Release` for `release`. Use separate Tint
-prefixes with `--prefix` and select them using `-DSTANA_TINT_ROOT=...` when keeping
+prefixes with `--prefix` and select them using the `STANA_TINT_ROOT` environment variable when keeping
 both configurations available.
 
 </details>
@@ -172,108 +171,107 @@ both configurations available.
 ### 3. Build and test
 
 ```sh
-just build
-just test
+zig build -j3
+zig build test -j3
 ```
 
-Without Just, the equivalent commands are:
-
-```sh
-cmake --preset debug
-cmake --build --preset debug --parallel 3
-ctest --preset debug
-```
-
-Builds run source and namespace policy checks plus clang-tidy; configuration fails
-if the required analysis or hardening features are unavailable. Each preset has
-its own build directory under `build/`. Do not share module caches across presets
-or toolchains. Keep personal settings in an untracked `CMakeUserPresets.json`.
+`just build` and `just test` wrap these commands. Builds run source policy and
+clang-tidy by default. Use `zig build test --release=fast -j3` for Release.
+Zig caches objects and module interfaces by toolchain and configuration. Run
+`zig build compdb -j3` to generate `compile_commands.json` for clangd.
 
 ### 4. Run an example on macOS
 
 ```sh
-just example counter
+zig build run-counter -j3
+zig build run-symbols -j3
+zig build run-canvas -j3
 ```
 
-Native rendering traces are enabled by default; use `just example counter --no-trace`
-to disable them. Without Just, run `python3 tools/run_example.py counter`.
+`just example counter` is a shortcut for launching the counter. Native rendering
+traces are enabled by default. Set `-Dtrace=false` or use
+`just example counter --no-trace` to disable them.
 
 The [canvas example](examples/canvas/main.cpp) demonstrates CPU and GPU drawing,
-WGSL compute/render passes, and extended color:
-
-```sh
-cmake --build --preset debug --target stana-canvas --parallel 3
-open build/debug/stana-canvas.app
-```
+WGSL compute and render passes, and extended color. Use `zig build examples` to
+build all three apps into `zig-out/bin`.
 
 ## Use Stana in your project
 
-Stana builds a static library and exports the CMake target `stana::stana`.
-Use the same pinned compiler and compatible standard-library ABI as the library.
-Module partitions organize the implementation; consumers only use `import stana;`.
+Stana provides a static C++23 library and the public `import stana;` module.
+Use the pinned Clang version and a compatible platform C++ standard library.
 
-After provisioning the source checkout's dependencies, a source consumer can use:
+For a source build, provision Stana's dependencies as described above. For an
+installed SDK, stage the library with `zig build --prefix "$PWD/dist/stana"`.
+Add Stana as a path dependency in your project's `build.zig.zon`. Point the
+`path` at either the source checkout or the installed SDK root.
 
-```cmake
-cmake_minimum_required(VERSION 4.4)
-project(my_app LANGUAGES CXX)
-
-add_subdirectory(path/to/stana-cpp stana-build)
-add_executable(my_app main.cpp)
-target_link_libraries(my_app PRIVATE stana::stana)
-set_target_properties(my_app PROPERTIES
-  CXX_STANDARD 23 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+```zig
+.dependencies = .{
+    .stana = .{ .path = "../stana-cpp" },
+},
 ```
 
-Configure with Ninja, upstream Clang 22.1.8, and `CMAKE_BUILD_TYPE=Debug` or `Release`.
-On macOS, also set `CMAKE_OSX_DEPLOYMENT_TARGET=26.0` or newer; the supplied
-[`cmake/clang.cmake`](cmake/clang.cmake) toolchain handles the compiler and SDK setup.
+In your project's `build.zig`, import Stana's build helper and pass it your C++
+sources.
 
-An unsanitized build can also be installed:
+```zig
+const std = @import("std");
+const stana = @import("stana");
 
-```sh
-cmake --install build/debug --prefix "$PWD/dist/stana"
+pub fn build(b: *std.Build) void {
+    const optimize = b.standardOptimizeOption(.{});
+    const dependency = b.dependency("stana", .{ .optimize = optimize });
+    const app = stana.addCppExecutable(b, dependency, .{
+        .name = "my-app",
+        .sources = &.{b.path("main.cpp")},
+    });
+    b.getInstallStep().dependOn(&b.addInstallFileWithDir(app, .bin,
+        if (@import("builtin").os.tag == .windows) "my-app.exe" else "my-app").step);
+}
 ```
 
-For an installed consumer, replace `add_subdirectory(...)` with
-`find_package(stana 0.1 CONFIG REQUIRED)` and add the installation prefix to
-`CMAKE_PREFIX_PATH`. ICU 78.3 must remain discoverable. The installed package includes
-the private Tint archive; consumer builds do not need Tint headers or its source tree.
-See the [consumer fixture](tests/consumer/CMakeLists.txt) and
-[integration check](tests/consumer_test.py) for source and relocated-install examples.
+Match the installed SDK's Debug or Release configuration. On macOS the default
+deployment target is 26.0. Pass a higher target as the
+`.@"macos-deployment-target"` dependency option when required by an SDK.
+Installed consumers need LLVM and ICU. The SDK includes the private Tint archive
+and rebuilds the compiler-specific module interfaces in the consumer's cache.
+See the [consumer contract](tests/consumer/build.zig) and
+[relocation test](tests/consumer_test.py).
 
 ## Development
 
 | Command                | Purpose                                                     |
 | ---------------------- | ----------------------------------------------------------- |
-| `just build`           | Configure and build Debug with mandatory analysis           |
-| `just test`            | Build Debug and run CTest                                   |
-| `just test release`    | Build and test Release                                      |
-| `just format`          | Format first-party C++ sources                              |
-| `just format-check`    | Check formatting without modifying files                    |
-| `just test asan`       | Build and test with AddressSanitizer                        |
-| `just test asan-ubsan` | Build and test with AddressSanitizer + UBSan on Linux/macOS |
+| `just build`           | Build Debug with mandatory analysis                          |
+| `just test`            | Build and run the Debug contracts                            |
+| `just test release`    | Build and run the Release contracts                          |
+| `just format`          | Format first-party C++ and Objective-C++                     |
+| `just format-check`    | Check formatting                                             |
+| `just test asan`       | Build and test with AddressSanitizer                          |
+| `just test asan-ubsan` | Build and test with AddressSanitizer and UBSan on Linux/macOS |
+| `zig build package`    | Test and package a relocatable SDK into `zig-out/dist`       |
 
-Before using a sanitizer preset, provision a matching Tint build. For example:
+Provision a matching Tint build before enabling a sanitizer.
 
 ```sh
 python3 tools/bootstrap_tint.py --compiler "$LLVM_ROOT/bin/clang++" --sanitizer address-undefined
-just test asan-ubsan
+zig build test -Dsanitizer=address-undefined -j3
 ```
 
-For `asan`, use `--sanitizer address` instead. On Windows, also use `clang-cl.exe`
-and `--config Debug`. The default Tint prefixes keep sanitizer builds separate.
+For AddressSanitizer alone, select `address` in both commands. On Windows,
+bootstrap with `clang-cl.exe` and the matching `--config`. The default Tint
+prefixes keep sanitizer builds separate.
 
-Native window and Metal tests are opt-in and require a graphical macOS session:
+Run the window and Metal contracts from a graphical macOS session.
 
 ```sh
-cmake --preset debug -DSTANA_NATIVE_TESTS=ON
-cmake --build --preset debug --parallel 3
-ctest --preset debug -L native
+zig build test-native -Dnative-tests=true -j3
 ```
 
-For Metal canvas offscreen tests without a window server, enable
-`STANA_NATIVE_OFFSCREEN_TESTS` instead; a Metal device is still required.
+For offscreen Metal tests, run `zig build test-native -Dnative-offscreen-tests=true -j3`
+on a host with a Metal device. Use the same options with `zig build test` to
+run those contracts alongside the headless suite.
 
 ### Repository map
 
@@ -282,9 +280,9 @@ For Metal canvas offscreen tests without a window server, enable
 | [`modules/`](modules/)           | Public module and subsystem interface partitions      |
 | [`src/`](src/)                   | Mirrored subsystem implementations                    |
 | [`src/platform/`](src/platform/) | Native adapters and platform integration              |
-| [`examples/`](examples/)         | Counter and canvas applications                       |
+| [`examples/`](examples/)         | Counter, symbols, and canvas applications                       |
 | [`tests/`](tests/)               | Contracts, policy checks, and consumer integration    |
-| [`cmake/`](cmake/)               | Toolchain, safety policy, dependencies, and packaging |
+| [`build_support/`](build_support/) | Zig compile graph, contracts, and packaging |
 | [`tools/`](tools/)               | Bootstrap, formatting, policy, and developer scripts  |
 | [`readme/`](readme/)             | Documentation conventions                             |
 

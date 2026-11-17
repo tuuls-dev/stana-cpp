@@ -1,0 +1,19 @@
+.{
+    .name = .stana,
+    .fingerprint = 0x14d3ec39f69585a5,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.17.1",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "build_support",
+        "modules",
+        "src",
+        "tools",
+        "tests",
+        "examples",
+        ".clang-tidy",
+        ".clang-format",
+        "README.md",
+    },
+}

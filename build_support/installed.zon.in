@@ -1,0 +1,7 @@
+.{
+    .name = .stana,
+    .fingerprint = 0x14d3ec39f69585a5,
+    .version = "@VERSION@",
+    .minimum_zig_version = "0.17.1",
+    .paths = .{ "build.zig", "build.zig.zon", "build_support", "tools", "modules", "lib", "share", ".clang-tidy" },
+}

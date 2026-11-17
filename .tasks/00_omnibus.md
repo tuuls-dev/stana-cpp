@@ -2154,7 +2154,7 @@ property group so documentation API examples stay compilable after implementatio
   is unavailable; synthetic events are not a substitute.
 - **Existing gates:** retain policy, formatting, consumer source/install/relocation,
   reactive/task, presentation-evidence, Debug/Release and sanitizer checks. Register
-  new modules/implementation/tests in CMake and existing policy/format workflows.
+  new modules, implementation files, and tests in the Zig build and existing policy and formatting workflows.
 - **Completion:** portable contract, current adapter, deterministic coverage, and
   named native evidence must all be complete. Missing graphical access leaves an
   explicit outstanding native gate, not a passing or silently skipped capability.

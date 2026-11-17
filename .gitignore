@@ -1,7 +1,6 @@
 /build/
 /.tools/
 /dist/
-/CMakeUserPresets.json
 /compile_commands.json
 /.cache/
 /.DS_Store
@@ -12,3 +11,5 @@ __pycache__/
 .zed
 .notes
 threads.txt
+.zig-cache/
+zig-out/

@@ -6,7 +6,7 @@ python := if os() == "windows" { "python" } else { "python3" }
 default:
     @just --list
 
-# Format every first-party C++ module, implementation, native adapter and example.
+# Format first-party sources using the pinned formatter.
 format:
     {{python}} tools/format.py --write
 
@@ -14,20 +14,16 @@ format:
 format-check:
     {{python}} tools/format.py --check
 
-# Configure the selected CMake preset (debug by default).
-configure preset="debug":
-    cmake --preset {{quote(preset)}}
+# Build with mandatory source analysis.
+build preset="debug": (zig-step "install" preset)
 
-# Configure and build the selected preset with mandatory source analysis.
-build preset="debug": (configure preset)
-    cmake --build --preset {{quote(preset)}} --parallel 3
+# Build and run the contracts.
+test preset="debug": (zig-step "test" preset)
 
-# Build and run the selected preset's headless tests.
-test preset="debug": (build preset)
-    ctest --preset {{quote(preset)}}
+[private]
+zig-step step preset:
+    zig build {{step}} -j3 {{ if preset == "release" { "--release=fast" } else if preset == "asan" { "-Dsanitizer=address" } else if preset == "asan-ubsan" { "-Dsanitizer=address-undefined" } else { "-Doptimize=" + quote(preset) } }}
 
-# Compile and run an example without source policy or clang-tidy checks:
-# eg. just example symbols.
-# Native rendering traces are on by default; pass --no-trace to disable.
-example name *args:
-    {{python}} tools/run_example.py {{quote(name)}} {{args}}
+# Launch an existing example. Native rendering traces are on by default.
+example name trace="--trace":
+    zig build {{quote("run-" + name)}} -j3 -Dchecks=false {{ if trace == "--no-trace" { "-Dtrace=false" } else if trace == "--trace" { "-Dtrace=true" } else { quote(trace) } }}

@@ -1,45 +1,33 @@
-"""Build and run a supported public-API example from any working directory."""
+"""Launch a Stana example produced by the Zig build."""
 
 import argparse
 import os
-import sys
 from pathlib import Path
 import subprocess
-
-ROOT = Path(__file__).resolve().parents[1]
+import sys
 
 
 def main() -> None:
-	"""Validate the example name before constructing build targets or executable paths."""
 	parser = argparse.ArgumentParser(description=__doc__)
-	parser.add_argument("name", choices=("counter", "symbols", "canvas"))
-	parser.add_argument("--trace", action=argparse.BooleanOptionalAction, default=True,
-		help="Enable native rendering traces (on by default)")
+	parser.add_argument("artifact", type=Path)
+	parser.add_argument("--trace", action=argparse.BooleanOptionalAction, default=True)
 	args = parser.parse_args()
-	target = f"stana-{args.name}"
-	# Isolate unchecked example objects and module caches from checked builds.
-	subprocess.run(["cmake", "--preset", "example"], cwd=ROOT, check=True)
-	subprocess.run(["cmake", "--build", "--preset", "example", "--target", target,
-		"--parallel", "3"], cwd=ROOT, check=True)
-	suffix = ".exe" if os.name == "nt" else ""
-	executable = ROOT / "build/example" / f"{target}{suffix}"
+	artifact = args.artifact.resolve()
 	environment = os.environ.copy()
 	if args.trace:
 		environment["STANA_TRACE_NATIVE"] = "1"
 	else:
 		environment.pop("STANA_TRACE_NATIVE", None)
-	if sys.platform == "darwin":
-		bundle = ROOT / "build/example" / f"{target}.app"
+	if artifact.suffix == ".app" and sys.platform == "darwin":
 		command = ["/usr/bin/open", "-W", "-n"]
 		if args.trace:
 			command.extend(["--env", "STANA_TRACE_NATIVE=1"])
 		if sys.stderr.isatty():
 			command.extend(["--stderr", os.ttyname(sys.stderr.fileno())])
-		command.append(str(bundle))
-		result = subprocess.run(command, cwd=ROOT, env=environment)
+		command.append(str(artifact))
 	else:
-		result = subprocess.run([str(executable)], cwd=ROOT, env=environment)
-	raise SystemExit(result.returncode)
+		command = [str(artifact)]
+	raise SystemExit(subprocess.run(command, env=environment).returncode)
 
 
 if __name__ == "__main__":

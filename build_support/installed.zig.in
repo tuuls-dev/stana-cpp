@@ -1,0 +1,10 @@
+const std = @import("std");
+const cpp = @import("build_support/cpp.zig");
+
+pub const addCppExecutable = cpp.addCppExecutable;
+
+pub fn build(b: *std.Build) void {
+    var project = cpp.Project.init(b, true);
+    project.setup();
+    b.default_step.dependOn(project.policy);
+}

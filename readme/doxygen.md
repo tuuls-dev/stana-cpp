@@ -115,4 +115,4 @@ bringing entire subsystems into scope with namespace directives.
 
 Namespace and module-name changes are source- and ABI-breaking. Migration notes
 must name affected public APIs, require consumer rebuilds, and update examples,
-tests, generated sources, include paths and CMake source properties together.
+tests, generated sources, include paths, and Zig build declarations together.

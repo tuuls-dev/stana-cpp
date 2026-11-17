@@ -1,4 +1,4 @@
-"""Provision Stana's pinned private WGSL compiler; normal CMake never fetches.
+"""Provision Stana's pinned private WGSL compiler for offline Stana builds.
 
 Only Tint reader/validator/inspector/IR/MSL writer and required support are built.
 The merged private archive makes installed consumers independent of Tint headers,
