@@ -1,11 +1,13 @@
 #include "../../src/diagnostics/log.hpp"
 #include <array>
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <exception>
+#include <future>
 #include <iostream>
-#include <latch>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string_view>
 #include <thread>
@@ -128,8 +130,8 @@ void lazyPreparation() {
 }
 
 struct InFlight {
-	std::latch filtering{1};
-	std::latch resume{1};
+	std::promise<void> filtering;
+	std::future<void> resume;
 	std::atomic<unsigned> writes{0};
 };
 
@@ -138,7 +140,7 @@ class BlockingSink final : public LogSink {
 	explicit BlockingSink(std::shared_ptr<InFlight> state) : state_(std::move(state)) {}
 
 	[[nodiscard]] auto enabled(LogLevel, std::string_view) const noexcept -> bool override {
-		state_->filtering.count_down();
+		state_->filtering.set_value();
 		state_->resume.wait();
 		return true;
 	}
@@ -151,6 +153,9 @@ class BlockingSink final : public LogSink {
 
 void replaceInFlight() {
 	const auto state = std::make_shared<InFlight>();
+	std::promise<void> resume;
+	state->resume = resume.get_future();
+	const auto filtering = state->filtering.get_future();
 	auto first = std::make_shared<BlockingSink>(state);
 	const std::weak_ptr lifetime{first};
 	const auto replacement = std::make_shared<CountingSink>(true);
@@ -158,13 +163,13 @@ void replaceInFlight() {
 	std::jthread emitter{[] -> void {
 		log(Level::trace, category, "in-flight event");
 	}};
-	state->filtering.wait();
+	filtering.wait();
 	setLogSink(replacement);
 	log(Level::trace, category, "replacement event");
 	setLogSink({});
 	log(Level::trace, category, "removed sink");
 	const bool retained = !lifetime.expired();
-	state->resume.count_down();
+	resume.set_value();
 	emitter.join();
 
 	require(retained && lifetime.expired(), "old sink lives exactly through in-flight delivery");
@@ -179,16 +184,24 @@ class ConcurrentSink final : public LogSink {
 	}
 
 	void write(const LogRecord &) noexcept override {
-		arrivals_.arrive_and_wait();
+		std::unique_lock lock{mutex_};
 		++writes_;
+		arrivals_.notify_all();
+		arrivals_.wait(lock, [this] -> bool {
+			return writes_ == expectedWrites;
+		});
 	}
 
-	[[nodiscard]] auto completed() const noexcept -> bool { return writes_ == expectedWrites; }
+	[[nodiscard]] auto completed() const noexcept -> bool {
+		const std::scoped_lock lock{mutex_};
+		return writes_ == expectedWrites;
+	}
 
   private:
 	static constexpr unsigned expectedWrites = 2;
-	std::latch arrivals_{expectedWrites};
-	std::atomic<unsigned> writes_{0};
+	mutable std::mutex mutex_;
+	std::condition_variable arrivals_;
+	unsigned writes_ = 0;
 };
 
 void concurrentDelivery() {
