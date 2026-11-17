@@ -2,6 +2,7 @@ module;
 
 #include "../platform/native_contracts.hpp"
 
+#include "../diagnostics/log.hpp"
 #include "../gpu/limits.hpp"
 #include <algorithm>
 #include <array>
@@ -10,12 +11,12 @@ module;
 #include <cstdint>
 #include <exception>
 #include <functional>
-#include <iostream>
 #include <map>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -35,6 +36,9 @@ namespace stana::application {
 namespace {
 using stana::application::detail::convertMode;
 using stana::application::detail::SceneConversion;
+using stana::diagnostics::detail::Field;
+using stana::diagnostics::detail::Level;
+using stana::diagnostics::detail::log;
 
 [[nodiscard]] auto diagnosticCategory(stana::gpu::detail::Diagnostic::Category value)
 	-> stana::rendering::GPUDiagnostic::Category {
@@ -139,7 +143,9 @@ NativeExecutorSession::~NativeExecutorSession() {
 
 auto NativeExecutorSession::complete(int code) const -> int {
 	if (state_ && state_->failure && !state_->failure->empty()) {
-		std::cerr << "Stana application failed: " << *state_->failure << '\n';
+		log(Level::error, "application", "Native executor failed", [&] -> auto {
+			return std::array{Field{"reason", std::string_view{*state_->failure}}};
+		});
 		return 1;
 	}
 	return code;
@@ -171,19 +177,28 @@ auto runWindows(std::vector<WindowSession> &sessions) -> int {
 				}
 			}
 		} catch (const std::exception &error) {
-			std::cerr << "Stana cleanup failed: " << error.what() << '\n';
+			log(Level::error, "application", "Application cleanup failed", [&] -> auto {
+				return std::array{Field{"reason", std::string_view{error.what()}}};
+			});
 		} catch (...) {
-			std::cerr << "Stana cleanup failed\n";
+			log(Level::error, "application", "Application cleanup failed");
 		}
 	};
 	const std::shared_ptr<void> cleanup{nullptr, cleanupAction};
 	try {
 		if (const auto identities = validateSessionIdentities(sessions); !identities) {
-			std::cerr << "Stana: invalid or duplicate WindowId values in Application::run\n";
+			log(Level::error, "application", "Window session validation failed", [&] -> auto {
+				return std::array{Field{"code", static_cast<std::uint64_t>(identities.error())}};
+			});
 			return 1;
 		}
 		if (const auto attached = attachSessionRequestStreams(sessions); !attached) {
-			std::cerr << "Stana: window request stream attachment failed\n";
+			log(Level::error,
+				"application",
+				"Window request stream attachment failed",
+				[&] -> auto {
+					return std::array{Field{"code", static_cast<std::uint64_t>(attached.error())}};
+				});
 			return 1;
 		}
 		streamsAttached = true;
@@ -191,7 +206,12 @@ auto runWindows(std::vector<WindowSession> &sessions) -> int {
 		runtimes.reserve(sessions.size());
 		for (auto &session : sessions) {
 			if (!session.document) {
-				std::cerr << "Stana: window document missing after prepare\n";
+				log(Level::error,
+					"application",
+					"Window document missing after preparation",
+					[&] -> auto {
+						return std::array{Field{"windowId", session.id.value}};
+					});
 				return 1;
 			}
 			auto runtime = std::make_shared<WindowSessionRuntime>();
@@ -510,13 +530,17 @@ auto runWindows(std::vector<WindowSession> &sessions) -> int {
 			}
 		}
 		if (!result) {
-			std::cerr << "Stana: " << result.error() << '\n';
+			log(Level::error, "application", "Native application failed", [&] -> auto {
+				return std::array{Field{"reason", std::string_view{result.error()}}};
+			});
 			return 1;
 		}
 		return *result;
 	} catch (const std::exception &error) {
 		stana::tasks::detail::TaskScheduler::current().dispatcher = {};
-		std::cerr << "Stana application failed: " << error.what() << '\n';
+		log(Level::error, "application", "Application failed", [&] -> auto {
+			return std::array{Field{"reason", std::string_view{error.what()}}};
+		});
 		return 1;
 	}
 }

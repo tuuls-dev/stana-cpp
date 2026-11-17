@@ -1,3 +1,4 @@
+#include "../../diagnostics/log.hpp"
 #include "presentation.hpp"
 #include "window_configuration.hpp"
 
@@ -10,6 +11,7 @@
 #import <QuartzCore/CATransaction.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -20,13 +22,43 @@
 #include <exception>
 #include <expected>
 #include <functional>
-#include <iostream>
 #include <limits>
 #include <memory>
+#include <source_location>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
+
+namespace {
+using stana::diagnostics::detail::Field;
+using stana::diagnostics::detail::Level;
+using stana::diagnostics::detail::log;
+
+void logPointerGate(
+	const stana::platform::detail::WindowState &state,
+	std::string_view event,
+	std::source_location location = std::source_location::current()
+) noexcept {
+	if (state.traceRendering) {
+		log(
+			Level::trace,
+			"macos.input",
+			"Pointer gate",
+			[&] -> auto {
+				return std::array{
+					Field{"event", event},
+					Field{"allowed", state.allowsPointer()},
+					Field{"confirmedRevision", state.confirmedRevision},
+					Field{"surfaceEpoch", state.surfaceEpoch}
+				};
+			},
+			location
+		);
+	}
+}
+} // namespace
 
 namespace stana::platform::detail {
 void publishAppearance(const std::shared_ptr<WindowState> &state);
@@ -360,15 +392,15 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 
 - (void)mouseDown:(NSEvent *)event {
 	stana::platform::detail::publishWindowInteraction(state_, event, 0);
-	if (state_ && state_->traceRendering) {
-		std::cerr << "Pointer gate=" << state_->allowsPointer()
-				  << " confirmed=" << state_->confirmedRevision << " epoch=" << state_->surfaceEpoch
-				  << '\n';
+	if (state_) {
+		logPointerGate(*state_, "down");
 	}
 	if (state_ && state_->allowsPointer()) {
 		const auto point = [self convertPoint:event.locationInWindow fromView:nil];
 		if (state_->traceRendering) {
-			std::cerr << "Down x=" << point.x << " y=" << point.y << '\n';
+			log(Level::trace, "macos.input", "Pointer down", [&] -> auto {
+				return std::array{Field{"x", point.x}, Field{"y", point.y}};
+			});
 		}
 		state_->callbacks.pointerDown(point.x, point.y);
 	}
@@ -376,15 +408,15 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 
 - (void)mouseUp:(NSEvent *)event {
 	stana::platform::detail::publishWindowInteraction(state_, event, 2);
-	if (state_ && state_->traceRendering) {
-		std::cerr << "Pointer gate=" << state_->allowsPointer()
-				  << " confirmed=" << state_->confirmedRevision << " epoch=" << state_->surfaceEpoch
-				  << '\n';
+	if (state_) {
+		logPointerGate(*state_, "up");
 	}
 	if (state_ && state_->allowsPointer()) {
 		const auto point = [self convertPoint:event.locationInWindow fromView:nil];
 		if (state_->traceRendering) {
-			std::cerr << "Up x=" << point.x << " y=" << point.y << '\n';
+			log(Level::trace, "macos.input", "Pointer up", [&] -> auto {
+				return std::array{Field{"x", point.x}, Field{"y", point.y}};
+			});
 		}
 		state_->callbacks.pointerUp(point.x, point.y);
 	}
@@ -411,10 +443,8 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 }
 
 - (void)scrollWheel:(NSEvent *)event {
-	if (state_ && state_->traceRendering) {
-		std::cerr << "Pointer gate=" << state_->allowsPointer()
-				  << " confirmed=" << state_->confirmedRevision << " epoch=" << state_->surfaceEpoch
-				  << '\n';
+	if (state_) {
+		logPointerGate(*state_, "scroll");
 	}
 	if (state_ && state_->allowsPointer()) {
 		const auto point = [self convertPoint:event.locationInWindow fromView:nil];
@@ -775,7 +805,7 @@ auto createMailboxWakeup(const std::function<void()> &onWake)
 	  try {
 		  current->handler();
 	  } catch (...) {
-		  std::cerr << "Stana: uncaught mailbox wakeup exception\n";
+		  log(Level::error, "macos.mailbox", "Uncaught mailbox wakeup exception");
 		  stop();
 	  }
 	});
@@ -881,9 +911,14 @@ auto run(const std::vector<Window> &descriptions) -> std::expected<int, std::str
 				unregisterConfiguredWindows();
 				stopRequested().store(false, std::memory_order_release);
 			} catch (const std::exception &error) {
-				std::cerr << "Stana cleanup failed: " << error.what() << '\n';
+				log(Level::error,
+					"macos.application",
+					"Native application cleanup failed",
+					[&] -> auto {
+						return std::array{Field{"reason", std::string_view{error.what()}}};
+					});
 			} catch (...) {
-				std::cerr << "Stana cleanup failed\n";
+				log(Level::error, "macos.application", "Native application cleanup failed");
 			}
 		};
 		const std::shared_ptr<void> cleanup{nullptr, cleanupAction};

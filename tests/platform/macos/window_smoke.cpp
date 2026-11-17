@@ -1,5 +1,7 @@
 #include "../../../src/platform/native_contracts.hpp"
 #include "window_fixture.hpp"
+#include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <exception>
 #include <fstream>
@@ -7,10 +9,62 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <thread>
+#include <variant>
 #include <vector>
 import stana;
 
 namespace {
+
+class PresentationLogSink final : public stana::diagnostics::LogSink {
+  public:
+	[[nodiscard]] auto
+	enabled(stana::diagnostics::LogLevel level, std::string_view category) const noexcept
+		-> bool override {
+		return level == stana::diagnostics::LogLevel::trace && category == "macos.presentation";
+	}
+
+	void write(const stana::diagnostics::LogRecord &record) noexcept override {
+		if (!enabled(record.level, record.category) ||
+			!std::string_view{record.location.file_name()}.ends_with(
+				"src/platform/macos/presentation.mm"
+			) ||
+			record.location.line() == 0) {
+			return;
+		}
+		const auto *sequence = field<std::uint64_t>(record, "sequence");
+		if (sequence == nullptr || *sequence == 0) {
+			return;
+		}
+		if (record.message == "GPU command buffer completed" &&
+			std::this_thread::get_id() != testThread_ &&
+			field<std::int64_t>(record, "status") != nullptr) {
+			completion_ = true;
+		}
+		if (record.message == "Tile presentation timestamp" &&
+			field<double>(record, "timestamp") != nullptr &&
+			field<std::uint64_t>(record, "tile") != nullptr) {
+			timestamp_ = true;
+		}
+	}
+
+	[[nodiscard]] auto verified() const noexcept -> bool { return completion_ && timestamp_; }
+
+  private:
+	template <typename Value>
+	[[nodiscard]] static auto
+	field(const stana::diagnostics::LogRecord &record, std::string_view name) noexcept
+		-> const Value * {
+		const auto match =
+			std::ranges::find(record.fields, name, &stana::diagnostics::LogField::name);
+		return match == record.fields.end() ? nullptr : std::get_if<Value>(&match->value);
+	}
+
+	std::thread::id testThread_ = std::this_thread::get_id();
+	std::atomic<bool> completion_{false};
+	std::atomic<bool> timestamp_{false};
+};
 
 constexpr double initialWidth = 800;
 constexpr double initialHeight = 600;
@@ -377,11 +431,19 @@ auto main() -> int {
 			pid << stana::testing::fixtures::platform::macos::processIdentity();
 		}
 		int result = 1;
+		const auto sink = std::make_shared<PresentationLogSink>();
+		stana::diagnostics::setLogSink(sink);
 		try {
 			result = runScenario();
+			require(
+				sink->verified(),
+				"Metal callbacks deliver structured presentation diagnostics"
+			);
 		} catch (const std::exception &error) {
+			result = 1;
 			std::cerr << error.what() << '\n';
 		}
+		stana::diagnostics::setLogSink({});
 		if (!output.empty()) {
 			std::ofstream status{output};
 			status << result;
