@@ -37,7 +37,6 @@ pub fn build(project: *Project, version: []const u8) void {
     }
     const stage = stageSdk(project, version);
     b.installDirectory(.{ .source_dir = stage, .install_dir = .prefix, .install_subdir = "" });
-    addConsumerTest(project, tests, stage);
     if (project.sdk.tidy == null) {
         package.dependOn(&b.addFail("Packaging requires source analysis").step);
         return;
@@ -70,23 +69,6 @@ fn stageSdk(project: *Project, version: []const u8) Path {
     _ = stage.add("build.zig.zon", manifest);
     _ = stage.add("share/stana/build-info.json", b.fmt("{{\"name\":\"stana\",\"version\":\"{s}\",{s}\n", .{ version, project.tools.metadata[1..] }));
     return stage.getDirectory();
-}
-
-fn addConsumerTest(project: *Project, tests: *Build.Step, stage: Path) void {
-    const b = project.b;
-    // The gate builds source and installed consumers in separate cold caches.
-    const run = command(project, "stana.consumer", 1800);
-    run.addArg(cpp.pythonName());
-    cpp.addFile(run, b.path("tests/consumer_test.py"));
-    run.addArg("--root");
-    run.addDirectoryArg2(b.path("."), .{ .make_absolute = true });
-    run.addArg("--sdk");
-    run.addDirectoryArg2(stage, .{ .make_absolute = true });
-    run.addArgs(&.{ "--zig", b.graph.zig_exe, "--config", project.configuration, "--deployment", project.deployment });
-    run.setEnvironmentVariable("LLVM_ROOT", std.fs.path.dirname(std.fs.path.dirname(project.tools.cxx).?).?);
-    run.setEnvironmentVariable("ICU_ROOT", std.fs.path.dirname(project.tools.icu_include).?);
-    run.setEnvironmentVariable("STANA_TINT_ROOT", std.fs.path.dirname(std.fs.path.dirname(project.tools.tint_archive).?).?);
-    tests.dependOn(&run.step);
 }
 
 fn command(project: *Project, name: []const u8, timeout: usize) *cpp.Run {

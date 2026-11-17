@@ -236,8 +236,6 @@ deployment target is 26.0. Pass a higher target as the
 `.@"macos-deployment-target"` dependency option when required by an SDK.
 Installed consumers need LLVM and ICU. The SDK includes the private Tint archive
 and rebuilds the compiler-specific module interfaces in the consumer's cache.
-See the [consumer contract](tests/consumer/build.zig) and
-[relocation test](tests/consumer_test.py).
 
 ## Development
 
@@ -281,7 +279,7 @@ run those contracts alongside the headless suite.
 | [`src/`](src/)                   | Mirrored subsystem implementations                    |
 | [`src/platform/`](src/platform/) | Native adapters and platform integration              |
 | [`examples/`](examples/)         | Counter, symbols, and canvas applications                       |
-| [`tests/`](tests/)               | Contracts, policy checks, and consumer integration    |
+| [`tests/`](tests/)               | Contracts and policy checks                          |
 | [`build_support/`](build_support/) | Zig compile graph, contracts, and packaging |
 | [`tools/`](tools/)               | Bootstrap, formatting, policy, and developer scripts  |
 | [`readme/`](readme/)             | Documentation conventions                             |

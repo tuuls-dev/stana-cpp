@@ -8,7 +8,7 @@ This is a retained desktop UI toolkit with one public module: `import stana;`.
 Interfaces live in `modules/<function>/`; implementations mirror them in `src/<function>/`.
 Native adapters in `src/platform/*`.
 
-`tests/` contains subsystem contracts, policy checks, and consumer integration tests.
+`tests/` contains subsystem contracts and policy checks.
 
 The Zig build starts in `build.zig` and uses helpers in `build_support/`.
 Developer scripts live in `tools/`.
