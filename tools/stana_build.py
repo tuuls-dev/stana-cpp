@@ -10,8 +10,9 @@ Commands (first argv after the script):
   toolchain       Locate pinned LLVM 22.1.8, ICU4C 78.3, and Tint; print JSON
                   flags/paths consumed by Zig. Honors LLVM_ROOT, ICU_ROOT,
                   STANA_TINT_ROOT, SDKROOT, CXXFLAGS.
-  compile         Compile one C++/ObjC++ unit (and clang-tidy first-party
-                  sources) using that JSON.
+  compile         Compile one C++/ObjC++ unit using that JSON.
+  analysis-toolchain  Resolve analysis tools only for the check graph.
+  tidy            Analyze one compiled first-party unit using its command record.
   link            Link an executable, adding macOS frameworks / ICU rpaths.
   verify-modules  Compare clang-scan-deps P1689 output against Zig's declared
                   module provides/requires.
@@ -105,7 +106,7 @@ def find_icu(root: Path) -> tuple[Path, list[str], str]:
 
 
 def toolchain(root: str, configuration: str, sanitizer: str, deployment: str,
-		checks: str, installed: str) -> None:
+		installed: str) -> None:
 	if sys.version_info < (3, 11):
 		raise RuntimeError("Stana requires Python 3.11 or newer")
 	root = Path(root).resolve()
@@ -115,8 +116,6 @@ def toolchain(root: str, configuration: str, sanitizer: str, deployment: str,
 	if system not in ("Darwin", "Linux", "Windows") or (system == "Windows" and arch != "x86_64"):
 		raise RuntimeError(f"Unsupported native Stana host {system}/{arch}")
 	cxx = llvm_tool(root, "clang++")
-	tidy = llvm_tool(root, "clang-tidy") if checks == "true" else ""
-	scanner = llvm_tool(root, "clang-scan-deps") if checks == "true" and installed == "false" else ""
 	include, icu_libs, icu_bin = find_icu(root)
 	common = ["-std=c++23", "-fexceptions", "-frtti"]
 	link = []
@@ -219,7 +218,7 @@ def toolchain(root: str, configuration: str, sanitizer: str, deployment: str,
 	if sanitizer != "none" and system == "Windows":
 		resource = subprocess.check_output([str(cxx), "-print-resource-dir"], text=True).strip()
 		icu_bin = os.pathsep.join([str(cxx.parent), str(Path(resource) / "lib/windows"), icu_bin])
-	print(json.dumps({"cxx": str(cxx), "tidy": str(tidy), "scanner": str(scanner),
+	print(json.dumps({"cxx": str(cxx),
 		"compile_flags": common, "link_flags": link, "icu_include": str(include), "icu_libs": icu_libs,
 		"runtime_path": icu_bin, "tint_include": str(tint / "include"),
 		"tint_archive": str(tint / "lib" / archive), "tint_manifest": str(tint_manifest),
@@ -234,11 +233,22 @@ def write_json(path: str, data) -> None:
 	Path(path).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
-def compile_unit(config: str, record: str, tidy_config: str, source: str, output: str,
+def analysis_toolchain(root: str, installed: str, output: str) -> None:
+	root = Path(root).resolve()
+	tools = {"tidy": llvm_tool(root, "clang-tidy")}
+	if installed == "false":
+		tools["scanner"] = llvm_tool(root, "clang-scan-deps")
+	# Discovery runs on each check invocation. Tool replacement must invalidate cached checks.
+	write_json(output, {**{name: str(path) for name, path in tools.items()},
+		"identities": {name: [path.stat().st_size, path.stat().st_mtime_ns]
+			for name, path in tools.items()}})
+
+
+def compile_unit(config: str, record: str, first_party: str, source: str, output: str,
 		depfile: str, *extra: str) -> None:
 	tools = read_json(config)
 	flags = tools["compile_flags"]
-	if not tidy_config:
+	if first_party == "false":
 		# Match the module's hardening and sanitizer modes while leaving warning policy to the application.
 		private = {*WARNINGS, "-WCL4"}
 		flags = [flag for flag in flags if flag not in private]
@@ -251,14 +261,23 @@ def compile_unit(config: str, record: str, tidy_config: str, source: str, output
 		command.append("-c")
 	subprocess.run(command, check=True)
 	arguments = [flag for flag in flags if flag != "--precompile" and not flag.startswith("-fmodule-output=")]
-	if tidy_config and tools["tidy"]:
-		result = subprocess.run([tools["tidy"], "--experimental-custom-checks", f"--config-file={tidy_config}",
-			source, "--", *arguments], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-		if result.returncode:
-			sys.stderr.buffer.write(result.stdout)
-			sys.exit(result.returncode)
 	write_json(record, {"directory": os.getcwd(), "file": source, "output": output,
 		"arguments": command, "flags": arguments})
+
+
+def tidy_unit(config: str, tidy_config: str, record: str, dependencies: str,
+		depfile: str, output: str) -> None:
+	tools = read_json(config)
+	command = read_json(record)
+	result = subprocess.run([tools["tidy"], "--experimental-custom-checks", f"--config-file={tidy_config}",
+		command["file"], "--", *command["flags"]], cwd=command["directory"],
+		stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+	if result.returncode:
+		sys.stderr.buffer.write(result.stdout)
+		sys.exit(result.returncode)
+	# Reuse the compiler's complete header dependencies for analysis cache invalidation.
+	Path(depfile).write_bytes(Path(dependencies).read_bytes())
+	Path(output).touch()
 
 
 def link(config: str, output: str, *arguments: str) -> None:
@@ -278,7 +297,8 @@ def link(config: str, output: str, *arguments: str) -> None:
 	subprocess.run([tools["cxx"], *inputs, *flags, *extra, "-o", output], check=True)
 
 
-def verify_modules(scanner: str, output: str, *records: str) -> None:
+def verify_modules(config: str, output: str, *records: str) -> None:
+	scanner = read_json(config)["scanner"]
 	# P1689 reports the direct dependencies. Zig's graph also carries transitive BMIs.
 	entries = [read_json(record) for record in records]
 	count = len(entries) // 2
@@ -302,7 +322,8 @@ def verify_modules(scanner: str, output: str, *records: str) -> None:
 	Path(output).touch()
 
 
-def tidy_probe(compiler: str, config: str, output: str) -> None:
+def tidy_probe(analysis_config: str, config: str, output: str) -> None:
+	compiler = read_json(analysis_config)["tidy"]
 	with tempfile.TemporaryDirectory(prefix="stana-tidy-") as work:
 		work = Path(work)
 		verification = work / "verify-tidy.yaml"
@@ -345,6 +366,10 @@ def main() -> None:
 			compile_unit(*args)
 		elif cmd == "toolchain":
 			toolchain(*args)
+		elif cmd == "analysis-toolchain":
+			analysis_toolchain(*args)
+		elif cmd == "tidy":
+			tidy_unit(*args)
 		elif cmd == "link":
 			link(*args)
 		elif cmd == "compdb":

@@ -1,8 +1,7 @@
 """Source policy: reject clang-tidy / diagnostic / sanitizer suppressions in-tree.
 
 Run by Zig's `check` step on every build with `-Dchecks=true` (the default):
-`python3 tools/policy.py <repo-root>`. `tests/policy_test.py` imports this
-module and also drives clang-tidy regressions separately.
+`python3 tools/policy.py <repo-root>`.
 
 Scans `modules/`, `src/`, `tests/`, `examples/` and fails closed on:
   NOLINT / NOLINTNEXTLINE / NOLINTBEGIN/END (including in comments)

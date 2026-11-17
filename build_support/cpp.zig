@@ -14,8 +14,6 @@ pub const Sanitizer = enum { none, address, @"address-undefined" };
 
 const Toolchain = struct {
     cxx: []const u8,
-    tidy: []const u8,
-    scanner: []const u8,
     icu_include: []const u8,
     icu_libs: []const []const u8,
     runtime_path: []const u8,
@@ -35,6 +33,7 @@ pub const Unit = struct {
     object: Path,
     record: Path,
     bmi: ?Path = null,
+    dependencies: ?Path = null,
 };
 
 pub const ExecutableOptions = struct {
@@ -49,10 +48,8 @@ pub const ExecutableOptions = struct {
 pub const Sdk = struct {
     script: Path,
     config: Path,
-    tidy_config: Path,
     inputs: []const Path,
     compiler: Path,
-    tidy: ?Path,
 
     pub fn executable(sdk: Sdk, b: *Build, modules: []const Module, options: ExecutableOptions) Path {
         const objects = b.allocator.alloc(Path, options.sources.len) catch @panic("OOM");
@@ -90,16 +87,11 @@ pub const Sdk = struct {
         addFile(run, sdk.config);
         run.addFileInput(sdk.compiler);
         const record = run.addOutputFileArg2("command.json", .{ .make_absolute = true });
-        if (options.first_party) {
-            if (sdk.tidy) |tidy| run.addFileInput(tidy);
-            addFile(run, sdk.tidy_config);
-        } else {
-            run.addArg("");
-        }
+        run.addArg(if (options.first_party) "true" else "false");
         addFile(run, source);
         const suffix = if (options.precompile) ".pcm" else if (windows) ".obj" else ".o";
         const object = run.addOutputFileArg2(b.fmt("{s}{s}", .{ name, suffix }), .{ .make_absolute = true });
-        _ = run.addDepFileOutputArg2("headers.d", .{ .make_absolute = true });
+        const dependencies = run.addDepFileOutputArg2("headers.d", .{ .make_absolute = true });
         run.addArgs(options.flags);
         for (options.include_dirs) |dir| run.addDirectoryArg2(dir, .{ .prefix = "-I", .make_absolute = true });
         if (options.generated_header) |header| {
@@ -118,13 +110,12 @@ pub const Sdk = struct {
             null;
         if (options.precompile) run.addArg("--precompile");
         run.setName(b.fmt("compile {s}", .{name}));
-        return .{ .object = object, .record = record, .bmi = bmi };
+        return .{ .object = object, .record = record, .bmi = bmi, .dependencies = dependencies };
     }
 
     fn publish(sdk: Sdk, b: *Build) void {
         b.addNamedLazyPath("cpp-config", sdk.config);
         b.addNamedLazyPath("cpp-compiler", sdk.compiler);
-        if (sdk.tidy) |tidy| b.addNamedLazyPath("cpp-tidy", tidy);
         const names = [_][]const u8{ "library", "tint", "icu-i18n", "icu-uc", "icu-data" };
         for (names, sdk.inputs) |name, path| b.addNamedLazyPath(name, path);
     }
@@ -140,9 +131,7 @@ pub const Sdk = struct {
         return .{
             .script = dependency.path("tools/stana_build.py"),
             .config = dependency.namedLazyPath("cpp-config"),
-            .tidy_config = dependency.path(".clang-tidy"),
             .compiler = dependency.namedLazyPath("cpp-compiler"),
-            .tidy = dependency.builder.named_lazy_paths.get("cpp-tidy"),
             .inputs = inputs,
         };
     }
@@ -172,8 +161,8 @@ pub const Project = struct {
     active: [sources.interfaces.len]bool = @splat(false),
     installed: bool,
     policy: *Build.Step,
+    analysis_config: ?Path,
     metal_header: ?Path = null,
-    version_record: ?Path = null,
 
     pub fn init(b: *Build, installed: bool) Project {
         const zig_version: std.SemanticVersion = .{ .major = 0, .minor = 17, .patch = 1 };
@@ -194,7 +183,7 @@ pub const Project = struct {
         const config = b.run(&.{
             pythonName(), b.pathJoin(&.{ root, "tools/stana_build.py" }), "toolchain",
             root,         configuration,                                  @tagName(sanitizer),
-            deployment,   if (checks) "true" else "false",                if (installed) "true" else "false",
+            deployment,   if (installed) "true" else "false",
         });
         var tools = (std.json.parseFromSlice(Toolchain, b.allocator, config, .{ .allocate = .alloc_always, .ignore_unknown_fields = true }) catch
             std.process.fatal("Invalid Stana toolchain description", .{})).value;
@@ -205,22 +194,29 @@ pub const Project = struct {
                 tools.runtime_path = b.fmt("{s};{s}", .{ runtime, tools.runtime_path });
             }
         }
-        const policy = b.step("check", "Run Stana's source policy and analysis configuration checks");
+        const policy = b.step("check", "Run Stana's source policy, clang-tidy and module graph checks");
         const configuration_files = b.addWriteFiles();
-        configuration_files.step.dependOn(policy);
         const sdk: Sdk = .{
             .script = script,
             .config = configuration_files.add("toolchain.json", config),
-            .tidy_config = b.path(".clang-tidy"),
             .inputs = &.{},
             .compiler = b.graph.cwdRelativePath(tools.cxx),
-            .tidy = if (checks) b.graph.cwdRelativePath(tools.tidy) else null,
         };
+        var analysis_config: ?Path = null;
         if (checks) {
+            // Resolve analysis tools only when the check graph is executed, never during tests.
+            const discovery = python(b, script);
+            discovery.addArg("analysis-toolchain");
+            discovery.addDirectoryArg2(b.path("."), .{ .make_absolute = true });
+            discovery.addArg(if (installed) "true" else "false");
+            analysis_config = discovery.addOutputFileArg2("analysis.json", .{ .make_absolute = true });
+            // Rediscover replaced tools and environment overrides; unchanged descriptions keep analysis cached.
+            discovery.has_side_effects = true;
+            discovery.setName("resolve analysis tools");
             const probe = python(b, script);
             probe.addArg("tidy-probe");
-            addFile(probe, sdk.tidy.?);
-            addFile(probe, sdk.tidy_config);
+            addFile(probe, analysis_config.?);
+            addFile(probe, b.path(".clang-tidy"));
             _ = probe.addOutputFileArg2("verified", .{ .make_absolute = true });
             probe.setName("verify clang-tidy policy");
             policy.dependOn(&probe.step);
@@ -241,6 +237,7 @@ pub const Project = struct {
             .rules = b.addWriteFiles(),
             .installed = installed,
             .policy = policy,
+            .analysis_config = analysis_config,
         };
     }
 
@@ -266,7 +263,6 @@ pub const Project = struct {
             project.metal_header = embed.addOutputFileArg2("stana_shader.hpp", .{ .make_absolute = true });
         }
         const run = b.addSystemCommand(&.{b.graph.zig_exe});
-        run.step.dependOn(project.policy);
         run.addArgs(if (windows) &.{ "lib", "/NOLOGO" } else if (macos) &.{ "ar", "--format=darwin", "rcs" } else &.{ "ar", "rcs" });
         const result = run.addOutputFileArg2(library_name, .{
             .prefix = if (windows) "/OUT:" else "",
@@ -334,8 +330,8 @@ pub const Project = struct {
                 null,
         });
         project.records.append(b.allocator, unit.record) catch @panic("OOM");
-        if (std.mem.eql(u8, source.path, "src/version.cpp")) project.version_record = unit.record;
-        if (project.tools.scanner.len != 0 and !std.mem.endsWith(u8, source.path, ".mm")) {
+        project.analyzeUnit(b.path(source.path), name, unit);
+        if (project.analysis_config != null and !project.installed and !std.mem.endsWith(u8, source.path, ".mm")) {
             const expected = std.json.Stringify.valueAlloc(b.allocator, .{
                 .provides = if (source.module) |provided| @as([]const []const u8, &.{provided}) else &.{},
                 .requires = source.imports,
@@ -360,15 +356,9 @@ pub const Project = struct {
             if (index == 0) first_record = unit.record;
             objects.append(b.allocator, unit.object) catch @panic("OOM");
             project.records.append(b.allocator, unit.record) catch @panic("OOM");
+            project.analyzeUnit(b.path(file), b.fmt("{s}-{d}", .{ name, index }), unit);
         }
         return .{ .object = project.sdk.link(b, name, objects.items, &.{}, &.{}), .record = first_record };
-    }
-
-    pub fn publicInterfaceRecord(project: *Project) Path {
-        for (sources.interfaces, 0..) |source, index| {
-            if (std.mem.eql(u8, source.module.?, "stana")) return project.interface(index).record;
-        }
-        unreachable;
     }
 
     pub fn runtimeEnvironment(project: *const Project, run: *Run) void {
@@ -378,16 +368,33 @@ pub const Project = struct {
     }
 
     pub fn verifyModules(project: *Project, step: *Build.Step) void {
-        if (project.tools.scanner.len == 0) return;
+        if (project.analysis_config == null or project.installed) return;
         const b = project.b;
         const run = python(b, project.sdk.script);
         run.addArg("verify-modules");
-        addFile(run, b.graph.cwdRelativePath(project.tools.scanner));
+        addFile(run, project.analysis_config.?);
         _ = run.addOutputFileArg2("verified", .{ .make_absolute = true });
         for (project.scan_records.items) |record| addFile(run, record);
         for (project.scan_rules.items) |rule| addFile(run, rule);
         run.setName("verify C++ module graph with clang-scan-deps");
         step.dependOn(&run.step);
+    }
+
+    fn analyzeUnit(project: *Project, source: Path, name: []const u8, unit: Unit) void {
+        const config = project.analysis_config orelse return;
+        const b = project.b;
+        const run = python(b, project.sdk.script);
+        run.addArg("tidy");
+        addFile(run, config);
+        addFile(run, b.path(".clang-tidy"));
+        addFile(run, unit.record);
+        addFile(run, unit.dependencies.?);
+        _ = run.addDepFileOutputArg2("headers.d", .{ .make_absolute = true });
+        _ = run.addOutputFileArg2("verified", .{ .make_absolute = true });
+        run.addFileInput(source);
+        run.addFileInput(unit.object);
+        run.setName(b.fmt("clang-tidy {s}", .{name}));
+        project.policy.dependOn(&run.step);
     }
 };
 

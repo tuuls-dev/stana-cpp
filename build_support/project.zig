@@ -8,10 +8,10 @@ const Project = cpp.Project;
 pub fn build(project: *Project, version: []const u8) void {
     const b = project.b;
     const tests = b.step("test", "Build and run the Stana contracts");
-    tests.dependOn(project.policy);
-    project.verifyModules(tests);
     addContracts(project, tests);
     addExamples(project, tests, version);
+    project.verifyModules(project.policy);
+    b.getInstallStep().dependOn(project.policy);
 
     const format = b.step("format", "Format first-party C++ and Objective-C++");
     const format_check = b.step("format-check", "Check first-party C++ and Objective-C++ formatting");
@@ -37,12 +37,13 @@ pub fn build(project: *Project, version: []const u8) void {
     }
     const stage = stageSdk(project, version);
     b.installDirectory(.{ .source_dir = stage, .install_dir = .prefix, .install_subdir = "" });
-    if (project.sdk.tidy == null) {
+    if (project.analysis_config == null) {
         package.dependOn(&b.addFail("Packaging requires source analysis").step);
         return;
     }
     const release = cpp.python(b, b.path("tools/release.py"));
     release.step.dependOn(tests);
+    release.step.dependOn(project.policy);
     release.addArgs(&.{ "archive", "--sdk" });
     release.addDirectoryArg2(stage, .{ .make_absolute = true });
     release.addArg("--output");
@@ -135,22 +136,6 @@ fn addContracts(project: *Project, tests: *Build.Step) void {
     canvas.addDirectoryArg2(b.path("."), .{ .make_absolute = true });
     tests.dependOn(&canvas.step);
 
-    if (project.sdk.tidy) |tidy| {
-        // Every implementation fixture imports the complete public module.
-        const policy = command(project, "stana.policy", 900);
-        policy.addArg(cpp.pythonName());
-        cpp.addFile(policy, b.path("tests/policy_test.py"));
-        policy.addArg("--root");
-        policy.addDirectoryArg2(b.path("."), .{ .make_absolute = true });
-        policy.addArg("--interface");
-        cpp.addFile(policy, project.publicInterfaceRecord());
-        policy.addArg("--implementation");
-        cpp.addFile(policy, project.version_record.?);
-        policy.addArg("--tidy");
-        cpp.addFile(policy, tidy);
-        tests.dependOn(&policy.step);
-    }
-
     if (cpp.macos) {
         _ = contract(project, tests, "raster", &.{"tests/platform/macos/raster.mm"});
         _ = contract(project, tests, "shaders.metal", &.{"tests/platform/macos/shader_compiler.cpp"});
@@ -213,7 +198,7 @@ fn addNativeTests(project: *Project, tests: *Build.Step, version: []const u8, gu
         if (gui or offscreen) tests.dependOn(native);
         return;
     }
-    var previous: *Build.Step = project.policy;
+    var previous: ?*Build.Step = null;
     if (gui) {
         const fixture = "tests/platform/macos/window_fixture.mm";
         const windows = [_]struct { []const u8, []const u8, []const u8 }{
@@ -232,24 +217,24 @@ fn addNativeTests(project: *Project, tests: *Build.Step, version: []const u8, gu
             cpp.addFile(run, b.path("tests/platform/macos/launch_native.py"));
             run.addDirectoryArg2(app, .{ .make_absolute = true });
             if (std.mem.eql(u8, window[0], "canvas.presentation")) metalValidation(run);
-            run.step.dependOn(previous);
+            if (previous) |step| run.step.dependOn(step);
             previous = &run.step;
         }
         previous = nativeExecutable(project, previous, "shared-copy", &.{"tests/platform/macos/shared_copy.mm"}, 30, false);
     }
     previous = nativeExecutable(project, previous, "canvas.offscreen", &.{ "tests/platform/macos/canvas_offscreen.mm", "tests/platform/macos/canvas_fixture.cpp" }, 120, false);
     previous = nativeExecutable(project, previous, "shadows", &.{ "tests/platform/macos/shadows.mm", "tests/platform/macos/shadow_fixture.cpp" }, 120, true);
-    native.dependOn(previous);
+    native.dependOn(previous.?);
     tests.dependOn(native);
 }
 
-fn nativeExecutable(project: *Project, previous: *Build.Step, name: []const u8, files: []const []const u8, timeout: usize, validation: bool) *Build.Step {
+fn nativeExecutable(project: *Project, previous: ?*Build.Step, name: []const u8, files: []const []const u8, timeout: usize, validation: bool) *Build.Step {
     const target = project.b.fmt("stana.native.{s}", .{name});
     const exe = project.executable(target, files, null);
     const run = command(project, target, timeout);
     cpp.addFile(run, exe.object);
     if (validation) metalValidation(run);
-    run.step.dependOn(previous);
+    if (previous) |step| run.step.dependOn(step);
     return &run.step;
 }
 
