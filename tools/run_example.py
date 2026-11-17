@@ -1,4 +1,16 @@
-"""Launch a Stana example produced by the Zig build."""
+"""Launch a built Stana example binary or macOS .app (native traces on by default).
+
+`just example counter` / `zig build run-counter` compile the example then hand
+the artifact to this script. On Darwin a `.app` is opened with `/usr/bin/open
+-W -n` so AppKit/Metal come up as a real bundle; other hosts exec the binary.
+
+`STANA_TRACE_NATIVE=1` is set unless `--no-trace` (Zig `-Dtrace=false`). For
+.app launches the env is also passed via `open --env`, and a TTY stderr is
+forwarded so compositor traces still hit the invoking terminal.
+
+  python3 tools/run_example.py path/to/stana-counter.app
+  python3 tools/run_example.py path/to/stana-canvas --no-trace
+"""
 
 import argparse
 import os

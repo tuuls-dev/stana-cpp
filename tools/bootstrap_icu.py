@@ -1,8 +1,20 @@
-"""Install a SHA-256-pinned ICU4C dependency without modifying system packages.
+"""Install pinned ICU4C 78.3 into a project-local prefix (never the system).
 
-Unix builds use upstream source with static libraries/data. Windows uses upstream's
-MSVC 2022 x64 binaries; its DLL directory is exported for runtime discovery in CI.
-The dependency is external code, not a first-party warning-policy exception.
+Stana's text stack links ICU i18n/uc/data. This script fetches the upstream
+release (SHA-256 pinned), then:
+  Unix     build static libs + static data from source (`--enable-static`)
+  Windows  unpack Unicode's official MSVC 2022 x64 zip (shared DLLs)
+
+Default prefix is `.tools/icu`. `stana_build.py toolchain` looks there, then
+Homebrew/system paths, unless `ICU_ROOT` is set. `--github-env` appends
+`ICU_ROOT` (and Windows `bin64`) to GitHub Actions env/PATH.
+
+  python3 tools/bootstrap_icu.py
+  python3 tools/bootstrap_icu.py --prefix /path --jobs 8
+
+Idempotent via `stana-dependency.json`. Refuses to overwrite an unrecognized
+existing prefix. ICU is third-party; it is not a first-party warning-policy
+exception.
 """
 
 import argparse

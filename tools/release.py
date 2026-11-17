@@ -1,4 +1,19 @@
-"""Package verified builds and versioned source archives for GitHub Releases."""
+"""Build GitHub Release artifacts: relocatable SDK zips, source archives, checksums.
+
+Not used for day-to-day development. `zig build package` runs `archive` after
+tests: it stages the SDK (library, Tint, module interfaces, `stana_build.py`,
+no BMIs) and this script names/zips it as
+`stana-<ver>-<os>-<arch>-clang<ver>-<debug|release>.zip` under `--output`.
+
+Actions:
+  package    `zig build package` into a temp prefix, copy dist zips out
+             (used if you invoke this script directly)
+  archive    Zip an already-staged SDK (`--sdk`). Called by Zig.
+  source     `git archive` zip+tar.gz for tag `v<version>` from build.zig.zon
+  checksums  Write SHA256SUMS for every file in `--output`
+
+Sanitized builds and packages that contain `.pcm` files are rejected.
+"""
 
 import argparse
 import hashlib

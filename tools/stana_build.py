@@ -1,4 +1,28 @@
-"""Host toolchain discovery and small command adapters for Stana's Zig build."""
+"""C++ compile/link driver that Zig shells out to for every Stana build.
+
+Zig does not compile C++ itself. `build_support/cpp.zig` invokes this script as
+the host adapter for compiler discovery, translation units, linking, module
+verification, clang-tidy probing, and compile_commands.json. The same file is
+copied into the installed SDK as `tools/stana_build.py` so consumers rebuild
+against Stana with the same toolchain contract.
+
+Commands (first argv after the script):
+  toolchain       Locate pinned LLVM 22.1.8, ICU4C 78.3, and Tint; print JSON
+                  flags/paths consumed by Zig. Honors LLVM_ROOT, ICU_ROOT,
+                  STANA_TINT_ROOT, SDKROOT, CXXFLAGS.
+  compile         Compile one C++/ObjC++ unit (and clang-tidy first-party
+                  sources) using that JSON.
+  link            Link an executable, adding macOS frameworks / ICU rpaths.
+  verify-modules  Compare clang-scan-deps P1689 output against Zig's declared
+                  module provides/requires.
+  tidy-probe      Fail the check step if custom clang-tidy AST checks are
+                  missing.
+  compdb          Assemble compile_commands.json (`zig build compdb`).
+  run             Run a contract with a timeout (`zig build test`).
+
+Not a developer-facing CLI: run `just build` / `zig build`. Bootstrap LLVM,
+ICU, and Tint with the sibling `bootstrap_*.py` scripts first.
+"""
 
 import json
 import os

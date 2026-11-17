@@ -1,7 +1,14 @@
-"""Format or check first-party C++/Objective-C++ with the qualified LLVM formatter.
+"""Format first-party C++/ObjC++ with the pinned LLVM 22 clang-format. No build required.
 
-No configure/build is needed for `just format`; dependencies and native services
-are irrelevant to formatting. LLVM_ROOT remains an explicit toolchain override.
+Walks `modules/`, `src/`, `tests/`, and `examples/` only. Does not touch
+`.tools/`, generated headers, or third-party trees. Uses `stana_build.llvm_tool`
+so the formatter is the same 22.1.8 binary as compiles (`LLVM_ROOT` override
+still applies). ICU/Tint/Metal are irrelevant.
+
+  just format            # or: python3 tools/format.py --write
+  just format-check      # or: python3 tools/format.py --check / zig build format-check
+
+`--check` is `--dry-run --Werror`: any diff fails the step.
 """
 
 import argparse

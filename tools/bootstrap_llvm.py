@@ -1,4 +1,20 @@
-"""Install verified LLVM 22.1.8 locally, never replacing the system compiler."""
+"""Install pinned LLVM/Clang 22.1.8 into `.tools/llvm`, never the system compiler.
+
+Every Stana compile uses this Clang (plus clang-tidy, clang-format,
+clang-scan-deps, llvm-ar). The script downloads the official GitHub release
+tarball for the host (SHA-256 pinned), extracts it, and writes
+`.tools/llvm/.stana-toolchain`. Intel macOS has no binary package, so it
+builds clang + clang-tools-extra + compiler-rt from the llvm-project source
+tarball instead.
+
+  python3 tools/bootstrap_llvm.py
+  export LLVM_ROOT="$PWD/.tools/llvm"
+
+`--github-env` exports `LLVM_ROOT` and `bin/` to GitHub Actions; on Windows it
+also captures the VS x64 developer environment. `stana_build.py` and
+`format.py` honor `LLVM_ROOT`, otherwise they search `.tools/llvm` and
+Homebrew `llvm@22`. Refuses to overwrite an unmarked destination.
+"""
 
 import argparse
 import hashlib

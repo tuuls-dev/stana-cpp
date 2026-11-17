@@ -1,4 +1,23 @@
-"""Deterministically embed tracked private shader source, with no runtime CWD lookup."""
+"""Zig build helper: bake a tracked shader file into a C++ header as a string_view.
+
+Shaders are not loaded from disk at runtime (no CWD lookup). Two call sites:
+
+  macOS library (`build_support/cpp.zig`)
+    src/platform/macos/shaders/stana.metal
+      -> generated stana_shader.hpp
+      -> stana::platform::detail::gpu::builtinShader
+    Used by the compositor's builtin Metal library.
+
+  canvas example (`build_support/project.zig --canvas-template`)
+    examples/canvas/field.wgsl + examples/canvas/resource.hpp.in
+      -> generated canvas_resource.hpp
+      -> canvas_example::shaderSource
+    WGSL text is compiled by Tint at runtime; only the source is embedded.
+
+Usage (Zig supplies the paths):
+  python3 tools/embed_shader.py <source> <output> [--canvas-template header.in]
+Fails if the shader contains the raw-string delimiter.
+"""
 import argparse
 from pathlib import Path
 parser = argparse.ArgumentParser(description=__doc__)

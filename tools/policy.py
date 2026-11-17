@@ -1,4 +1,19 @@
-"""Fail closed on first-party source-level diagnostic/analysis bypasses."""
+"""Source policy: reject clang-tidy / diagnostic / sanitizer suppressions in-tree.
+
+Run by Zig's `check` step on every build with `-Dchecks=true` (the default):
+`python3 tools/policy.py <repo-root>`. `tests/policy_test.py` imports this
+module and also drives clang-tidy regressions separately.
+
+Scans `modules/`, `src/`, `tests/`, `examples/` and fails closed on:
+  NOLINT / NOLINTNEXTLINE / NOLINTBEGIN/END (including in comments)
+  clang/GCC diagnostic pragmas, `_Pragma` / `__pragma`
+  `system_header` reclassification
+  no_sanitize* / disable_sanitizer_instrumentation / analyzer_noreturn
+
+Fix the diagnostic; do not add a suppression. Line-continued pragmas are
+joined before the scan so split spellings cannot hide. Pair with
+`namespace_policy.py` on the same check step.
+"""
 
 from pathlib import Path
 import re

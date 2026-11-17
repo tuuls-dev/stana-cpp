@@ -1,8 +1,20 @@
-"""Provision Stana's pinned private WGSL compiler for offline Stana builds.
+"""Build the pinned Dawn/Tint archive Stana uses to compile application WGSL.
 
-Only Tint reader/validator/inspector/IR/MSL writer and required support are built.
-The merged private archive makes installed consumers independent of Tint headers,
-CWD, network access, and the original source tree.
+Stana does not ship Tint in-tree and does not call Dawn's GPU backends. This
+script downloads SHA-256-pinned Dawn + Abseil + SPIR-V-Headers, builds only the
+WGSL reader / inspector / IR / MSL writer, and merges those static archives
+into `.tools/tint/lib/libstana-tint.a` (or `stana-tint.lib` on Windows). The
+matching headers and `stana-tint.json` identity file go next to that archive.
+
+`stana_build.py toolchain` refuses to configure a build until this prefix
+exists (or `STANA_TINT_ROOT` points at an equivalent one). Sanitizer builds
+need a matching prefix (`.tools/tint-address-undefined`, etc.).
+
+Run once after LLVM is available, typically:
+  python3 tools/bootstrap_tint.py --compiler "$LLVM_ROOT/bin/clang++"
+Windows Debug CRT must pass `--config Debug` and `clang-cl`.
+`--offline` reuses already-cached tarballs under `--work` (default
+`build/tint-bootstrap`). Idempotent: matching `stana-tint.json` is a no-op.
 """
 import argparse
 import hashlib

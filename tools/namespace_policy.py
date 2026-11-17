@@ -1,4 +1,21 @@
-"""Check functional namespace ownership and the single public module convention."""
+"""Source policy: one public module (`stana`) and functional namespace ownership.
+
+Run by Zig's `check` step on every Debug/Release build with `-Dchecks=true`
+(the default): `python3 tools/namespace_policy.py <repo-root>`. Also imported
+by `tests/namespace_policy_test.py`.
+
+Scans `modules/`, `src/`, `tests/`, `examples/` and fails the build if:
+  - anything other than `modules/stana.cppm` is `export module stana;`
+  - a first-party named module is not `stana` (no `stana.foo` components)
+  - retired names appear: native, fixtures, application_detail, graphics_detail,
+    shader_detail
+  - `stana::detail` grows subsystem namespaces or non-allowlisted helpers
+    (only nextIdentity / requireFinite / requireNonnegative)
+
+Private helpers belong in subsystem `detail` namespaces
+(`stana::rendering::detail`, …), not a root grab-bag. Pair with `policy.py`
+(diagnostic-suppression scan) on the same check step.
+"""
 
 from pathlib import Path
 import re
