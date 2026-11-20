@@ -1,39 +1,21 @@
 const std = @import("std");
-const builtin = @import("builtin");
 const sources = @import("sources.zig");
+pub const toolchain = @import("toolchain.zig");
 
 const Build = std.Build;
 pub const Path = Build.LazyPath;
 pub const Run = Build.Step.Run;
-pub const macos = builtin.os.tag == .macos;
-pub const windows = builtin.os.tag == .windows;
-pub const library_name = if (windows) "stana.lib" else "libstana.a";
-pub const tint_name = if (windows) "stana-tint.lib" else "libstana-tint.a";
+pub const macos = toolchain.macos;
+pub const windows = toolchain.windows;
+pub const library_name = toolchain.library_name;
+pub const tint_name = toolchain.tint_name;
+pub const Sanitizer = toolchain.Sanitizer;
 
-pub const Sanitizer = enum { none, address, @"address-undefined" };
-
-const Toolchain = struct {
-    cxx: []const u8,
-    icu_include: []const u8,
-    icu_libs: []const []const u8,
-    runtime_path: []const u8,
-    tint_include: []const u8,
-    tint_archive: []const u8,
-    tint_manifest: []const u8,
-    tint_licenses: []const u8,
-    metadata: []const u8,
-};
-
-pub const Module = struct {
-    name: []const u8,
-    bmi: Path,
-};
-
+pub const Module = struct { name: []const u8, bmi: Path };
 pub const Unit = struct {
     object: Path,
     record: Path,
     bmi: ?Path = null,
-    dependencies: ?Path = null,
 };
 
 pub const ExecutableOptions = struct {
@@ -45,11 +27,45 @@ pub const ExecutableOptions = struct {
     link_flags: []const []const u8 = &.{},
 };
 
+const CompileOptions = struct {
+    flags: []const []const u8 = &.{},
+    imports: []const Module = &.{},
+    include_dirs: []const Path = &.{},
+    generated_header: ?Path = null,
+    module: ?[]const u8 = null,
+    precompile: bool = false,
+    first_party: bool = true,
+
+    fn addArguments(options: CompileOptions, b: *Build, tools: toolchain.Toolchain, source: Path, run: *Run) void {
+        tools.addCompileFlags(run);
+        if (options.first_party) {
+            run.addArgs(&toolchain.warnings);
+            if (windows) run.addArg("-WCL4");
+        }
+        run.addArgs(options.flags);
+        for (options.include_dirs) |dir| run.addDirectoryArg2(dir, .{ .prefix = "-I", .make_absolute = true });
+        if (options.generated_header) |header| {
+            run.addFileInput(header);
+            run.addDirectoryArg2(header.dirname(), .{ .prefix = "-I", .make_absolute = true });
+        }
+        for (options.imports) |dep| run.addFileArg2(dep.bmi, .{
+            .prefix = b.fmt("-fmodule-file={s}=", .{dep.name}),
+            .make_absolute = true,
+        });
+        const source_path = switch (source) {
+            .src_path => |path| path.sub_path,
+            .cwd_relative => |path| path,
+            .generated => |path| path.sub_path,
+            .dependency => |path| path.sub_path,
+            .relative => |path| path.sub_path,
+        };
+        if (std.mem.endsWith(u8, source_path, ".mm")) run.addArg("-fobjc-arc");
+    }
+};
+
 pub const Sdk = struct {
-    script: Path,
-    config: Path,
+    tools: toolchain.Toolchain,
     inputs: []const Path,
-    compiler: Path,
 
     pub fn executable(sdk: Sdk, b: *Build, modules: []const Module, options: ExecutableOptions) Path {
         const objects = b.allocator.alloc(Path, options.sources.len) catch @panic("OOM");
@@ -65,179 +81,89 @@ pub const Sdk = struct {
     }
 
     pub fn link(sdk: Sdk, b: *Build, name: []const u8, objects: []const Path, extra: []const Path, flags: []const []const u8) Path {
-        const run = python(b, sdk.script);
-        run.addArg("link");
-        addFile(run, sdk.config);
-        run.addFileInput(sdk.compiler);
-        const result = run.addOutputFileArg2(b.fmt("{s}{s}", .{ name, if (windows) ".exe" else "" }), .{ .make_absolute = true });
+        const run = Run.create(b, b.fmt("link {s}", .{name}));
+        addFile(run, sdk.tools.compiler);
+        sdk.tools.info.addStepDependencies(&run.step);
         for (objects) |object| addFile(run, object);
         for (extra) |input| addFile(run, input);
         for (sdk.inputs) |input| addFile(run, input);
-        run.addArg("--");
-        // The GNU driver adds libcmt at link time. The COFF objects select the DLL CRT.
-        if (windows) run.addArgs(&.{ "-Xlinker", "/NODEFAULTLIB:libcmt" });
+        sdk.tools.addLinkFlags(run);
         run.addArgs(flags);
-        run.setName(b.fmt("link {s}", .{name}));
-        return result;
+        run.addArg("-o");
+        return run.addOutputFileArg2(b.fmt("{s}{s}", .{ name, if (windows) ".exe" else "" }), .{ .make_absolute = true });
     }
 
     pub fn compile(sdk: Sdk, b: *Build, source: Path, name: []const u8, options: CompileOptions) Unit {
-        const run = python(b, sdk.script);
-        run.addArg("compile");
-        addFile(run, sdk.config);
-        run.addFileInput(sdk.compiler);
-        const record = run.addOutputFileArg2("command.json", .{ .make_absolute = true });
-        run.addArg(if (options.first_party) "true" else "false");
+        const run = Run.create(b, b.fmt("compile {s}", .{name}));
+        addFile(run, sdk.tools.compiler);
+        sdk.tools.info.addStepDependencies(&run.step);
+        options.addArguments(b, sdk.tools, source, run);
+        run.addArg(if (options.precompile) "--precompile" else "-c");
         addFile(run, source);
+        run.addArgs(&.{ "-MD", "-MF" });
+        _ = run.addDepFileOutputArg2("headers.d", .{ .make_absolute = true });
+        run.addArg("-MJ");
+        const record = run.addOutputFileArg2("command.json", .{ .make_absolute = true });
+        run.addArg("-o");
         const suffix = if (options.precompile) ".pcm" else if (windows) ".obj" else ".o";
         const object = run.addOutputFileArg2(b.fmt("{s}{s}", .{ name, suffix }), .{ .make_absolute = true });
-        const dependencies = run.addDepFileOutputArg2("headers.d", .{ .make_absolute = true });
-        run.addArgs(options.flags);
-        for (options.include_dirs) |dir| run.addDirectoryArg2(dir, .{ .prefix = "-I", .make_absolute = true });
-        if (options.generated_header) |header| {
-            run.addFileInput(header);
-            run.addDirectoryArg2(header.dirname(), .{ .prefix = "-I", .make_absolute = true });
-        }
-        for (options.imports) |dep| {
-            run.addFileArg2(dep.bmi, .{ .prefix = b.fmt("-fmodule-file={s}=", .{dep.name}), .make_absolute = true });
-        }
         const bmi = if (options.precompile) object else if (options.module) |module_name|
-            run.addOutputFileArg2(b.fmt("{s}.pcm", .{moduleFileName(b, module_name)}), .{
+            run.addOutputFileArg2(b.fmt("{s}.pcm", .{std.mem.replaceOwned(u8, b.allocator, module_name, ":", "-") catch @panic("OOM")}), .{
                 .prefix = "-fmodule-output=",
                 .make_absolute = true,
             })
         else
             null;
-        if (options.precompile) run.addArg("--precompile");
-        run.setName(b.fmt("compile {s}", .{name}));
-        return .{ .object = object, .record = record, .bmi = bmi, .dependencies = dependencies };
+        return .{ .object = object, .record = record, .bmi = bmi };
     }
 
     fn publish(sdk: Sdk, b: *Build) void {
-        b.addNamedLazyPath("cpp-config", sdk.config);
-        b.addNamedLazyPath("cpp-compiler", sdk.compiler);
+        b.addNamedLazyPath("cpp-build-info", sdk.tools.info);
+        if (sdk.tools.sdk_path) |path| b.addNamedLazyPath("cpp-macos-sdk", path);
         const names = [_][]const u8{ "library", "tint", "icu-i18n", "icu-uc", "icu-data" };
         for (names, sdk.inputs) |name, path| b.addNamedLazyPath(name, path);
     }
 
     fn fromDependency(b: *Build, dependency: *Build.Dependency) Sdk {
-        const inputs = b.allocator.dupe(Path, &.{
-            dependency.namedLazyPath("library"),
-            dependency.namedLazyPath("tint"),
-            dependency.namedLazyPath("icu-i18n"),
-            dependency.namedLazyPath("icu-uc"),
-            dependency.namedLazyPath("icu-data"),
-        }) catch @panic("OOM");
+        const settings = toolchain.Settings.fromDependency(dependency);
         return .{
-            .script = dependency.path("tools/stana_build.py"),
-            .config = dependency.namedLazyPath("cpp-config"),
-            .compiler = dependency.namedLazyPath("cpp-compiler"),
-            .inputs = inputs,
+            .tools = toolchain.Toolchain.fromDependency(dependency, settings),
+            .inputs = b.allocator.dupe(Path, &.{
+                dependency.namedLazyPath("library"),  dependency.namedLazyPath("tint"),
+                dependency.namedLazyPath("icu-i18n"), dependency.namedLazyPath("icu-uc"),
+                dependency.namedLazyPath("icu-data"),
+            }) catch @panic("OOM"),
         };
     }
 };
 
-const CompileOptions = struct {
-    flags: []const []const u8 = &.{},
-    imports: []const Module = &.{},
-    include_dirs: []const Path = &.{},
-    generated_header: ?Path = null,
-    module: ?[]const u8 = null,
-    precompile: bool = false,
-    first_party: bool = true,
-};
-
 pub const Project = struct {
     b: *Build,
-    tools: Toolchain,
+    settings: toolchain.Settings,
     sdk: Sdk,
-    sanitizer: Sanitizer,
-    deployment: []const u8,
     records: std.ArrayList(Path) = .empty,
-    scan_records: std.ArrayList(Path) = .empty,
-    scan_rules: std.ArrayList(Path) = .empty,
-    rules: *Build.Step.WriteFile,
     interfaces: [sources.interfaces.len]?Unit = @splat(null),
     active: [sources.interfaces.len]bool = @splat(false),
     installed: bool,
-    policy: *Build.Step,
-    analysis_config: ?Path,
+    analysis: *Build.Step,
+    tidy: Path,
     metal_header: ?Path = null,
+    runner: ?*Build.Step.Compile = null,
 
     pub fn init(b: *Build, installed: bool) Project {
-        const zig_version: std.SemanticVersion = .{ .major = 0, .minor = 17, .patch = 1 };
-        if (builtin.zig_version.order(zig_version) != .eq) {
-            std.process.fatal("Stana requires Zig {f}", .{zig_version});
-        }
-        const optimize = b.standardOptimizeOption(.{});
-        const configuration = switch (optimize) {
-            .debug => "Debug",
-            .fast => "Release",
-            else => std.process.fatal("Stana supports Debug and --release=fast", .{}),
-        };
-        const sanitizer = b.option(Sanitizer, "sanitizer", "Runtime sanitizer (none, address, address-undefined)") orelse .none;
-        const checks = b.option(bool, "checks", "Run source policy and clang-tidy") orelse true;
-        const deployment = b.option([]const u8, "macos-deployment-target", "Minimum macOS version") orelse "26.0";
-        const root = b.root.toString(b.allocator) catch @panic("OOM");
-        const script = b.path("tools/stana_build.py");
-        const config = b.run(&.{
-            pythonName(), b.pathJoin(&.{ root, "tools/stana_build.py" }), "toolchain",
-            root,         configuration,                                  @tagName(sanitizer),
-            deployment,   if (installed) "true" else "false",
-        });
-        var tools = (std.json.parseFromSlice(Toolchain, b.allocator, config, .{ .allocate = .alloc_always, .ignore_unknown_fields = true }) catch
-            std.process.fatal("Invalid Stana toolchain description", .{})).value;
-        if (windows and sanitizer != .none) {
-            const printed = b.run(&.{ tools.cxx, "--target=x86_64-pc-windows-msvc", "-print-runtime-dir" });
-            const runtime = std.mem.trim(u8, printed, " \r\n");
-            if (std.fs.path.isAbsolute(runtime)) {
-                tools.runtime_path = b.fmt("{s};{s}", .{ runtime, tools.runtime_path });
-            }
-        }
-        const policy = b.step("check", "Run Stana's source policy, clang-tidy and module graph checks");
-        const configuration_files = b.addWriteFiles();
-        const sdk: Sdk = .{
-            .script = script,
-            .config = configuration_files.add("toolchain.json", config),
-            .inputs = &.{},
-            .compiler = b.graph.cwdRelativePath(tools.cxx),
-        };
-        var analysis_config: ?Path = null;
-        if (checks) {
-            // Resolve analysis tools only when the check graph is executed, never during tests.
-            const discovery = python(b, script);
-            discovery.addArg("analysis-toolchain");
-            discovery.addDirectoryArg2(b.path("."), .{ .make_absolute = true });
-            discovery.addArg(if (installed) "true" else "false");
-            analysis_config = discovery.addOutputFileArg2("analysis.json", .{ .make_absolute = true });
-            // Rediscover replaced tools and environment overrides; unchanged descriptions keep analysis cached.
-            discovery.has_side_effects = true;
-            discovery.setName("resolve analysis tools");
-            const probe = python(b, script);
-            probe.addArg("tidy-probe");
-            addFile(probe, analysis_config.?);
-            addFile(probe, b.path(".clang-tidy"));
-            _ = probe.addOutputFileArg2("verified", .{ .make_absolute = true });
-            probe.setName("verify clang-tidy policy");
-            policy.dependOn(&probe.step);
-            if (!installed) {
-                for ([_][]const u8{ "tools/policy.py", "tools/namespace_policy.py" }) |file| {
-                    const run = python(b, b.path(file));
-                    run.addDirectoryArg2(b.path("."), .{ .make_absolute = true });
-                    policy.dependOn(&run.step);
-                }
-            }
-        }
+        const settings = toolchain.Settings.init(b);
+        // Tidy is intentionally not resolved here: building needs only the compiler.
+        const tidy = toolchain.llvmTool(b, "clang-tidy");
+        const analysis = b.step("analyze", "Run source audits and clang-tidy");
+        b.step("check", "Alias for analyze").dependOn(analysis);
+        if (installed) b.addNamedLazyPath("installed-sdk", b.path("share/stana/build-info.json"));
         return .{
             .b = b,
-            .tools = tools,
-            .sdk = sdk,
-            .sanitizer = sanitizer,
-            .deployment = deployment,
-            .rules = b.addWriteFiles(),
+            .settings = settings,
+            .sdk = .{ .tools = toolchain.Toolchain.init(b, settings, installed), .inputs = &.{} },
             .installed = installed,
-            .policy = policy,
-            .analysis_config = analysis_config,
+            .analysis = analysis,
+            .tidy = tidy,
         };
     }
 
@@ -246,45 +172,34 @@ pub const Project = struct {
         const library = if (project.installed) b.path("lib/" ++ library_name) else project.archive();
         const inputs = b.allocator.alloc(Path, 5) catch @panic("OOM");
         inputs[0] = library;
-        inputs[1] = b.graph.cwdRelativePath(project.tools.tint_archive);
-        for (inputs[2..], project.tools.icu_libs) |*input, path| input.* = b.graph.cwdRelativePath(path);
+        inputs[1] = project.sdk.tools.tint_archive;
+        @memcpy(inputs[2..], &project.sdk.tools.icu_libs);
         project.sdk.inputs = inputs;
         project.sdk.publish(b);
-        for (sources.interfaces, 0..) |source, index| {
-            b.addNamedLazyPath(source.module.?, project.interface(index).bmi.?);
-        }
+        for (sources.interfaces, 0..) |source, index| b.addNamedLazyPath(source.module.?, project.interface(index).bmi.?);
+        project.addTidyProbe();
     }
 
     fn archive(project: *Project) Path {
         const b = project.b;
-        if (macos) {
-            const embed = python(b, b.path("tools/embed_shader.py"));
-            addFile(embed, b.path("src/platform/macos/shaders/stana.metal"));
-            project.metal_header = embed.addOutputFileArg2("stana_shader.hpp", .{ .make_absolute = true });
-        }
+        if (macos) project.metal_header = embedShader(b, "src/platform/macos/shaders/stana.metal", null);
         const run = b.addSystemCommand(&.{b.graph.zig_exe});
         run.addArgs(if (windows) &.{ "lib", "/NOLOGO" } else if (macos) &.{ "ar", "--format=darwin", "rcs" } else &.{ "ar", "rcs" });
-        const result = run.addOutputFileArg2(library_name, .{
-            .prefix = if (windows) "/OUT:" else "",
-            .make_absolute = true,
-        });
+        const result = run.addOutputFileArg2(library_name, .{ .prefix = if (windows) "/OUT:" else "", .make_absolute = true });
         for (sources.interfaces, 0..) |_, index| addFile(run, project.interface(index).object);
         for (sources.portable) |source| addFile(run, project.libraryUnit(source).object);
         if (macos) {
             for (sources.macos) |source| addFile(run, project.libraryUnit(source).object);
-        } else {
-            addFile(run, project.libraryUnit(.{ .path = "src/platform/unsupported.cpp" }).object);
-        }
+        } else addFile(run, project.libraryUnit(.{ .path = "src/platform/unsupported.cpp" }).object);
         run.setName("archive Stana");
         return result;
     }
 
     fn interface(project: *Project, index: usize) Unit {
         if (project.interfaces[index]) |unit| return unit;
-        const source = sources.interfaces[index];
-        if (project.active[index]) std.process.fatal("Cyclic dependency on {s}", .{source.module.?});
+        if (project.active[index]) std.process.fatal("Cyclic dependency on {s}", .{sources.interfaces[index].module.?});
         project.active[index] = true;
-        const unit = project.libraryUnit(source);
+        const unit = project.libraryUnit(sources.interfaces[index]);
         project.interfaces[index] = unit;
         project.active[index] = false;
         return unit;
@@ -304,102 +219,132 @@ pub const Project = struct {
 
     fn libraryUnit(project: *Project, source: sources.Source) Unit {
         const b = project.b;
+        const tools = project.sdk.tools;
         var flags: std.ArrayList([]const u8) = .empty;
         if (!windows) flags.append(b.allocator, "-fPIC") catch @panic("OOM");
-        if (std.mem.eql(u8, source.path, "src/gpu/shader/compiler.cpp") or
-            std.mem.eql(u8, source.path, "src/platform/macos/shader_compiler.cpp"))
-        {
-            flags.appendSlice(b.allocator, &.{ "-isystem", project.tools.tint_include, "-DDAWN_HAVE_UTILS_BUILD_CONFIG", "-DDAWN_ENABLE_ASSERTS" }) catch @panic("OOM");
-        }
-        if (std.mem.eql(u8, source.path, "src/text/text.cpp") or
-            std.mem.eql(u8, source.path, "src/application/window_configuration.cpp"))
-        {
-            flags.appendSlice(b.allocator, &.{ "-isystem", project.tools.icu_include }) catch @panic("OOM");
-        }
+        if (std.mem.eql(u8, source.path, "src/gpu/shader/compiler.cpp") or std.mem.eql(u8, source.path, "src/platform/macos/shader_compiler.cpp"))
+            flags.appendSlice(b.allocator, &.{ "-isystem", tools.tint_include.?, "-DDAWN_HAVE_UTILS_BUILD_CONFIG", "-DDAWN_ENABLE_ASSERTS" }) catch @panic("OOM");
+        if (std.mem.eql(u8, source.path, "src/text/text.cpp") or std.mem.eql(u8, source.path, "src/application/window_configuration.cpp"))
+            flags.appendSlice(b.allocator, &.{ "-isystem", tools.icu_include }) catch @panic("OOM");
         var imports: std.ArrayList(Module) = .empty;
         for (source.imports) |name| project.addImport(&imports, name);
         const name = std.mem.replaceOwned(u8, b.allocator, source.path, "/", "_") catch @panic("OOM");
-        const unit = project.sdk.compile(b, b.path(source.path), name, .{
+        return project.compile(b.path(source.path), name, .{
             .imports = imports.items,
             .flags = flags.items,
             .module = source.module,
             .precompile = project.installed,
-            .generated_header = if (std.mem.eql(u8, source.path, "src/platform/macos/gpu_resources.mm"))
-                project.metal_header
-            else
-                null,
+            .generated_header = if (std.mem.eql(u8, source.path, "src/platform/macos/gpu_resources.mm")) project.metal_header else null,
         });
+    }
+
+    fn compile(project: *Project, source: Path, name: []const u8, options: CompileOptions) Unit {
+        const b = project.b;
+        const unit = project.sdk.compile(b, source, name, options);
         project.records.append(b.allocator, unit.record) catch @panic("OOM");
-        project.analyzeUnit(b.path(source.path), name, unit);
-        if (project.analysis_config != null and !project.installed and !std.mem.endsWith(u8, source.path, ".mm")) {
-            const expected = std.json.Stringify.valueAlloc(b.allocator, .{
-                .provides = if (source.module) |provided| @as([]const []const u8, &.{provided}) else &.{},
-                .requires = source.imports,
-            }, .{}) catch @panic("OOM");
-            project.scan_records.append(b.allocator, unit.record) catch @panic("OOM");
-            project.scan_rules.append(b.allocator, project.rules.add(b.fmt("{s}.json", .{name}), expected)) catch @panic("OOM");
-        }
+        const tidy = Run.create(b, b.fmt("clang-tidy {s}", .{name}));
+        addFile(tidy, project.tidy);
+        tidy.addArg("--experimental-custom-checks");
+        tidy.addFileArg2(b.path(".clang-tidy"), .{ .prefix = "--config-file=", .make_absolute = true });
+        addFile(tidy, source);
+        tidy.addArg("--");
+        options.addArguments(b, project.sdk.tools, source, tidy);
+        // Tooling strips driver dependency flags. Pass these directly to cc1 so
+        // Zig tracks the headers read by this analysis, including system headers.
+        tidy.addArg("-Xclang=-dependency-file");
+        _ = tidy.addDepFileOutputArg2("headers.d", .{ .prefix = "-Xclang=", .make_absolute = true });
+        tidy.addArgs(&.{ "-Xclang=-MT", "-Xclang=analysis", "-Xclang=-sys-header-deps" });
+        tidy.addFileInput(unit.object);
+        tidy.expectStdOutEqual("");
+        project.analysis.dependOn(&tidy.step);
         return unit;
     }
 
-    pub fn executable(project: *Project, name: []const u8, files: []const []const u8, header: ?Path) Unit {
+    pub fn executable(project: *Project, name: []const u8, files: []const []const u8, header: ?Path) Path {
         const b = project.b;
         var imports: std.ArrayList(Module) = .empty;
         project.addImport(&imports, "stana");
         var objects: std.ArrayList(Path) = .empty;
-        var first_record: Path = undefined;
         for (files, 0..) |file, index| {
-            const unit = project.sdk.compile(b, b.path(file), b.fmt("{s}-{d}", .{ name, index }), .{
-                .imports = imports.items,
-                .generated_header = header,
-            });
-            if (index == 0) first_record = unit.record;
+            const unit = project.compile(b.path(file), b.fmt("{s}-{d}", .{ name, index }), .{ .imports = imports.items, .generated_header = header });
             objects.append(b.allocator, unit.object) catch @panic("OOM");
-            project.records.append(b.allocator, unit.record) catch @panic("OOM");
-            project.analyzeUnit(b.path(file), b.fmt("{s}-{d}", .{ name, index }), unit);
         }
-        return .{ .object = project.sdk.link(b, name, objects.items, &.{}, &.{}), .record = first_record };
+        return project.sdk.link(b, name, objects.items, &.{}, &.{});
+    }
+
+    pub fn compileFail(project: *Project, source: Path) *Run {
+        const b = project.b;
+        var imports: std.ArrayList(Module) = .empty;
+        project.addImport(&imports, "stana");
+        const run = Run.create(b, b.fmt("stana.symbols.compiler-fail {f}", .{source}));
+        addFile(run, project.sdk.tools.compiler);
+        project.sdk.tools.info.addStepDependencies(&run.step);
+        (CompileOptions{ .imports = imports.items }).addArguments(b, project.sdk.tools, source, run);
+        run.addArg("-fsyntax-only");
+        addFile(run, source);
+        run.expectExitCode(1);
+        run.expectStdErrMatch("constant expression");
+        return run;
+    }
+
+    fn addTidyProbe(project: *Project) void {
+        const b = project.b;
+        const writer = b.addWriteFiles();
+        const source = writer.add("tidy-probe.cppm", "export module stana_toolchain_probe;\nexport auto rejected() -> int* { return new int((int)1); }\n");
+        const probe = Run.create(b, "verify required clang-tidy checks");
+        addFile(probe, project.tidy);
+        probe.addArg("--experimental-custom-checks");
+        probe.addFileArg2(b.path(".clang-tidy"), .{ .prefix = "--config-file=", .make_absolute = true });
+        addFile(probe, source);
+        probe.addArgs(&.{ "--", "-std=c++23" });
+        probe.expectExitCode(1);
+        probe.expectStdOutMatch("custom-no-raw-allocation");
+        probe.expectStdOutMatch("custom-no-c-style-cast");
+        probe.expectStdErrMatch("warnings treated as errors");
+        project.analysis.dependOn(&probe.step);
+        const config = std.mem.replaceOwned(u8, b.allocator, toolchain.read(b, b.path(".clang-tidy")), "  custom-*", "") catch @panic("OOM");
+        const verification_config = writer.add("verify-tidy.yaml", config);
+        const verify_config = Run.create(b, "verify clang-tidy configuration");
+        addFile(verify_config, project.tidy);
+        verify_config.addArgs(&.{ "--experimental-custom-checks", "--verify-config" });
+        verify_config.addFileArg2(verification_config, .{ .prefix = "--config-file=", .make_absolute = true });
+        verify_config.expectExitCode(0);
+        project.analysis.dependOn(&verify_config.step);
+        const version = Run.create(b, "verify clang-tidy version");
+        addFile(version, project.tidy);
+        version.expectStdOutMatch("version " ++ toolchain.llvm_version);
+        version.addArg("--version");
+        project.analysis.dependOn(&version.step);
     }
 
     pub fn runtimeEnvironment(project: *const Project, run: *Run) void {
-        if (project.tools.runtime_path.len != 0) run.setEnvironmentVariable("PATH", project.tools.runtime_path);
-        if (project.sanitizer != .none) run.setEnvironmentVariable("ASAN_OPTIONS", "halt_on_error=1:abort_on_error=1");
-        if (project.sanitizer == .@"address-undefined") run.setEnvironmentVariable("UBSAN_OPTIONS", "halt_on_error=1:print_stacktrace=1");
+        if (project.sdk.tools.runtime_path) |path| run.setEnvironmentVariable("PATH", path);
+        if (project.settings.sanitizer != .none) run.setEnvironmentVariable("ASAN_OPTIONS", "halt_on_error=1:abort_on_error=1");
+        if (project.settings.sanitizer == .@"address-undefined") run.setEnvironmentVariable("UBSAN_OPTIONS", "halt_on_error=1:print_stacktrace=1");
     }
 
-    pub fn verifyModules(project: *Project, step: *Build.Step) void {
-        if (project.analysis_config == null or project.installed) return;
+    pub fn hostTool(project: *Project) *Build.Step.Compile {
+        if (project.runner) |runner| return runner;
         const b = project.b;
-        const run = python(b, project.sdk.script);
-        run.addArg("verify-modules");
-        addFile(run, project.analysis_config.?);
-        _ = run.addOutputFileArg2("verified", .{ .make_absolute = true });
-        for (project.scan_records.items) |record| addFile(run, record);
-        for (project.scan_rules.items) |rule| addFile(run, rule);
-        run.setName("verify C++ module graph with clang-scan-deps");
-        step.dependOn(&run.step);
-    }
-
-    fn analyzeUnit(project: *Project, source: Path, name: []const u8, unit: Unit) void {
-        const config = project.analysis_config orelse return;
-        const b = project.b;
-        const run = python(b, project.sdk.script);
-        run.addArg("tidy");
-        addFile(run, config);
-        addFile(run, b.path(".clang-tidy"));
-        addFile(run, unit.record);
-        addFile(run, unit.dependencies.?);
-        _ = run.addDepFileOutputArg2("headers.d", .{ .make_absolute = true });
-        _ = run.addOutputFileArg2("verified", .{ .make_absolute = true });
-        run.addFileInput(source);
-        run.addFileInput(unit.object);
-        run.setName(b.fmt("clang-tidy {s}", .{name}));
-        project.policy.dependOn(&run.step);
+        const runner = b.addExecutable(.{
+            .name = "stana-process",
+            .root_module = b.createModule(.{ .root_source_file = b.path("build_support/process.zig"), .target = b.graph.host, .optimize = .safe }),
+        });
+        project.runner = runner;
+        return runner;
     }
 };
 
-fn moduleFileName(b: *Build, name: []const u8) []const u8 {
-    return std.mem.replaceOwned(u8, b.allocator, name, ":", "-") catch @panic("OOM");
+pub fn embedShader(b: *Build, source_path: []const u8, template_path: ?[]const u8) Path {
+    const source = toolchain.read(b, b.path(source_path));
+    const delimiter = if (template_path != null) "STANA_APP" else "STANA_SHADER";
+    if (std.mem.indexOf(u8, source, b.fmt("){s}\"", .{delimiter})) != null)
+        std.process.fatal("Shader {s} contains its raw-string delimiter", .{source_path});
+    const header = if (template_path) |template|
+        std.mem.replaceOwned(u8, b.allocator, toolchain.read(b, b.path(template)), "@stana_canvas_wgsl@", source) catch @panic("OOM")
+    else
+        b.fmt("#ifndef STANA_EMBEDDED_SHADER_HPP\n#define STANA_EMBEDDED_SHADER_HPP\n#include <string_view>\nnamespace stana::platform::detail::gpu {{\ninline constexpr std::string_view builtinShader = R\"STANA_SHADER({s})STANA_SHADER\";\n}}\n#endif\n", .{source});
+    return b.addWriteFiles().add(if (template_path != null) "canvas_resource.hpp" else "stana_shader.hpp", header);
 }
 
 pub fn pythonName() []const u8 {
@@ -407,9 +352,9 @@ pub fn pythonName() []const u8 {
 }
 
 pub fn python(b: *Build, script: Path) *Run {
-    const command = b.addSystemCommand(&.{pythonName()});
-    addFile(command, script);
-    return command;
+    const run = b.addSystemCommand(&.{pythonName()});
+    addFile(run, script);
+    return run;
 }
 
 pub fn addFile(run: *Run, file: Path) void {
@@ -419,9 +364,6 @@ pub fn addFile(run: *Run, file: Path) void {
 pub fn addCppExecutable(b: *Build, dependency: *Build.Dependency, options: ExecutableOptions) Path {
     const sdk = Sdk.fromDependency(b, dependency);
     var modules: [sources.interfaces.len]Module = undefined;
-    for (sources.interfaces, &modules) |source, *entry| {
-        const name = source.module.?;
-        entry.* = .{ .name = name, .bmi = dependency.namedLazyPath(name) };
-    }
+    for (sources.interfaces, &modules) |source, *entry| entry.* = .{ .name = source.module.?, .bmi = dependency.namedLazyPath(source.module.?) };
     return sdk.executable(b, &modules, options);
 }

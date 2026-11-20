@@ -6,13 +6,11 @@ WGSL reader / inspector / IR / MSL writer, and merges those static archives
 into `.tools/tint/lib/libstana-tint.a` (or `stana-tint.lib` on Windows). The
 matching headers and `stana-tint.json` identity file go next to that archive.
 
-`stana_build.py toolchain` refuses to configure a build until this prefix
-exists (or `STANA_TINT_ROOT` points at an equivalent one). Sanitizer builds
-need a matching prefix (`.tools/tint-address-undefined`, etc.).
+Provision .tools/llvm externally before running this script. The compiler,
+archiver, and installation prefix always use the canonical .tools layout.
+Sanitizer builds use .tools/tint-address or .tools/tint-address-undefined.
+LLVM is never downloaded or built by this tooling.
 
-Run once after LLVM is available, typically:
-  python3 tools/bootstrap_tint.py --compiler "$LLVM_ROOT/bin/clang++"
-Windows Debug CRT must pass `--config Debug` and `clang-cl`.
 `--offline` reuses already-cached tarballs under `--work` (default
 `build/tint-bootstrap`). Idempotent: matching `stana-tint.json` is a no-op.
 """
@@ -22,6 +20,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import subprocess
 import tarfile
@@ -95,9 +94,7 @@ def sources(cache: Path, source: Path, offline: bool) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--prefix", type=Path)
     parser.add_argument("--work", type=Path, default=ROOT / "build/tint-bootstrap")
-    parser.add_argument("--compiler", type=Path, required=True)
     parser.add_argument("--sanitizer", choices=("", "address", "address-undefined"), default="")
     parser.add_argument("--config", choices=("Debug", "Release"), default="Release")
     parser.add_argument("--jobs", type=int, default=3)
@@ -105,10 +102,14 @@ def main() -> None:
     args = parser.parse_args()
     if args.jobs < 1:
         parser.error("--jobs must be positive")
-    prefix = (args.prefix or ROOT / (".tools/tint" + (f"-{args.sanitizer}" if args.sanitizer else ""))).resolve()
+    prefix = ROOT / (".tools/tint" + (f"-{args.sanitizer}" if args.sanitizer else ""))
     work = args.work.resolve()
-    compiler = args.compiler.resolve()
+    compiler = ROOT / ".tools/llvm/bin" / ("clang-cl.exe" if platform.system() == "Windows" else "clang++")
     version = subprocess.check_output([str(compiler), "--version"], text=True)
+    if not re.search(r"version 22\.1\.8(?![.0-9])", version):
+        raise RuntimeError(f"LLVM 22.1.8 must be installed externally at {compiler.parent.parent}")
+    if platform.system() == "Windows" and args.sanitizer == "address-undefined":
+        parser.error("Windows supports the address sanitizer only")
     identity = {"schema": 1, "revision": REVISION, "sanitizer": args.sanitizer, "config": args.config,
                 "system": platform.system(), "architecture": platform.machine(), "compiler": version,
                 "dependencies": [{"name": n, "revision": r, "sha256": h} for n, r, _, h, _ in DEPENDENCIES]}
@@ -126,7 +127,7 @@ def main() -> None:
                  "-DDAWN_ENABLE_RTTI=ON", *[f"-D{option}=OFF" for option in OFF]]
     flags = [os.environ.get("CXXFLAGS", "")]
     if platform.system() == "Darwin":
-        sdk = subprocess.check_output(["xcrun", "--show-sdk-path"], text=True).strip()
+        sdk = subprocess.check_output(["/usr/bin/xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True).strip()
         configure += [f"-DCMAKE_OSX_SYSROOT={sdk}", "-DCMAKE_OSX_DEPLOYMENT_TARGET=26.0"]
         flags += [f"-nostdinc++ -isystem {sdk}/usr/include/c++/v1", "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE"]
     if platform.system() == "Linux":

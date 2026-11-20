@@ -1,18 +1,8 @@
-"""Build GitHub Release artifacts: relocatable SDK zips, source archives, checksums.
+"""Create release archives and checksums from staged artifacts.
 
-Not used for day-to-day development. `zig build package` runs `archive` after
-tests: it stages the SDK (library, Tint, module interfaces, `stana_build.py`,
-no BMIs) and this script names/zips it as
-`stana-<ver>-<os>-<arch>-clang<ver>-<debug|release>.zip` under `--output`.
-
-Actions:
-  package    `zig build package` into a temp prefix, copy dist zips out
-             (used if you invoke this script directly)
-  archive    Zip an already-staged SDK (`--sdk`). Called by Zig.
-  source     `git archive` zip+tar.gz for tag `v<version>` from build.zig.zon
-  checksums  Write SHA256SUMS for every file in `--output`
-
-Sanitized builds and packages that contain `.pcm` files are rejected.
+Build and stage SDKs with `just build` or `just package`. This utility never
+invokes Zig, a compiler, or a linker. It supports SDK archives, source archives
+from a release tag, and SHA-256 checksums.
 """
 
 import argparse
@@ -22,22 +12,10 @@ import os
 from pathlib import Path
 import platform
 import re
-import shutil
 import subprocess
-import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-
-
-def package(output: Path, config: str) -> None:
-	with tempfile.TemporaryDirectory(prefix="stana-release-") as work:
-		command = ["zig", "build", "package", "--prefix", work]
-		if config == "Release":
-			command.append("--release=fast")
-		subprocess.run(command, cwd=ROOT, check=True)
-		for artifact in (Path(work) / "dist").glob("*.zip"):
-			shutil.copy2(artifact, output)
 
 
 def archive(sdk: Path, output: Path) -> None:
@@ -90,17 +68,14 @@ def checksums(output: Path) -> None:
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description=__doc__)
-	parser.add_argument("action", choices=("package", "archive", "source", "checksums"))
-	parser.add_argument("--config", choices=("Debug", "Release"), default="Release")
+	parser.add_argument("action", choices=("archive", "source", "checksums"))
 	parser.add_argument("--sdk", type=Path)
 	parser.add_argument("--output", type=Path, default=Path("dist"))
 	parser.add_argument("--tag", default=os.environ.get("GITHUB_REF_NAME", ""))
 	args = parser.parse_args()
 	args.output = args.output.resolve()
 	args.output.mkdir(parents=True, exist_ok=True)
-	if args.action == "package":
-		package(args.output, args.config)
-	elif args.action == "archive":
+	if args.action == "archive":
 		if args.sdk is None:
 			parser.error("archive requires --sdk")
 		archive(args.sdk, args.output)

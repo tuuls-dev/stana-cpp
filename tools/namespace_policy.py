@@ -1,7 +1,6 @@
 """Source policy: one public module (`stana`) and functional namespace ownership.
 
-Run by Zig's `check` step on every Debug/Release build with `-Dchecks=true`
-(the default): `python3 tools/namespace_policy.py <repo-root>`. Also imported
+Run through `just audit`, `just analyze`, or `just verify`: `python3 tools/namespace_policy.py <repo-root>`. Also imported
 by `tests/namespace_policy_test.py`.
 
 Scans `modules/`, `src/`, `tests/`, `examples/` and fails the build if:
