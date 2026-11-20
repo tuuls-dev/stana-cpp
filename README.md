@@ -62,36 +62,37 @@ using namespace stana::literals;
 using namespace stana::ui;
 
 auto main() -> int {
-	try {
-		const stana::reactive::Signal count{0};
+    try {
+        const stana::reactive::Signal count{0};
 
-		const auto window = Window{
-			.content = VStack{
-				.spacing = 16_pt,
-				.layout = {.padding = stana::Insets::all(28_pt)},
-				.children = children(
-					Text{
-						.text = count.map([](int value) -> std::string {
-							return "Count: " + std::to_string(value);
-						}),
-						.textStyle = {.font = stana::Font::system(24_pt)}
-					},
-					Button{
-						.text = "Increment",
-						.accessibility = {.label = "Increment counter"},
-						.events = {on(Event::click, [count] -> void { ++count; })}
-					}
-				)
-			},
-			.options =
-				{.geometry = {.contentSize = {.width = 480_pt, .height = 320_pt}},
-					.appearance = {.title = "Stana Counter"}}
-		};
-		return Application::run(window);
-	} catch (const std::exception &error) {
-		std::cerr << error.what() << '\n';
-		return 1;
-	}
+        const auto window = Window{
+            .content = VStack{
+                .spacing = 16_pt,
+                .layout = {.padding = stana::Insets::all(28_pt)},
+                .children = children(
+                    Text{
+                        .text = count.map([](int value) -> std::string {
+                            return "Count: " + std::to_string(value);
+                        }),
+                        .textStyle = {.font = stana::Font::system(24_pt)}
+                    },
+                    Button{
+                        .text = "Increment",
+                        .accessibility = {.label = "Increment counter"},
+                        .events = {on(Event::click, [count] -> void { ++count; })}
+                    }
+                )
+            },
+            .options = {
+                .contentSize = stana::Size{.width = 480_pt, .height = 320_pt},
+                .title = "Stana Counter"
+            }
+        };
+        return Application::run(window);
+    } catch (const std::exception &error) {
+        std::cerr << error.what() << '\n';
+        return 1;
+    }
 }
 ```
 

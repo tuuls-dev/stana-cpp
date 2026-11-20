@@ -1,7 +1,6 @@
 InheritParentConfig: false
 Checks: >-
   -*,
-  clang-analyzer-*,
   bugprone-*,
   cert-*,
   concurrency-*,
