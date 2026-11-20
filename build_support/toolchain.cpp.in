@@ -1,0 +1,21 @@
+#include <version>
+#include <vector>
+#if __clang_major__ != 22 || __clang_minor__ != 1 || __clang_patchlevel__ != 8
+#error Stana requires externally installed LLVM 22.1.8 at .tools/llvm
+#endif
+#if !defined(__cpp_exceptions) || !defined(__cpp_rtti)
+#error Stana requires exceptions and RTTI
+#endif
+#if defined(__APPLE__)
+#if !defined(_LIBCPP_VERSION) || !defined(_LIBCPP_HARDENING_MODE_EXTENSIVE) || _LIBCPP_HARDENING_MODE != _LIBCPP_HARDENING_MODE_EXTENSIVE
+#error Stana requires the platform libc++ with extensive hardening
+#endif
+#elif defined(_WIN32)
+#if !defined(_MSVC_STL_VERSION) || !defined(_MSVC_STL_HARDENING_VECTOR)
+#error Stana requires the hardened MSVC STL in a Visual Studio x64 developer shell
+#endif
+#else
+#if !defined(_GLIBCXX_RELEASE) || _GLIBCXX_RELEASE < 14 || !defined(_GLIBCXX_ASSERTIONS)
+#error Stana requires libstdc++ from GCC 14 or newer with assertions enabled
+#endif
+#endif

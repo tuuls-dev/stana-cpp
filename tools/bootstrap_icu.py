@@ -1,20 +1,8 @@
-"""Install pinned ICU4C 78.3 into a project-local prefix (never the system).
+"""Provision ICU4C 78.3 at .tools/icu using externally installed .tools/llvm.
 
-Stana's text stack links ICU i18n/uc/data. This script fetches the upstream
-release (SHA-256 pinned), then:
-  Unix     build static libs + static data from source (`--enable-static`)
-  Windows  unpack Unicode's official MSVC 2022 x64 zip (shared DLLs)
-
-Default prefix is `.tools/icu`. `stana_build.py toolchain` looks there, then
-Homebrew/system paths, unless `ICU_ROOT` is set. `--github-env` appends
-`ICU_ROOT` (and Windows `bin64`) to GitHub Actions env/PATH.
-
-  python3 tools/bootstrap_icu.py
-  python3 tools/bootstrap_icu.py --prefix /path --jobs 8
-
-Idempotent via `stana-dependency.json`. Refuses to overwrite an unrecognized
-existing prefix. ICU is third-party; it is not a first-party warning-policy
-exception.
+Unix builds static libraries; Windows unpacks the official MSVC x64 binaries
+into the same include/lib/bin layout. Downloads are SHA-256 pinned. Existing
+unrecognized installations are never overwritten. LLVM is never downloaded.
 """
 
 import argparse
@@ -23,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import subprocess
 import tarfile
@@ -47,8 +36,9 @@ def verify_archive(archive: Path, expected: str) -> None:
 		raise RuntimeError(f"ICU archive digest mismatch: expected {expected}, got {actual}")
 
 
-def install(prefix: Path, jobs: int) -> None:
-	"""Build or unpack the selected official release into a project-local prefix."""
+def install(jobs: int) -> None:
+	"""Build or unpack the selected official release into the canonical prefix."""
+	prefix = ROOT / ".tools/icu"
 	is_windows = platform.system() == "Windows"
 	if is_windows and platform.machine().lower() not in ("amd64", "x86_64"):
 		raise RuntimeError("The supported Windows ICU package is x64")
@@ -76,7 +66,8 @@ def install(prefix: Path, jobs: int) -> None:
 					if not candidate.is_relative_to(work.resolve()):
 						raise RuntimeError("Unsafe path in ICU archive")
 				package.extractall(work)
-			shutil.copytree(work / "icu", prefix, dirs_exist_ok=True)
+			for upstream, destination in (("include", "include"), ("lib64", "lib"), ("bin64", "bin")):
+				shutil.copytree(work / "icu" / upstream, prefix / destination, dirs_exist_ok=True)
 		else:
 			with tarfile.open(archive) as package:
 				package.extractall(work, filter="data")
@@ -84,15 +75,13 @@ def install(prefix: Path, jobs: int) -> None:
 			build = work / "compiled"
 			build.mkdir()
 			environment = dict(os.environ)
-			llvm_root = environment.get("LLVM_ROOT")
-			if llvm_root:
-				environment["CC"] = str(Path(llvm_root) / "bin/clang")
-				environment["CXX"] = str(Path(llvm_root) / "bin/clang++")
+			environment["CC"] = str(ROOT / ".tools/llvm/bin/clang")
+			environment["CXX"] = str(ROOT / ".tools/llvm/bin/clang++")
 			for key in ("CFLAGS", "CXXFLAGS"):
 				environment[key] = environment.get(key, "") + " -fPIC"
 			preset = "MacOSX" if platform.system() == "Darwin" else "Linux"
 			subprocess.run(["sh", str(source / "source/runConfigureICU"), preset,
-				f"--prefix={prefix}", "--enable-static", "--disable-shared",
+				f"--prefix={prefix}", f"--libdir={prefix / 'lib'}", "--enable-static", "--disable-shared",
 				"--with-data-packaging=static", "--disable-tests", "--disable-samples"],
 				cwd=build, env=environment, check=True)
 			subprocess.run(["make", f"-j{jobs}"], cwd=build, env=environment, check=True)
@@ -105,23 +94,18 @@ def install(prefix: Path, jobs: int) -> None:
 
 
 def main() -> None:
-	"""Install ICU and optionally export its prefix to subsequent GitHub Actions steps."""
+	"""Validate the external compiler and provision the canonical ICU installation."""
 	parser = argparse.ArgumentParser(description=__doc__)
-	parser.add_argument("--prefix", type=Path, default=ROOT / ".tools/icu")
 	parser.add_argument("--jobs", type=int, default=3)
-	parser.add_argument("--github-env", action="store_true")
 	args = parser.parse_args()
 	if args.jobs < 1:
 		parser.error("--jobs must be positive")
-	prefix = args.prefix.resolve()
-	install(prefix, args.jobs)
-	if args.github_env:
-		with Path(os.environ["GITHUB_ENV"]).open("a") as output:
-			output.write(f"ICU_ROOT={prefix}\n")
-		if platform.system() == "Windows":
-			with Path(os.environ["GITHUB_PATH"]).open("a") as output:
-				output.write(f"{prefix / 'bin64'}\n")
-	print(f"ICU_ROOT={prefix}")
+	compiler = ROOT / ".tools/llvm/bin" / ("clang++.exe" if platform.system() == "Windows" else "clang++")
+	version = subprocess.check_output([str(compiler), "--version"], text=True)
+	if not re.search(r"version 22\.1\.8(?![.0-9])", version):
+		raise RuntimeError(f"LLVM 22.1.8 must be installed externally at {compiler.parent.parent}")
+	install(args.jobs)
+	print(f"Provisioned {ROOT / '.tools/icu'}")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 """Source policy: reject clang-tidy / diagnostic / sanitizer suppressions in-tree.
 
-Run by Zig's `check` step on every build with `-Dchecks=true` (the default):
+Run independently through `just audit`, `just analyze`, or `just verify`:
 `python3 tools/policy.py <repo-root>`.
 
 Scans `modules/`, `src/`, `tests/`, `examples/` and fails closed on:
