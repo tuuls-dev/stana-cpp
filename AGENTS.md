@@ -34,11 +34,11 @@ Read `./.clang-tidy` for lint rules and code you should avoid.
 
 Use tabs (width 4), LF endings, and the configured 100-column LLVM-based
 [clang-format style](https://clang.llvm.org/docs/ClangFormatStyleOptions.html).
-Markdown/YAML use two-space indentation. 
+Markdown/YAML use two-space indentation.
 
-Follow existing `PascalCase` types and `camelCase` functions/properties. 
+Follow existing `PascalCase` types and `camelCase` functions/properties.
 
-Keep private helpers in subsystem `detail` namespaces and native types out of exported APIs. 
+Keep private helpers in subsystem `detail` namespaces and native types out of exported APIs.
 
 Document public contracts with Doxygen comments per `readme/doxygen.md`. Fix clang-tidy diagnostics; do not
 add suppression comments, raw `new`/`delete`, or C-style casts.

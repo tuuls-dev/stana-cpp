@@ -1,7 +1,7 @@
 # Developer entry points. LLVM 22.1.8 must already exist at .tools/llvm.
 set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
 python := if os() == "windows" { "python" } else { "python3" }
-# Keep verification within one worker; opt in with just --set jobs N.
+
 jobs := "2"
 
 default:

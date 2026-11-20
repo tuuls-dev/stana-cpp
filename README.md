@@ -109,7 +109,7 @@ for module, namespace, and ownership rules.
 | --------------------------------------------------------------- | ------------------------ |
 | Upstream LLVM: Clang, clang-tidy, clang-format, clang-scan-deps | **22.1.8**, all matching |
 | ICU4C (`uc`, `i18n`, `data`)                                    | **78.3**, exact          |
-| Zig                                                             | **0.17.1**              |
+| Zig                                                             | **0.17.1**               |
 | Python                                                          | **3.11+**                |
 | Just                                                            | Optional command runner  |
 
@@ -240,16 +240,16 @@ and rebuilds the compiler-specific module interfaces in the consumer's cache.
 
 ## Development
 
-| Command                | Purpose                                                     |
-| ---------------------- | ----------------------------------------------------------- |
-| `just build`           | Build Debug with mandatory analysis                          |
-| `just test`            | Build and run the Debug contracts                            |
-| `just test release`    | Build and run the Release contracts                          |
-| `just format`          | Format first-party C++ and Objective-C++                     |
-| `just format-check`    | Check formatting                                             |
+| Command                | Purpose                                                       |
+| ---------------------- | ------------------------------------------------------------- |
+| `just build`           | Build Debug with mandatory analysis                           |
+| `just test`            | Build and run the Debug contracts                             |
+| `just test release`    | Build and run the Release contracts                           |
+| `just format`          | Format first-party C++ and Objective-C++                      |
+| `just format-check`    | Check formatting                                              |
 | `just test asan`       | Build and test with AddressSanitizer                          |
 | `just test asan-ubsan` | Build and test with AddressSanitizer and UBSan on Linux/macOS |
-| `zig build package`    | Test and package a relocatable SDK into `zig-out/dist`       |
+| `zig build package`    | Test and package a relocatable SDK into `zig-out/dist`        |
 
 Provision a matching Tint build before enabling a sanitizer.
 
@@ -274,16 +274,16 @@ run those contracts alongside the headless suite.
 
 ### Repository map
 
-| Path                             | Contents                                              |
-| -------------------------------- | ----------------------------------------------------- |
-| [`modules/`](modules/)           | Public module and subsystem interface partitions      |
-| [`src/`](src/)                   | Mirrored subsystem implementations                    |
-| [`src/platform/`](src/platform/) | Native adapters and platform integration              |
-| [`examples/`](examples/)         | Counter, symbols, and canvas applications                       |
-| [`tests/`](tests/)               | Contracts and policy checks                          |
-| [`build_support/`](build_support/) | Zig compile graph, contracts, and packaging |
-| [`tools/`](tools/)               | Bootstrap, formatting, policy, and developer scripts  |
-| [`readme/`](readme/)             | Documentation conventions                             |
+| Path                               | Contents                                             |
+| ---------------------------------- | ---------------------------------------------------- |
+| [`modules/`](modules/)             | Public module and subsystem interface partitions     |
+| [`src/`](src/)                     | Mirrored subsystem implementations                   |
+| [`src/platform/`](src/platform/)   | Native adapters and platform integration             |
+| [`examples/`](examples/)           | Counter, symbols, and canvas applications            |
+| [`tests/`](tests/)                 | Contracts and policy checks                          |
+| [`build_support/`](build_support/) | Zig compile graph, contracts, and packaging          |
+| [`tools/`](tools/)                 | Bootstrap, formatting, policy, and developer scripts |
+| [`readme/`](readme/)               | Documentation conventions                            |
 
 ### Contributing and help
 
