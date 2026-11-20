@@ -13,9 +13,16 @@
 
 import stana;
 
+using namespace stana;
+using namespace stana::application;
+using namespace stana::layout;
+using namespace stana::literals;
+using namespace stana::reactive;
+using namespace stana::rendering;
+using namespace stana::ui;
+
 namespace {
 
-using namespace stana::literals;
 constexpr auto chartInset = 20_pt;
 constexpr auto barWidth = 40_pt;
 constexpr auto contentSpacing = 12_pt;
@@ -30,14 +37,14 @@ constexpr std::uint32_t nextBinding = 5;
 
 // Factories report recoverable descriptor errors; this demo treats startup/update
 // failures as application errors and prints their owned diagnostic in main.
-template <typename T> auto checked(std::expected<T, stana::rendering::GPUError> result) -> T {
+template <typename T> auto checked(std::expected<T, GPUError> result) -> T {
 	if (!result) {
 		throw std::runtime_error(result.error().message);
 	}
 	return std::move(*result);
 }
 
-auto uniform(float value) -> stana::rendering::GPUBuffer {
+auto uniform(float value) -> GPUBuffer {
 	constexpr std::size_t alignment = 16;
 	constexpr unsigned byteBits = 8;
 	constexpr std::uint32_t mask = 255;
@@ -46,46 +53,42 @@ auto uniform(float value) -> stana::rendering::GPUBuffer {
 	for (std::size_t index = 0; index < sizeof(bits); ++index) {
 		bytes.at(index) = static_cast<std::byte>((bits >> (index * byteBits)) & mask);
 	}
-	return checked(stana::rendering::GPUBuffer::create(bytes));
+	return checked(GPUBuffer::create(bytes));
 }
 
-auto program() -> stana::rendering::GPUProgram {
-	const auto shader =
-		checked(stana::rendering::GPUShader::source(std::string{canvas_example::shaderSource}));
-	const auto history = checked(
-		stana::rendering::GPUStateSlot::create({.width = 1, .height = 1, .resetKey = "demo"})
-	);
+auto program() -> GPUProgram {
+	const auto shader = checked(GPUShader::source(std::string{canvas_example::shaderSource}));
+	const auto history =
+		checked(GPUStateSlot::create({.width = 1, .height = 1, .resetKey = "demo"}));
 	return checked(
-		stana::rendering::GPUProgram::create(
+		GPUProgram::create(
 			{.shader = shader,
 				.resources =
-					{{"output", stana::rendering::GPUTarget{}},
-						{"field",
-							stana::rendering::GPUTarget{.width = fieldSize, .height = fieldSize}},
+					{{"output", GPUTarget{}},
+						{"field", GPUTarget{.width = fieldSize, .height = fieldSize}},
 						{"level", uniform(1)},
 						{"history", history},
-						{"sampler", stana::rendering::GPUSampler{}}},
+						{"sampler", GPUSampler{}}},
 				.passes = {
-					stana::rendering::GPUComputePass{
+					GPUComputePass{
 						.function = "generate",
 						.workgroupCount = {groups, groups, 1},
 						.bindings =
-							{{.resource = "level",
-								 .stage = stana::rendering::GPUBinding::Stage::compute},
+							{{.resource = "level", .stage = GPUBinding::Stage::compute},
 								{.resource = "field",
 									.binding = 1,
-									.access = stana::rendering::GPUBinding::Access::write,
-									.stage = stana::rendering::GPUBinding::Stage::compute},
+									.access = GPUBinding::Access::write,
+									.stage = GPUBinding::Stage::compute},
 								{.resource = "history",
 									.binding = 4,
-									.stage = stana::rendering::GPUBinding::Stage::compute,
+									.stage = GPUBinding::Stage::compute,
 									.previous = true},
 								{.resource = "history",
 									.binding = nextBinding,
-									.access = stana::rendering::GPUBinding::Access::write,
-									.stage = stana::rendering::GPUBinding::Stage::compute}}
+									.access = GPUBinding::Access::write,
+									.stage = GPUBinding::Stage::compute}}
 					},
-					stana::rendering::GPURenderPass{
+					GPURenderPass{
 						.vertex = "fullscreen",
 						.fragment = "shade",
 						.bindings =
@@ -97,35 +100,26 @@ auto program() -> stana::rendering::GPUProgram {
 	);
 }
 
-auto graphics(const stana::rendering::GPUProgram &value) -> stana::rendering::GPUDrawing {
-	stana::rendering::GPUDrawing drawing{value};
+auto graphics(const GPUProgram &value) -> GPUDrawing {
+	GPUDrawing drawing{value};
 	const std::array vertices{
-		stana::rendering::GPUVertex{
-			.position = {.x = 24_pt, .y = 24_pt},
-			.color = stana::rendering::ExtendedColor{peak, 0, 0}
-		},
-		stana::rendering::GPUVertex{
-			.position = {.x = 114_pt, .y = 24_pt},
-			.color = stana::rendering::ExtendedColor{0, peak, 0}
-		},
-		stana::rendering::GPUVertex{
-			.position = {.x = 24_pt, .y = 124_pt},
-			.color = stana::rendering::ExtendedColor{0, 0, peak}
-		}
+		GPUVertex{.position = {.x = 24_pt, .y = 24_pt}, .color = ExtendedColor{peak, 0, 0}},
+		GPUVertex{.position = {.x = 114_pt, .y = 24_pt}, .color = ExtendedColor{0, peak, 0}},
+		GPUVertex{.position = {.x = 24_pt, .y = 124_pt}, .color = ExtendedColor{0, 0, peak}}
 	};
 	const std::array<std::uint32_t, 3> indices{0, 1, 2};
-	drawing.drawMesh(checked(stana::rendering::GPUMesh::create(vertices, indices)));
+	drawing.drawMesh(checked(GPUMesh::create(vertices, indices)));
 	const std::array points{
-		stana::Point{.x = 24_pt, .y = 156_pt},
-		stana::Point{.x = chartBaseline, .y = 90_pt},
-		stana::Point{.x = 296_pt, .y = 24_pt}
+		Point{.x = 24_pt, .y = 156_pt},
+		Point{.x = chartBaseline, .y = 90_pt},
+		Point{.x = 296_pt, .y = 24_pt}
 	};
-	drawing.strokePolyline(points, stana::Color::text(), 4_pt);
+	drawing.strokePolyline(points, Color::text(), 4_pt);
 	return drawing;
 }
 
-auto chart(int update) -> stana::rendering::Drawing {
-	stana::rendering::Drawing drawing;
+auto chart(int update) -> Drawing {
+	Drawing drawing;
 	constexpr int cycle = 4;
 	for (int index = 0; index < cycle; ++index) {
 		const auto height = 80_pt + static_cast<double>((update + index) % cycle) * chartInset;
@@ -134,7 +128,7 @@ auto chart(int update) -> stana::rendering::Drawing {
 					{.x = chartInset + static_cast<double>(index) * (barWidth + contentSpacing),
 						.y = chartBaseline - height},
 				.size = {.width = barWidth, .height = height}},
-			stana::Color::accent()
+			Color::accent()
 		);
 	}
 	return drawing;
@@ -142,7 +136,7 @@ auto chart(int update) -> stana::rendering::Drawing {
 } // namespace
 
 auto main(int argc, char **) -> int {
-	using namespace stana::literals;
+
 	try {
 		auto initial = program();
 		// Headless mode checks descriptor/drawing construction, not shader compilation.
@@ -150,90 +144,74 @@ auto main(int argc, char **) -> int {
 			static_cast<void>(graphics(initial));
 			return 0;
 		}
-		const stana::reactive::Signal updates{0};
-		const stana::reactive::Signal gpu{graphics(initial)};
-		const auto fixed = stana::layout::LayoutProperties{
-			.frame = stana::Frame{
-				.width = stana::Length::points(320_pt),
-				.height = stana::Length::points(180_pt)
-			}
+		const Signal updates{0};
+		const Signal gpu{graphics(initial)};
+		const auto fixed = LayoutProperties{
+			.frame = Frame{.width = Length::points(320_pt), .height = Length::points(180_pt)}
 		};
-		return stana::application::Application::run(
-			stana::application::Window{
+		return Application::run(
+			Window{
 				.content =
-					stana::ui::VStack{
+					VStack{
 						.spacing = contentSpacing,
-						.layout = {.padding = stana::Insets::all(chartInset)},
-						.children =
-							stana::ui::children(
-								stana::ui::Text{
-									.text = "Reactive CPU chart and WGSL compute → render, mesh "
-											"and round line"
-								},
-								stana::ui::HStack{
-									.spacing = contentSpacing,
-									.children = stana::ui::children(
-										stana::ui::CPUCanvas{
-											.drawing = updates.map(chart),
-											.layout = fixed,
-											.accessibility =
-												{.label = "Four bars; each update rotates "
-														  "heights from 80 "
-														  "to 140 points"}
-										},
-										stana::ui::GPUCanvas{
-											.drawing = gpu,
-											.layout = fixed,
-											.accessibility =
-												{.label = "Generated red-green gradient with a "
-														  "colored "
-														  "triangle and rising line"},
-											.onError = [](const stana::rendering::GPUDiagnostic
-															   &error) -> void {
-												std::cerr << error.message << '\n';
-											}
+						.layout = {.padding = Insets::all(chartInset)},
+						.children = children(
+							Text{
+								.text = "Reactive CPU chart and WGSL compute → render, mesh "
+										"and round line"
+							},
+							HStack{
+								.spacing = contentSpacing,
+								.children = children(
+									CPUCanvas{
+										.drawing = updates.map(chart),
+										.layout = fixed,
+										.accessibility =
+											{.label = "Four bars; each update rotates "
+													  "heights from 80 "
+													  "to 140 points"}
+									},
+									GPUCanvas{
+										.drawing = gpu,
+										.layout = fixed,
+										.accessibility =
+											{.label = "Generated red-green gradient with a "
+													  "colored "
+													  "triangle and rising line"},
+										.onError = [](const GPUDiagnostic &error) -> void {
+											std::cerr << error.message << '\n';
 										}
-									)
-								},
-								stana::ui::Text{
-									.text = updates.map(
-										[](int value) -> std::string {
-											return "Updates: " + std::to_string(value) +
-												". Gradient brightness alternates; temporal "
-												"history advances once "
-												"per new program version.";
-										}
-									)
-								},
-								stana::ui::Button{
-									.text = "Update charts",
-									.accessibility =
-										{.label = "Update both charts and advance the GPU history"},
-									.events =
-										{
-											stana::ui::on(
-												stana::ui::Event::click,
-												[updates,
-													gpu,
-													current =
-														std::move(initial)]() mutable -> void {
-													const auto value = updates.get() + 1;
-													const float strength = value % 2 == 0
-														? 1.0F
-														: static_cast<float>(peak);
-													current = checked(current.updatingResources(
-														{{"level", uniform(strength)}}
-													));
-													gpu.set(graphics(current));
-													updates.set(value);
-												}
-											)
-										}
-								}
-							)
+									}
+								)
+							},
+							Text{.text = updates.map([](int value) -> std::string {
+								return "Updates: " + std::to_string(value) +
+									". Gradient brightness alternates; temporal "
+									"history advances once "
+									"per new program version.";
+							})},
+							Button{
+								.text = "Update charts",
+								.accessibility =
+									{.label = "Update both charts and advance the GPU history"},
+								.events = {on(
+									Event::click,
+									[updates, gpu, current = std::move(initial)]() mutable -> void {
+										const auto value = updates.get() + 1;
+										const float strength =
+											value % 2 == 0 ? 1.0F : static_cast<float>(peak);
+										current = checked(current.updatingResources(
+											{{"level", uniform(strength)}}
+										));
+										gpu.set(graphics(current));
+										updates.set(value);
+									}
+								)}
+							}
+						)
 					},
 				.options = {
-					.contentSize = stana::Size{.width = windowWidth, .height = windowHeight},
+					.contentSize = Size{.width = windowWidth, .height = windowHeight},
 					.title = "Stana CPU / GPU Canvas"
 				}
 			}
