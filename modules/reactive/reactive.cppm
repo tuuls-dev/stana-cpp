@@ -186,9 +186,12 @@ struct ReactiveRuntime {
 					again = true;
 					continue;
 				}
-				auto actions = std::move(effects);
-				effects.clear();
-				for (auto &action : actions) {
+				if (!effects.empty()) {
+					if (++iterations > 10000) {
+						throw std::logic_error("Stana effects did not settle");
+					}
+					auto action = std::move(effects.front());
+					effects.pop_front();
 					action();
 				}
 				again = !pending.empty() || !effects.empty();

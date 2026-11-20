@@ -35,4 +35,17 @@ auto createMailboxWakeup(const std::function<void()> &)
 auto measureText(const std::string &, FontRequest, double) -> std::pair<double, double> {
 	unavailable("Native text measurement is unavailable on this platform");
 }
+
+auto shapeTextLine(const std::string &, FontRequest, bool)
+	-> std::expected<NativeTextLine, std::string> {
+	return std::unexpected("Native text shaping is unavailable on this platform");
+}
+
+auto readTextClipboard() -> std::expected<std::optional<std::string>, std::string> {
+	return std::unexpected("Native clipboard is unavailable on this platform");
+}
+
+auto writeTextClipboard(const std::string &) -> std::expected<void, std::string> {
+	return std::unexpected("Native clipboard is unavailable on this platform");
+}
 } // namespace stana::platform::detail

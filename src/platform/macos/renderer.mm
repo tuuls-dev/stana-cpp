@@ -1,5 +1,6 @@
 #include "renderer.hpp"
 #include "symbol_paths.hpp"
+#include "text_layout.hpp"
 #import <AppKit/AppKit.h>
 #include <algorithm>
 #include <cmath>
@@ -92,14 +93,22 @@ constexpr unsigned char firstNonAscii = 128;
 }
 
 [[nodiscard]] auto attributedText(const Command &command) -> NSAttributedString * {
-	NSFont *const font = [NSFont systemFontOfSize:command.fontSize weight:command.fontWeight];
-	NSColor *const color = [NSColor colorWithSRGBRed:command.red
-											   green:command.green
-												blue:command.blue
-											   alpha:command.alpha];
+	NSFont *const font = resolveTextFont(
+		{.size = command.fontSize,
+			.weight = command.fontWeight,
+			.family = command.fontFamily,
+			.italic = command.fontItalic}
+	);
+	NSMutableParagraphStyle *const paragraph = [[NSMutableParagraphStyle alloc] init];
+	paragraph.baseWritingDirection =
+		command.textRightToLeft ? NSWritingDirectionRightToLeft : NSWritingDirectionLeftToRight;
 	return [[NSAttributedString alloc]
 		initWithString:nativeString(command.text)
-			attributes:@{NSFontAttributeName : font, NSForegroundColorAttributeName : color}];
+			attributes:@{
+				NSFontAttributeName : font,
+				(__bridge NSString *)kCTForegroundColorFromContextAttributeName : @YES,
+				NSParagraphStyleAttributeName : paragraph
+			}];
 }
 
 [[nodiscard]] auto prepareOperation(const Command &command, double scale) -> PreparedOperation {
@@ -129,7 +138,12 @@ constexpr unsigned char firstNonAscii = 128;
 		operation.ink.bounds = expanded(bounds, 2 / scale);
 		return operation;
 	case PaintOperation::text: {
-		operation.text = std::make_shared<PreparedText>(command);
+		operation.text = command.textResource
+			? std::dynamic_pointer_cast<const PreparedText>(command.textResource)
+			: std::make_shared<PreparedText>(command);
+		if (!operation.text) {
+			throw std::runtime_error("Mismatched native text resource");
+		}
 		const CGRect image = CTLineGetImageBounds(operation.text->line.get(), nullptr);
 		// Bitmap/color/fallback glyph metrics are not a portable guaranteed bound.
 		// Conservatively use full damage rather than guessing a glyph padding.
@@ -141,8 +155,8 @@ constexpr unsigned char firstNonAscii = 128;
 		} else {
 			bounds = logical(image);
 			bounds.origin.x += command.x;
-			bounds.origin.y =
-				command.y + operation.text->ascent - image.origin.y - image.size.height;
+			bounds.origin.y = command.y + command.textBaseline.value_or(operation.text->ascent) -
+				image.origin.y - image.size.height;
 			operation.ink.bounds = expanded(bounds, margin);
 		}
 		return operation;
@@ -557,7 +571,13 @@ void replayOperation(CGContextRef context, const PreparedOperation &operation) {
 		break;
 	case PaintOperation::text:
 		CGContextSaveGState(context);
-		CGContextTranslateCTM(context, command.x, command.y + operation.text->ascent);
+		CGContextSetAlpha(context, command.alpha);
+		CGContextSetRGBFillColor(context, command.red, command.green, command.blue, 1);
+		CGContextTranslateCTM(
+			context,
+			command.x,
+			command.y + command.textBaseline.value_or(operation.text->ascent)
+		);
 		CGContextScaleCTM(context, 1, -1);
 		CGContextSetTextPosition(context, 0, 0);
 		CTLineDraw(operation.text->line.get(), context);

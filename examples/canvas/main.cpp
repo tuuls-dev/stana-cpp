@@ -156,7 +156,7 @@ auto main(int argc, char **) -> int {
 						.spacing = contentSpacing,
 						.layout = {.padding = Insets::all(chartInset)},
 						.children = children(
-							Text{
+							TextLabel{
 								.text = "Reactive CPU chart and WGSL compute → render, mesh "
 										"and round line"
 							},
@@ -184,7 +184,7 @@ auto main(int argc, char **) -> int {
 									}
 								)
 							},
-							Text{.text = updates.map([](int value) -> std::string {
+							TextLabel{.text = updates.map([](int value) -> std::string {
 								return "Updates: " + std::to_string(value) +
 									". Gradient brightness alternates; temporal "
 									"history advances once "

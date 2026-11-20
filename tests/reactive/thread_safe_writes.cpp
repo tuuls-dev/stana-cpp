@@ -298,14 +298,14 @@ void apiOrderingAndSettlement() {
 void retainedUi() {
 	const stana::reactive::Signal label{std::string{"Ready"}};
 	stana::testing::TestHost host;
-	host.mount(stana::ui::Text{.text = label});
-	const auto initial = findKind(host, "text");
+	host.mount(stana::ui::TextLabel{.text = label});
+	const auto initial = findKind(host, "textLabel");
 	const auto mounts = host.metrics().mounts;
 	worker([label] -> void {
 		label.setThreadSafe(std::string{"Done"});
 	}).get();
 	host.flush();
-	const auto updated = findKind(host, "text");
+	const auto updated = findKind(host, "textLabel");
 	require(updated.id == initial.id && updated.text == "Done", "S09 retained text updates");
 	require(host.metrics().mounts == mounts, "S09 no remount");
 }

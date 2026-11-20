@@ -41,7 +41,7 @@ void counterRetainsIdentity() {
 			.spacing = stana::Points{gap},
 			.layout = {.padding = stana::Insets::all(stana::Points{padding})},
 			.children = stana::ui::children(
-				stana::ui::Text{
+				stana::ui::TextLabel{
 					.text = count.map([](int value) -> std::string {
 						return "Count: " + std::to_string(value);
 					}),
@@ -61,25 +61,26 @@ void counterRetainsIdentity() {
 	);
 	bool publishedBeforeEffect = false;
 	const auto postPublication = stana::reactive::effect(count, [&](int value) -> void {
-		publishedBeforeEffect = findKind(host, "text").text == "Count: " + std::to_string(value);
+		publishedBeforeEffect =
+			findKind(host, "textLabel").text == "Count: " + std::to_string(value);
 	});
 	const auto initial = host.metrics();
-	const auto label = findKind(host, "text");
+	const auto label = findKind(host, "textLabel");
 	require(label.text == "Count: 0", "initial label");
 	require(button.isAlive(), "post-publication onMount");
 	require(button.activate().has_value(), "button activation");
-	const auto updated = findKind(host, "text");
+	const auto updated = findKind(host, "textLabel");
 	require(updated.id == label.id && updated.text == "Count: 1", "reactive leaf identity");
 	require(host.metrics().mounts == initial.mounts, "no remount for ordinary write");
 	stana::reactive::Transaction::perform([&] -> void {
 		count.set(2);
 		require(
-			findKind(host, "text").text == "Count: 1",
+			findKind(host, "textLabel").text == "Count: 1",
 			"read last complete snapshot inside batch"
 		);
 		count.set(0);
 	});
-	require(findKind(host, "text").text == "Count: 0", "commit final batch value");
+	require(findKind(host, "textLabel").text == "Count: 0", "commit final batch value");
 	const auto hitBounds = findKind(host, "button").bounds;
 	host.click(
 		{.x = hitBounds.origin.x + stana::Points{1}, .y = hitBounds.origin.y + stana::Points{1}}
@@ -122,7 +123,7 @@ void branchesDisposeLocalState() {
 		stana::ui::If{
 			.condition = visible,
 			.thenContent = LocalCounter{.mounts = &mounts, .disposals = &disposals},
-			.elseContent = stana::ui::Text{.text = "Hidden"}
+			.elseContent = stana::ui::TextLabel{.text = "Hidden"}
 		}
 	);
 	const auto first = findKind(host, "button");
@@ -155,14 +156,14 @@ void keyedRowsAreAtomic() {
 					.key = [](const Item &item) -> int {
 						return item.id;
 					},
-					.content = [](const Item &item) -> stana::ui::Text {
+					.content = [](const Item &item) -> stana::ui::TextLabel {
 						return {.text = item.name};
 					}
 				}
 			)
 		}
 	);
-	const auto first = findKind(host, "text");
+	const auto first = findKind(host, "textLabel");
 	items.set({{.id = 2, .name = "B"}, {.id = 1, .name = "A"}});
 	const auto snapshots = host.nodes();
 	const auto old = std::ranges::find(snapshots, first.id, &stana::document::NodeSnapshot::id);
@@ -176,7 +177,7 @@ void keyedRowsAreAtomic() {
 	);
 	items.set({{.id = 1, .name = "Changed"}});
 	require(
-		!host.handle(first.id).isAlive() && findKind(host, "text").text == "Changed",
+		!host.handle(first.id).isAlive() && findKind(host, "textLabel").text == "Changed",
 		"unequal item replaces content"
 	);
 }
@@ -216,8 +217,8 @@ void themeDefaultsFollowEnvironment() {
 	host.mount(
 		stana::ui::VStack{
 			.children = stana::ui::children(
-				stana::ui::Text{.text = "Count"},
-				stana::ui::Text{.text = "Marked", .textStyle = {.foreground = marked}},
+				stana::ui::TextLabel{.text = "Count"},
+				stana::ui::TextLabel{.text = "Marked", .textStyle = {.foreground = marked}},
 				stana::ui::Button{
 					.text = "Increment",
 					.events = {stana::ui::on(stana::ui::Event::click, [] -> void {})}
@@ -265,7 +266,7 @@ void disposalMayCloseTheDocument() {
 	host.mount(
 		stana::ui::If{
 			.condition = visible,
-			.thenContent = stana::ui::Text{
+			.thenContent = stana::ui::TextLabel{
 				.text = "Disposable",
 				.lifecycle = {
 					.onMount = [&](stana::document::NodeHandle mounted) -> void {

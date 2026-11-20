@@ -30,6 +30,7 @@ import :rendering;
 import :reactive;
 #include "gpu_conversion.hpp"
 #include "scene_conversion.hpp"
+#include "text_services.hpp"
 #include "window_session.hpp"
 
 namespace stana::application {
@@ -236,17 +237,7 @@ auto runWindows(std::vector<WindowSession> &sessions) -> int {
 
 			const auto sessionDocument = session.document;
 			sessionDocument->enablePresentationTracking();
-			sessionDocument->setTextMeasure(
-				[](const std::string &text, Font font, Points width) -> Size {
-					const auto [measuredWidth, measuredHeight] =
-						stana::platform::detail::measureText(
-							text,
-							{.size = font.size.value(), .weight = font.weight.value()},
-							width.value()
-						);
-					return {.width = Points{measuredWidth}, .height = Points{measuredHeight}};
-				}
-			);
+
 			sessionDocument->commit();
 			const auto weakDocument = std::weak_ptr{sessionDocument};
 			const auto conversion = std::make_shared<SceneConversion>();
@@ -275,6 +266,8 @@ auto runWindows(std::vector<WindowSession> &sessions) -> int {
 			};
 			const auto initial = nativeConfigurationFromOptions(session.options);
 			stana::platform::detail::Window window{
+				.textInput = session.textAttachment ? session.textAttachment->callbacks
+													: stana::platform::detail::TextInputCallbacks{},
 				.title = initial.title,
 				.width = initial.contentWidth,
 				.height = initial.contentHeight,
@@ -324,26 +317,70 @@ auto runWindows(std::vector<WindowSession> &sessions) -> int {
 					environment.theme = theme;
 					document->setEnvironment(environment);
 				},
-				.pointerDown = [weakDocument](double x, double y) -> void {
+				.pointerDown =
+					[weakDocument](stana::platform::detail::NativePointer input) -> void {
 					const auto document = weakDocument.lock();
 					if (!document) {
 						return;
 					}
-					document->pointerDown({.x = Points{x}, .y = Points{y}});
+					document->pointerDown(
+						stana::document::PointerInput{
+							.position = {.x = Points{input.x}, .y = Points{input.y}},
+							.button = input.button == 1
+								? stana::document::PointerButton::secondary
+								: (input.button == 2 ? stana::document::PointerButton::middle
+													 : stana::document::PointerButton::primary),
+							.modifiers =
+								{.shift = input.shift,
+									.control = input.control,
+									.alt = input.alt,
+									.meta = input.meta},
+							.clickCount = input.clickCount
+						}
+					);
 				},
-				.pointerUp = [weakDocument](double x, double y) -> void {
+				.pointerUp = [weakDocument](stana::platform::detail::NativePointer input) -> void {
 					const auto document = weakDocument.lock();
 					if (!document) {
 						return;
 					}
-					document->pointerUp({.x = Points{x}, .y = Points{y}});
+					document->pointerUp(
+						stana::document::PointerInput{
+							.position = {.x = Points{input.x}, .y = Points{input.y}},
+							.button = input.button == 1
+								? stana::document::PointerButton::secondary
+								: (input.button == 2 ? stana::document::PointerButton::middle
+													 : stana::document::PointerButton::primary),
+							.modifiers =
+								{.shift = input.shift,
+									.control = input.control,
+									.alt = input.alt,
+									.meta = input.meta},
+							.clickCount = input.clickCount
+						}
+					);
 				},
-				.pointerMove = [weakDocument](double x, double y) -> void {
+				.pointerMove =
+					[weakDocument](stana::platform::detail::NativePointer input) -> void {
 					const auto document = weakDocument.lock();
 					if (!document) {
 						return;
 					}
-					document->pointerMove({.x = Points{x}, .y = Points{y}});
+					document->pointerMove(
+						stana::document::PointerInput{
+							.position = {.x = Points{input.x}, .y = Points{input.y}},
+							.button = input.button == 1
+								? stana::document::PointerButton::secondary
+								: (input.button == 2 ? stana::document::PointerButton::middle
+													 : stana::document::PointerButton::primary),
+							.modifiers =
+								{.shift = input.shift,
+									.control = input.control,
+									.alt = input.alt,
+									.meta = input.meta},
+							.clickCount = input.clickCount
+						}
+					);
 				},
 				.pointerLeave = [weakDocument]() -> void {
 					const auto document = weakDocument.lock();

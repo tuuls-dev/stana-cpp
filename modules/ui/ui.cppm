@@ -22,6 +22,7 @@ export import :tasks;
 export import :rendering;
 import :document;
 export import :layout;
+export import :text;
 export import :symbol_asset;
 export import :symbol_playback;
 
@@ -29,7 +30,7 @@ export namespace stana::ui {
 
 /// @brief Shared typography and foreground overrides for text-bearing controls.
 ///
-/// Text, Button and Toggle accept this as .textStyle. Font updates affect intrinsic
+/// TextLabel, Button and Toggle accept this as .textStyle. Font updates affect intrinsic
 /// measurement; foreground changes affect paint. Omitting a field preserves the
 /// receiving control's default, rather than resetting it to a universal style.
 struct TextProperties {
@@ -37,6 +38,21 @@ struct TextProperties {
 	std::optional<::stana::reactive::Property<Font>> font{};
 	/// @brief Optional reactive text color; omission keeps the receiving control default.
 	std::optional<::stana::reactive::Property<Color>> foreground{};
+	/// @brief Individual reactive overrides applied after .font.
+	std::optional<::stana::reactive::Property<std::string>> fontFamily{};
+	std::optional<::stana::reactive::Property<Points>> fontSize{};
+	std::optional<::stana::reactive::Property<FontWeight>> fontWeight{};
+	std::optional<::stana::reactive::Property<FontStyle>> fontStyle{};
+	/// @brief Unicode soft-wrap policy. Inputs always remain unwrapped.
+	std::optional<::stana::reactive::Property<::stana::text::Wrap>> wrap{};
+	/// @brief Alignment of glyphs inside each available line box.
+	std::optional<::stana::reactive::Property<Alignment>> alignment{};
+	/// @brief Positive explicit line height; omission uses natural font metrics.
+	std::optional<::stana::reactive::Property<Points>> lineHeight{};
+	/// @brief Positive maximum displayed lines, clipped without ellipsis.
+	std::optional<::stana::reactive::Property<std::size_t>> maxLines{};
+	/// @brief Paint-only strikethrough using resolved run metrics.
+	std::optional<::stana::reactive::Property<bool>> isStrikethrough{};
 };
 
 /// @brief Shared retained paint and visibility configuration for visual components.
@@ -80,7 +96,7 @@ struct InteractionProperties {
 	/// @brief Reactive local enabled policy; disabled ancestors still block interaction.
 	::stana::reactive::Property<bool> isEnabled = true;
 	/// @brief Blocks this subtree from input and focus without changing its appearance or lifetime.
-	bool inert = false;
+	::stana::reactive::Property<bool> inert = false;
 };
 
 /// @brief Capture walks from the root toward the target. Bubble is the default.
@@ -369,8 +385,8 @@ struct Empty {};
 /// Set .text to a string, Signal<string> or Computed<string>. Passing signal.get()
 /// captures a constant snapshot instead. Use .textStyle for typography and .layout
 /// for sizing; the document updates the same node when its observed inputs change.
-/// Text is not an editor and does not expose selection or native text-input state.
-struct Text {
+/// TextLabel is not an editor and does not expose selection or native text-input state.
+struct TextLabel {
 	/// @brief Display label supplied as a constant, Signal<string> or Computed<string>.
 	::stana::reactive::Property<std::string> text{};
 	/// @brief Shared box-model overrides applied to this component at mount and on reactive
@@ -389,6 +405,24 @@ struct Text {
 	LifecycleProperties lifecycle{};
 	/// @brief Input registrations copied onto this occurrence. Empty when omitted.
 	Events events{};
+};
+
+/// @brief A retained, single-line Unicode editor backed by a writable model binding.
+/// Equal model echoes preserve selection, composition and history. Invalid later values
+/// report invalidValue without replacing valid state. Provisional IME text never writes value.
+struct TextInput {
+	::stana::reactive::Binding<std::string> value;
+	::stana::reactive::Property<std::string> placeholder{};
+	::stana::layout::LayoutProperties layout{};
+	TextProperties textStyle{};
+	TextProperties placeholderStyle{};
+	AppearanceProperties appearance{};
+	InteractionProperties interaction{};
+	AccessibilityProperties accessibility{};
+	LifecycleProperties lifecycle{};
+	Events events{};
+	std::function<void(const ::stana::document::TextInputEvent &)> onSubmit{};
+	std::function<void(const ::stana::document::TextInputEvent &)> onCancel{};
 };
 
 /// @brief An actionable retained text control using Stana drawing, not NSButton.
@@ -728,7 +762,9 @@ template <typename Description>
 } // namespace detail
 
 [[nodiscard]] auto mount(const Empty &, MountContext &context) -> ::stana::document::NodeHandle;
-[[nodiscard]] auto mount(const Text &description, MountContext &context)
+[[nodiscard]] auto mount(const TextLabel &description, MountContext &context)
+	-> ::stana::document::NodeHandle;
+[[nodiscard]] auto mount(const TextInput &description, MountContext &context)
 	-> ::stana::document::NodeHandle;
 [[nodiscard]] auto mount(const Button &description, MountContext &context)
 	-> ::stana::document::NodeHandle;

@@ -66,12 +66,18 @@ namespace detail {
 /// The root component description is already mounted and is not retained here.
 /// Live `options` remain owned by the session so reactive updates can re-sample
 /// properties without reconstructing the declaration value.
+struct TextAttachment;
+[[nodiscard]] auto prepareTextServices(
+	const std::shared_ptr<::stana::document::detail::Document> &document
+) -> std::shared_ptr<TextAttachment>;
+
 struct WindowSession {
 	WindowId id{};			 ///< Portable identity correlating events and native attachments.
 	WindowOptions options{}; ///< Live flat configuration, including the request stream.
 	WindowEvents events{};	 ///< Observation callbacks for this session.
 	std::shared_ptr<::stana::document::detail::Document>
 		document{}; ///< Authoritative retained window state.
+	std::shared_ptr<TextAttachment> textAttachment{};
 };
 
 void installNativeTaskDispatcher();
@@ -192,6 +198,7 @@ class Application {
 		}
 		const auto contentSize = snapshot.contentSize;
 		auto document = ::stana::document::detail::Document::create(contentSize);
+		const auto textAttachment = detail::prepareTextServices(document);
 		::stana::reactive::Transaction::perform([&] -> void {
 			::stana::ui::MountContext context{.document = document, .parent = document->root()};
 			using ::stana::ui::mount;
@@ -201,7 +208,8 @@ class Application {
 			.id = window.id,
 			.options = window.options,
 			.events = window.events,
-			.document = std::move(document)
+			.document = std::move(document),
+			.textAttachment = textAttachment
 		};
 	}
 };

@@ -123,7 +123,7 @@ auto shadowScenes(ShadowSceneKind kind)
 						.borderWidths = edges,
 						.boxShadows = shadows,
 						.clip = true},
-				.children = stana::ui::children(stana::ui::Text{.text = "CPU text"}, gpuChild)
+				.children = stana::ui::children(stana::ui::TextLabel{.text = "CPU text"}, gpuChild)
 			};
 			static_cast<void>(stana::ui::mount(
 				stana::ui::Box{

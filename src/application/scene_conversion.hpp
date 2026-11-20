@@ -1,5 +1,6 @@
 #ifndef STANA_SCENE_CONVERSION_HPP
 #define STANA_SCENE_CONVERSION_HPP
+#include "text_services.hpp"
 
 // Included after imports; shared by the production bridge and private native fixtures.
 // Standard headers belong in the includer, before its module declaration.
@@ -45,8 +46,21 @@ namespace stana::application::detail {
 		.lineWidth = command.lineWidth.value(),
 		.text = command.text,
 		.fontSize = command.font.size.value(),
+		.fontFamily = command.font.family,
+		.fontItalic = command.font.style == FontStyle::italic,
+		.textBaseline =
+			command.textBaseline ? std::optional{command.textBaseline->value()} : std::nullopt,
 		.fontWeight = command.font.weight.value()
 	};
+	if (command.textResource) {
+		const auto bridge = std::dynamic_pointer_cast<const stana::platform::detail::TextResource>(
+			command.textResource
+		);
+		if (!bridge || !bridge->nativeOwner()) {
+			throw std::runtime_error("Mismatched text provider resource");
+		}
+		result.textResource = bridge->nativeOwner();
+	}
 	if (command.boxGeometry) {
 		result.boxGeometry = stana::gpu::detail::BoxGeometry{
 			.outer = convertContour(command.boxGeometry->outer),

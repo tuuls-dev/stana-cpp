@@ -1,6 +1,7 @@
 module;
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -10,6 +11,7 @@ export import :rendering_presentation;
 export import :rendering_gpu;
 export import :rendering_shadow;
 export import :primitives;
+import :text;
 export import :rendering_diagnostics;
 
 export namespace stana::rendering {
@@ -45,6 +47,9 @@ struct PaintCommand {
 	Points lineWidth{1};   ///< Outline or segment thickness in logical points.
 	std::string text{};	   ///< Owned display text; used only for PaintKind::text.
 	Font font{};		   ///< System-font request; used only for PaintKind::text.
+	std::shared_ptr<const ::stana::text::PaintResource>
+		textResource{};					  ///< Immutable shaped glyph owner.
+	std::optional<Points> textBaseline{}; ///< Baseline relative to command origin.
 	std::optional<detail::BoxGeometry>
 		boxGeometry{};							 ///< Opt-in physical fill/border/clip contours.
 	std::optional<detail::ShadowPaint> shadow{}; ///< Owning immutable built-in GPU operation.

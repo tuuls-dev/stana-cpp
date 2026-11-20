@@ -84,6 +84,10 @@ void applyLayout(
 						stana::detail::requireNonnegative(*limit);
 					}
 				}
+				if ((value.minWidth && value.maxWidth && *value.minWidth > *value.maxWidth) ||
+					(value.minHeight && value.maxHeight && *value.minHeight > *value.maxHeight)) {
+					throw std::invalid_argument("Contradictory frame constraints");
+				}
 				return stana::ui::detail::assignRetained(
 					node.frame,
 					value,
@@ -97,13 +101,194 @@ void applyLayout(
 	}
 }
 
+namespace {
+template <typename T, typename Validate>
+void bindTypography(
+	const std::optional<stana::reactive::Property<T>> &property,
+	std::optional<T> stana::document::detail::TypographyOverrides::*member,
+	NodeId identity,
+	MountContext &context,
+	bool placeholder,
+	Validate validate
+) {
+	if (!property) {
+		return;
+	}
+	context.document->bind(
+		identity,
+		*property,
+		[member, placeholder, validate](stana::document::detail::Node &node, const T &value)
+			-> stana::document::detail::Dirty {
+			validate(value);
+			auto &style = placeholder ? node.editor->placeholderStyle : node.textOverrides;
+			return assignRetained(
+				style.*member,
+				std::optional<T>{value},
+				stana::document::detail::Dirty::measure | stana::document::detail::Dirty::paint
+			);
+		}
+	);
+}
+
+void applyTypography(
+	const TextProperties &properties,
+	NodeId identity,
+	MountContext &context,
+	bool placeholder
+) {
+	using Overrides = stana::document::detail::TypographyOverrides;
+	bindTypography(
+		properties.fontFamily,
+		&Overrides::fontFamily,
+		identity,
+		context,
+		placeholder,
+		[](const std::string &value) -> void {
+			if (!stana::text::isValidUtf8(value)) {
+				throw std::invalid_argument("Invalid UTF-8 font family");
+			}
+		}
+	);
+	bindTypography(
+		properties.fontSize,
+		&Overrides::fontSize,
+		identity,
+		context,
+		placeholder,
+		[](Points value) -> void {
+			stana::detail::requireNonnegative(value);
+		}
+	);
+	bindTypography(
+		properties.fontWeight,
+		&Overrides::fontWeight,
+		identity,
+		context,
+		placeholder,
+		[](FontWeight value) -> void {
+			stana::detail::requireFinite(value.value());
+		}
+	);
+	bindTypography(
+		properties.fontStyle,
+		&Overrides::fontStyle,
+		identity,
+		context,
+		placeholder,
+		[](FontStyle) -> void {}
+	);
+	bindTypography(
+		properties.lineHeight,
+		&Overrides::lineHeight,
+		identity,
+		context,
+		placeholder,
+		[](Points value) -> void {
+			stana::detail::requireNonnegative(value);
+			if (value.value() <= 0) {
+				throw std::invalid_argument("Explicit line height must be positive");
+			}
+		}
+	);
+	if (placeholder) {
+		bindTypography(
+			properties.font,
+			&Overrides::font,
+			identity,
+			context,
+			true,
+			[](const Font &value) -> void {
+				stana::detail::requireNonnegative(value.size);
+				if (value.family && !stana::text::isValidUtf8(*value.family)) {
+					throw std::invalid_argument("Invalid UTF-8 font family");
+				}
+				stana::detail::requireFinite(value.weight.value());
+				if (value.family && !stana::text::isValidUtf8(*value.family)) {
+					throw std::invalid_argument("Invalid UTF-8 font family");
+				}
+			}
+		);
+		bindTypography(
+			properties.foreground,
+			&Overrides::foreground,
+			identity,
+			context,
+			true,
+			validateColor
+		);
+	}
+}
+} // namespace
+
 void applyTextStyle(const TextProperties &properties, NodeId identity, MountContext &context) {
+	applyTypography(properties, identity, context, false);
+	if (properties.wrap) {
+		context.document->bind(
+			identity,
+			*properties.wrap,
+			[](stana::document::detail::Node &node,
+				stana::text::Wrap value) -> stana::document::detail::Dirty {
+				return assignRetained(
+					node.wrap,
+					value,
+					stana::document::detail::Dirty::measure | stana::document::detail::Dirty::paint
+				);
+			}
+		);
+	}
+	if (properties.alignment) {
+		context.document->bind(
+			identity,
+			*properties.alignment,
+			[](stana::document::detail::Node &node,
+				Alignment value) -> stana::document::detail::Dirty {
+				return assignRetained(
+					node.textAlignment,
+					value,
+					stana::document::detail::Dirty::measure | stana::document::detail::Dirty::paint
+				);
+			}
+		);
+	}
+	if (properties.maxLines) {
+		context.document->bind(
+			identity,
+			*properties.maxLines,
+			[](stana::document::detail::Node &node,
+				std::size_t value) -> stana::document::detail::Dirty {
+				if (value == 0) {
+					throw std::invalid_argument("Maximum lines must be positive");
+				}
+				return assignRetained(
+					node.maxLines,
+					std::optional{value},
+					stana::document::detail::Dirty::measure | stana::document::detail::Dirty::paint
+				);
+			}
+		);
+	}
+	if (properties.isStrikethrough) {
+		context.document->bind(
+			identity,
+			*properties.isStrikethrough,
+			[](stana::document::detail::Node &node, bool value) -> stana::document::detail::Dirty {
+				return assignRetained(
+					node.isStrikethrough,
+					value,
+					stana::document::detail::Dirty::paint
+				);
+			}
+		);
+	}
 	if (properties.font) {
 		context.document->bind(
 			identity,
 			*properties.font,
 			[](stana::document::detail::Node &node, Font value) -> stana::document::detail::Dirty {
 				stana::detail::requireNonnegative(value.size);
+				if (value.family && !stana::text::isValidUtf8(*value.family)) {
+					throw std::invalid_argument("Invalid UTF-8 font family");
+				}
 				stana::detail::requireFinite(value.weight.value());
 				return stana::ui::detail::assignRetained(
 					node.font,
@@ -300,8 +485,17 @@ void applyInteraction(
 			);
 		}
 	);
-	auto *node = context.document->find(identity);
-	node->inert = properties.inert;
+	context.document->bind(
+		identity,
+		properties.inert,
+		[](stana::document::detail::Node &node, bool value) -> stana::document::detail::Dirty {
+			return assignRetained(
+				node.inert,
+				value,
+				stana::document::detail::Dirty::paint | stana::document::detail::Dirty::snapshot
+			);
+		}
+	);
 }
 
 void applyEvents(const Events &events, NodeId identity, MountContext &context) {
@@ -341,10 +535,10 @@ auto mount(const Empty &, MountContext &context) -> stana::document::NodeHandle 
 	);
 }
 
-auto mount(const Text &description, MountContext &context) -> stana::document::NodeHandle {
+auto mount(const TextLabel &description, MountContext &context) -> stana::document::NodeHandle {
 	const auto identity = stana::ui::detail::createConfigured(
 		description,
-		stana::document::detail::NodeKind::text,
+		stana::document::detail::NodeKind::textLabel,
 		context
 	);
 	context.document->bind(
@@ -358,6 +552,67 @@ auto mount(const Text &description, MountContext &context) -> stana::document::N
 				stana::document::detail::Dirty::measure | stana::document::detail::Dirty::paint |
 					stana::document::detail::Dirty::snapshot
 			);
+		}
+	);
+	return context.document->handle(identity);
+}
+
+auto mount(const TextInput &description, MountContext &context) -> stana::document::NodeHandle {
+	// Validate the binding before registering an occurrence or scheduling mount effects.
+	auto editor = std::make_unique<stana::document::detail::EditorState>(description.value);
+	const auto identity =
+		context.document->createNode(stana::document::detail::NodeKind::textInput, context.parent);
+	context.document->find(identity)->editor = std::move(editor);
+	detail::configure(description, identity, context);
+	{
+		auto *node = context.document->find(identity);
+		node->text = node->editor->buffer.text();
+		node->editor->onSubmit = description.onSubmit;
+		node->editor->onCancel = description.onCancel;
+	}
+	detail::applyTypography(description.placeholderStyle, identity, context, true);
+	context.document->bind(
+		identity,
+		description.placeholder,
+		[](stana::document::detail::Node &node,
+			const std::string &value) -> stana::document::detail::Dirty {
+			if (!stana::text::isSingleLine(value)) {
+				throw std::invalid_argument("Invalid placeholder");
+			}
+			return detail::assignRetained(
+				node.editor->placeholder,
+				value,
+				stana::document::detail::Dirty::measure | stana::document::detail::Dirty::paint
+			);
+		}
+	);
+	const auto binding = description.value;
+	const auto weak = std::weak_ptr{context.document};
+	context.document->bind(
+		identity,
+		stana::reactive::Property<std::string>{stana::reactive::computed([binding] -> std::string {
+			return binding.get();
+		})},
+		[weak, identity](stana::document::detail::Node &node, const std::string &value)
+			-> stana::document::detail::Dirty {
+			if (value == node.editor->buffer.text()) {
+				return stana::document::detail::Dirty::none;
+			}
+			if (const auto changed = node.editor->buffer.setText(value); !changed) {
+				if (const auto document = weak.lock()) {
+					document->report(changed.error());
+				}
+				return stana::document::detail::Dirty::none;
+			}
+			node.text = value;
+			node.editor->scroll = Points{};
+			node.editor->typingGroup = false;
+			node.editor->deletionGroup.reset();
+			if (const auto document = weak.lock()) {
+				document->externalEditorChanged(identity);
+			}
+			return stana::document::detail::Dirty::measure | stana::document::detail::Dirty::paint |
+				stana::document::detail::Dirty::snapshot;
 		}
 	);
 	return context.document->handle(identity);

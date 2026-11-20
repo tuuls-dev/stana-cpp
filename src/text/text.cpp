@@ -148,10 +148,95 @@ auto utf8Offset(const std::string &text, std::size_t codeUnitOffset)
 	return prefix.size();
 }
 
+namespace detail {
+namespace {
+[[nodiscard]] auto breaks(const std::string &text, bool words) -> std::vector<std::size_t> {
+	const auto unicode = unicodeText(text);
+	UErrorCode status = U_ZERO_ERROR;
+	const std::unique_ptr<icu::BreakIterator> iterator{
+		words ? icu::BreakIterator::createWordInstance(icu::Locale::getRoot(), status)
+			  : icu::BreakIterator::createLineInstance(icu::Locale::getRoot(), status)
+	};
+	if (U_FAILURE(status) != 0 || !iterator) {
+		throw std::runtime_error("Unable to create ICU text iterator");
+	}
+	iterator->setText(unicode);
+	std::vector<std::size_t> result;
+	for (auto boundary = iterator->first(); boundary != icu::BreakIterator::DONE;
+		boundary = iterator->next()) {
+		std::string prefix;
+		unicode.tempSubStringBetween(0, boundary).toUTF8String(prefix);
+		result.push_back(prefix.size());
+	}
+	return result;
+}
+
+[[nodiscard]] auto validRange(const std::string &text, TextRange range, bool graphemes) -> bool {
+	if (range.start > range.end || range.end > text.size()) {
+		return false;
+	}
+	if (!utf16Offset(text, range.start) || !utf16Offset(text, range.end)) {
+		return false;
+	}
+	if (graphemes) {
+		const auto boundaries = graphemeBoundaries(text);
+		return std::ranges::binary_search(boundaries, range.start) &&
+			std::ranges::binary_search(boundaries, range.end);
+	}
+	return true;
+}
+} // namespace
+} // namespace detail
+
+auto wordBoundaries(const std::string &text) -> std::vector<std::size_t> {
+	return detail::breaks(text, true);
+}
+
+auto lineBoundaries(const std::string &text) -> std::vector<std::size_t> {
+	return detail::breaks(text, false);
+}
+
+auto normalizePaste(std::string_view text) -> std::expected<std::string, Error> {
+	if (!isValidUtf8(text)) {
+		return std::unexpected(Error::invalidValue);
+	}
+	std::string result;
+	for (std::size_t index = 0; index < text.size();) {
+		const auto tail = text.substr(index);
+		std::size_t length = 0;
+		if (tail.starts_with("\r\n")) {
+			length = 2;
+		} else if (tail.starts_with('\r') || tail.starts_with('\n')) {
+			length = 1;
+		} else if (tail.starts_with("\xC2\x85")) {
+			length = 2;
+		} else if (tail.starts_with("\xE2\x80\xA8") || tail.starts_with("\xE2\x80\xA9")) {
+			length = 3;
+		}
+		if (length != 0) {
+			result.push_back(' ');
+			index += length;
+		} else {
+			result.push_back(text.at(index));
+			++index;
+		}
+	}
+	return result;
+}
+
+auto isSingleLine(std::string_view text) noexcept -> bool {
+	return isValidUtf8(text) && text.find_first_of("\r\n") == std::string_view::npos &&
+		text.find("\xC2\x85") == std::string_view::npos &&
+		text.find("\xE2\x80\xA8") == std::string_view::npos &&
+		text.find("\xE2\x80\xA9") == std::string_view::npos &&
+		text.size() <= static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max());
+}
+
 TextBuffer::TextBuffer(std::string text)
-	: text_(std::move(text)),
+	: storeRevision_(stana::detail::nextIdentity()),
+	  text_(std::move(text)),
 	  revision_(stana::detail::nextIdentity()) {
-	if (!isValidUtf8(text_) || text_.find_first_of("\r\n") != std::string::npos) {
+	if (!isSingleLine(text_)) {
 		throw std::invalid_argument("Malformed initial editor text");
 	}
 }
@@ -163,17 +248,54 @@ auto TextBuffer::selection() const noexcept -> TextSelection {
 	};
 }
 
-auto TextBuffer::select(TextSelection selection) -> std::expected<void, Error> {
-	if (selection.anchor.revision != revision_ || selection.head.revision != revision_) {
+auto TextBuffer::snapshot() const -> StoreSnapshot {
+	return {
+		.stamp = stamp(),
+		.text = text_,
+		.selection = selection(),
+		.composition = composition_,
+		.canUndo = !undo_.empty(),
+		.canRedo = !redo_.empty()
+	};
+}
+
+auto TextBuffer::displayedText() const -> std::string {
+	auto result = text_;
+	if (composition_) {
+		result.replace(
+			composition_->replacement.start,
+			composition_->replacement.end - composition_->replacement.start,
+			composition_->text
+		);
+	}
+	return result;
+}
+
+auto TextBuffer::displayedSelection() const -> TextRange {
+	if (composition_) {
+		return {
+			.start = composition_->replacement.start + composition_->selection.start,
+			.end = composition_->replacement.start + composition_->selection.end
+		};
+	}
+	return {.start = anchor_, .end = head_};
+}
+
+auto TextBuffer::select(TextSelection value) -> std::expected<void, Error> {
+	if (value.anchor.revision != revision_ || value.head.revision != revision_) {
 		return std::unexpected(Error::invalidTextRange);
 	}
-	const auto boundaries = graphemeBoundaries(text_);
-	if (!std::ranges::binary_search(boundaries, selection.anchor.utf8Offset) ||
-		!std::ranges::binary_search(boundaries, selection.head.utf8Offset)) {
+	const auto a = value.anchor.utf8Offset;
+	const auto h = value.head.utf8Offset;
+	if (!detail::validRange(text_, {std::min(a, h), std::max(a, h)}, true)) {
 		return std::unexpected(Error::invalidTextRange);
 	}
-	anchor_ = selection.anchor.utf8Offset;
-	head_ = selection.head.utf8Offset;
+	if (anchor_ != a || head_ != h || composition_) {
+		cancelMarkedText();
+		anchor_ = a;
+		head_ = h;
+		storeRevision_ = stana::detail::nextIdentity();
+	}
 	return {};
 }
 
@@ -182,60 +304,203 @@ auto TextBuffer::currentState() const -> EditState {
 }
 
 void TextBuffer::restore(EditState state) {
+	const bool changed = text_ != state.text;
 	text_ = std::move(state.text);
 	anchor_ = state.anchor;
 	head_ = state.head;
-	revision_ = stana::detail::nextIdentity();
+	if (changed) {
+		revision_ = stana::detail::nextIdentity();
+	}
+	storeRevision_ = stana::detail::nextIdentity();
 	marked_.reset();
+	composition_.reset();
 }
 
 auto TextBuffer::replaceSelection(const std::string &insertion, bool groupWithPrevious)
 	-> std::expected<void, Error> {
-	if (!isValidUtf8(insertion) || insertion.find_first_of("\r\n") != std::string::npos) {
+	if (!isSingleLine(insertion)) {
 		return std::unexpected(Error::invalidValue);
+	}
+	const auto begin = std::min(anchor_, head_);
+	const auto end = std::max(anchor_, head_);
+	auto replacement = text_;
+	replacement.replace(begin, end - begin, insertion);
+	if (!isSingleLine(replacement)) {
+		return std::unexpected(Error::invalidValue);
+	}
+	const auto boundaries = graphemeBoundaries(replacement);
+	const auto caret = std::ranges::lower_bound(boundaries, begin + insertion.size());
+	const auto position = caret == boundaries.end() ? replacement.size() : *caret;
+	if (replacement == text_) {
+		if (anchor_ != position || head_ != position || composition_) {
+			restore({.text = text_, .anchor = position, .head = position});
+		}
+		return {};
 	}
 	if (!groupWithPrevious || undo_.empty()) {
 		undo_.push_back(currentState());
 	}
 	redo_.clear();
-	const auto begin = std::min(anchor_, head_);
-	const auto end = std::max(anchor_, head_);
-	text_.replace(begin, end - begin, insertion);
-	const auto boundaries = graphemeBoundaries(text_);
-	const auto caret = std::ranges::lower_bound(boundaries, begin + insertion.size());
-	anchor_ = caret == boundaries.end() ? text_.size() : *caret;
-	head_ = anchor_;
-	revision_ = stana::detail::nextIdentity();
-	marked_.reset();
+	restore({.text = std::move(replacement), .anchor = position, .head = position});
 	return {};
 }
 
-auto TextBuffer::setText(std::string text) -> std::expected<void, Error> {
-	if (!isValidUtf8(text) || text.find_first_of("\r\n") != std::string::npos) {
+auto TextBuffer::setText(std::string value) -> std::expected<void, Error> {
+	if (!isSingleLine(value)) {
 		return std::unexpected(Error::invalidValue);
 	}
-	if (text == text_) {
-		return {};
+	if (value != text_) {
+		restore({.text = std::move(value)});
+		undo_.clear();
+		redo_.clear();
 	}
-	restore({.text = std::move(text)});
-	undo_.clear();
-	redo_.clear();
 	return {};
 }
 
-auto TextBuffer::setMarkedText(std::string text) -> std::expected<void, Error> {
-	if (!isValidUtf8(text) || text.find_first_of("\r\n") != std::string::npos) {
-		return std::unexpected(Error::invalidValue);
+auto TextBuffer::setMarkedText(std::string value) -> std::expected<void, Error> {
+	const auto end = value.size();
+	return apply(
+		{.kind = StoreEdit::Kind::compose,
+			.stamp = stamp(),
+			.text = std::move(value),
+			.selection = {end, end}}
+	);
+}
+
+void TextBuffer::cancelMarkedText() {
+	if (composition_) {
+		anchor_ = composition_->originalSelection.anchor.utf8Offset;
+		head_ = composition_->originalSelection.head.utf8Offset;
+		composition_.reset();
+		marked_.reset();
+		storeRevision_ = stana::detail::nextIdentity();
 	}
-	marked_ = std::move(text);
-	return {};
 }
 
 auto TextBuffer::commitMarkedText() -> std::expected<void, Error> {
-	if (!marked_) {
+	if (!composition_) {
 		return {};
 	}
-	return replaceSelection(*marked_);
+	const auto saved = *composition_;
+	const auto original = currentState();
+	anchor_ = saved.replacement.start;
+	head_ = saved.replacement.end;
+	const auto result = replaceSelection(saved.text);
+	if (result && text_ != original.text && !undo_.empty()) {
+		undo_.back() = original;
+	}
+	return result;
+}
+
+auto TextBuffer::apply(const StoreEdit &edit) -> std::expected<void, Error> {
+	if (edit.stamp != stamp()) {
+		return std::unexpected(Error::invalidTextRange);
+	}
+	using enum StoreEdit::Kind;
+	if (edit.kind == cancel) {
+		cancelMarkedText();
+		return {};
+	}
+	if (edit.kind == commit) {
+		return commitMarkedText();
+	}
+	if ((edit.kind == replace || edit.kind == compose) && !isSingleLine(edit.text)) {
+		return std::unexpected(Error::invalidValue);
+	}
+	const auto display = displayedText();
+	auto range = edit.replacement.value_or(composition_
+		? TextRange{composition_->replacement.start,
+			composition_->replacement.start + composition_->text.size()}
+		: TextRange{std::min(anchor_, head_), std::max(anchor_, head_)});
+	if (edit.kind == select) {
+		range = {
+			std::min(edit.selection.start, edit.selection.end),
+			std::max(edit.selection.start, edit.selection.end)
+		};
+	}
+	const auto &source = edit.space == TextSpace::displayed ? display : text_;
+	if (!detail::validRange(source, range, false)) {
+		return std::unexpected(Error::invalidTextRange);
+	}
+	if (edit.kind == compose && !detail::validRange(edit.text, edit.selection, false)) {
+		return std::unexpected(Error::invalidTextRange);
+	}
+	if (edit.kind == select && composition_ && edit.space == TextSpace::displayed) {
+		const auto start = composition_->replacement.start;
+		const auto end = start + composition_->text.size();
+		if (range.start >= start && range.end <= end) {
+			const TextRange relative{edit.selection.start - start, edit.selection.end - start};
+			if (relative != composition_->selection) {
+				composition_->selection = relative;
+				storeRevision_ = stana::detail::nextIdentity();
+			}
+			return {};
+		}
+		if (range.start < end && range.end > start) {
+			return std::unexpected(Error::invalidTextRange);
+		}
+	}
+	auto value = edit.text;
+	auto relativeSelection = edit.selection;
+	if (composition_ && edit.space == TextSpace::displayed) {
+		const auto &old = *composition_;
+		const auto start = old.replacement.start;
+		const auto end = start + old.text.size();
+		if (range.start <= end && range.end >= start && edit.kind != select) {
+			const auto prefix = range.start > start ? old.text.substr(0, range.start - start) : "";
+			const auto suffix = range.end < end ? old.text.substr(range.end - start) : "";
+			value = prefix + value + suffix;
+			relativeSelection.start += prefix.size();
+			relativeSelection.end += prefix.size();
+			range = {
+				std::min(range.start, start),
+				range.end <= end ? old.replacement.end : old.replacement.end + range.end - end
+			};
+		} else if (range.start >= end) {
+			range = {
+				old.replacement.end + range.start - end,
+				old.replacement.end + range.end - end
+			};
+		}
+	}
+	if (!detail::validRange(text_, range, edit.kind == select)) {
+		return std::unexpected(Error::invalidTextRange);
+	}
+	if (edit.kind == select) {
+		const bool reversed = edit.selection.start > edit.selection.end;
+		return this->select(
+			{.anchor = {reversed ? range.end : range.start, revision_},
+				.head = {reversed ? range.start : range.end, revision_}}
+		);
+	}
+	if (edit.kind == compose) {
+		auto candidate = text_;
+		candidate.replace(range.start, range.end - range.start, value);
+		if (!isSingleLine(candidate)) {
+			return std::unexpected(Error::invalidValue);
+		}
+		const Composition next{
+			.replacement = range,
+			.originalSelection = composition_ ? composition_->originalSelection : selection(),
+			.text = value,
+			.selection = relativeSelection
+		};
+		if (composition_ != next) {
+			composition_ = next;
+			marked_ = value;
+			storeRevision_ = stana::detail::nextIdentity();
+		}
+		return {};
+	}
+	const auto original = currentState();
+	cancelMarkedText();
+	anchor_ = range.start;
+	head_ = range.end;
+	const auto result = replaceSelection(value, edit.groupWithPrevious);
+	if (result && text_ != original.text && !edit.groupWithPrevious && !undo_.empty()) {
+		undo_.back() = original;
+	}
+	return result;
 }
 
 auto TextBuffer::undo() -> bool {

@@ -382,14 +382,20 @@ inline namespace literals {
 }
 } // namespace literals
 
+/// @brief Portable font posture.
+enum class FontStyle : std::uint8_t { normal, italic };
+
 /// @brief System-font request shared by text measurement and painting.
 /// Set size in logical points and weight using FontWeight on the native system-font
 /// weight scale. Environment::textScale multiplies size; custom font-family selection
-/// is not exposed.
+/// uses an owned optional family name.
 struct Font {
 	Points size = defaults::fontSize; ///< Unscaled logical point size; Environment::textScale is
 									  ///< applied by the document.
 	FontWeight weight{}; ///< System font weight request; FontWeight::regular() is the default.
+
+	std::optional<std::string> family{}; ///< Omission selects the platform system family.
+	FontStyle style = FontStyle::normal; ///< Requested posture, with native fallback.
 
 	[[nodiscard]] static constexpr auto
 	system(Points size, FontWeight weight = FontWeight::regular()) noexcept -> Font {

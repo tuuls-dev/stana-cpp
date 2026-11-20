@@ -179,28 +179,104 @@ auto Document::activate(NodeId identity) -> std::expected<void, Error> {
 	return {};
 }
 
-auto Document::focus(NodeId identity) -> std::expected<void, Error> {
-	const auto *node = find(identity);
-	if (!isEligible(identity) || node == nullptr ||
-		(node->kind != NodeKind::button && node->kind != NodeKind::toggle)) {
+auto Document::focus(NodeId identity, FocusReason reason) -> std::expected<void, Error> {
+	const auto *requested = find(identity);
+	if (identity.serial != 0 &&
+		(!isEligible(identity) || requested == nullptr ||
+			(requested->kind != NodeKind::button && requested->kind != NodeKind::toggle &&
+				!requested->editor))) {
 		return std::unexpected(Error::notFocusable);
 	}
-	if (focused_ == identity) {
+	pendingFocus_ = identity.serial == 0 ? std::optional<NodeId>{} : std::optional{identity};
+	if (changingFocus_) {
 		return {};
 	}
-	const auto previous = focused_;
-	if (previous) {
-		invalidate(*previous, Dirty::paint | Dirty::snapshot);
+	changingFocus_ = true;
+
+	struct FocusGuard {
+		bool &changing;
+
+		explicit FocusGuard(bool &value) : changing(value) {}
+
+		FocusGuard(const FocusGuard &) = delete;
+		FocusGuard(FocusGuard &&) = delete;
+		auto operator=(const FocusGuard &) -> FocusGuard & = delete;
+		auto operator=(FocusGuard &&) -> FocusGuard & = delete;
+
+		~FocusGuard() { changing = false; }
+	};
+
+	const FocusGuard guard{changingFocus_};
+	constexpr std::size_t transitionLimit = 10000;
+	std::size_t transitions = 0;
+	while (pendingFocus_) {
+		if (++transitions > transitionLimit) {
+			throw std::logic_error("Focus transitions did not settle");
+		}
+		auto next = *pendingFocus_;
+		pendingFocus_.reset();
+		if (focused_ == next) {
+			continue;
+		}
+		const auto previous = focused_;
+		std::optional<std::string> blurValue;
+		if (const auto *oldNode = previous ? find(*previous) : nullptr;
+			oldNode != nullptr && oldNode->editor) {
+			blurValue = oldNode->editor->buffer.text();
+		}
+		if (const auto target = textInputTarget()) {
+			const auto finish = textServices_.finishComposition;
+			if (finish) {
+				if (const auto result = finish(); !result) {
+					report(result.error());
+				}
+			}
+			if (auto *node = find(target->node); node != nullptr && node->editor) {
+				const auto old = node->editor->buffer.text();
+				if (const auto result = node->editor->buffer.commitMarkedText(); !result) {
+					report(result.error());
+				}
+				node->editor->typingGroup = false;
+				node->editor->deletionGroup.reset();
+				editorChanged(target->node, old);
+			}
+		}
+		if (const auto *oldNode = previous ? find(*previous) : nullptr;
+			oldNode != nullptr && oldNode->editor) {
+			blurValue = oldNode->editor->buffer.text();
+		}
+		focused_.reset();
+		focusSession_ = stana::detail::nextIdentity();
+		capturedEditor_.reset();
+		if (previous) {
+			invalidate(*previous, Dirty::paint | Dirty::snapshot);
+			static_cast<void>(dispatch<FocusEvent>(
+				*previous,
+				EventKind::blur,
+				FocusEvent{.reason = reason, .relatedTarget = next, .value = blurValue},
+				true
+			));
+		}
+		if (pendingFocus_) {
+			next = *pendingFocus_;
+			pendingFocus_.reset();
+		}
+		if (next && find(*next) != nullptr && isEligible(*next)) {
+			focused_ = next;
+			focusBookmark_.clear();
+			focusBookmarkTarget_.reset();
+			invalidate(*next, Dirty::paint | Dirty::snapshot);
+			restartCaret(*next);
+			commit();
+			static_cast<void>(dispatch<FocusEvent>(
+				*next,
+				EventKind::focus,
+				FocusEvent{.reason = reason, .relatedTarget = previous},
+				true
+			));
+		}
 	}
-	focused_ = identity;
-	invalidate(identity, Dirty::paint | Dirty::snapshot);
 	commit();
-	if (previous && find(*previous) != nullptr) {
-		static_cast<void>(dispatch<FocusEvent>(*previous, EventKind::blur, FocusEvent{}, true));
-	}
-	if (focused_ == identity && find(identity) != nullptr) {
-		static_cast<void>(dispatch<FocusEvent>(identity, EventKind::focus, FocusEvent{}, true));
-	}
 	return {};
 }
 
@@ -209,7 +285,7 @@ void Document::tab(bool backwards) {
 	for (const auto &snapshot : snapshots()) {
 		const auto *node = find(snapshot.id);
 		if (node != nullptr && isEligible(node->id) &&
-			(node->kind == NodeKind::button || node->kind == NodeKind::toggle)) {
+			(node->kind == NodeKind::button || node->kind == NodeKind::toggle || node->editor)) {
 			candidates.push_back(node->id);
 		}
 	}
@@ -219,11 +295,92 @@ void Document::tab(bool backwards) {
 	if (candidates.empty()) {
 		return;
 	}
+	if (!focused_ && focusBookmarkTarget_ && !focusBookmark_.empty()) {
+		auto order = focusBookmark_;
+		if (backwards) {
+			std::ranges::reverse(order);
+		}
+		const auto lost = std::ranges::find(order, *focusBookmarkTarget_);
+		const auto start = lost == order.end()
+			? 0
+			: static_cast<std::size_t>(std::distance(order.begin(), lost)) + 1;
+		for (std::size_t offset = 0; offset < order.size(); ++offset) {
+			const auto candidate = order.at((start + offset) % order.size());
+			if (std::ranges::find(candidates, candidate) != candidates.end()) {
+				static_cast<void>(focus(candidate, FocusReason::traversal));
+				return;
+			}
+		}
+	}
 	const auto previous = std::ranges::find(candidates, focused_.value_or(NodeId{}));
 	const auto next = previous == candidates.end() ? candidates.begin() : std::next(previous);
-	if (const auto result = focus(next == candidates.end() ? candidates.front() : *next); !result) {
+	if (const auto result =
+			focus(next == candidates.end() ? candidates.front() : *next, FocusReason::traversal);
+		!result) {
 		report(result.error());
 	}
+}
+
+void Document::queueFocusLoss(NodeId identity, FocusReason reason) {
+	if (focused_ != identity) {
+		return;
+	}
+	focusBookmark_.clear();
+	for (const auto &snapshot : snapshots()) {
+		const auto *record = find(snapshot.id);
+		if (record != nullptr &&
+			(record->kind == NodeKind::button || record->kind == NodeKind::toggle ||
+				record->editor)) {
+			focusBookmark_.push_back(record->id);
+		}
+	}
+	focusBookmarkTarget_ = identity;
+	std::vector<std::pair<NodeId, std::vector<EventRegistration>>> registrations;
+	for (const auto id : ancestorRoute(identity)) {
+		if (const auto *record = find(id)) {
+			std::vector<EventRegistration> blur;
+			for (const auto &registration : record->events) {
+				if (registration.kind == EventKind::blur) {
+					blur.push_back(registration);
+				}
+			}
+			registrations.emplace_back(id, std::move(blur));
+		}
+	}
+	const auto *record = find(identity);
+	const auto value = record != nullptr && record->editor
+		? std::optional{record->editor->buffer.text()}
+		: std::nullopt;
+	const auto weak = weak_from_this();
+	reactive::detail::ReactiveRuntime::current().effects.emplace_back(
+		[weak, identity, reason, value, registrations] -> void {
+			const auto owner = weak.lock();
+			if (!owner) {
+				return;
+			}
+			FocusEvent event{.reason = reason, .value = value, .target = identity};
+			const auto invoke = [&](const auto &entry, Phase phase) -> void {
+				event.current = entry.first;
+				event.phase = phase;
+				for (const auto &registration : entry.second) {
+					if (registration.kind == EventKind::blur && registration.phase == phase) {
+						if (const auto *handler = std::get_if<std::function<void(FocusEvent &)>>(
+								&registration.handler
+							);
+							handler != nullptr && *handler) {
+							(*handler)(event);
+						}
+					}
+				}
+			};
+			for (const auto &entry : std::views::reverse(registrations)) {
+				invoke(entry, Phase::capture);
+			}
+			for (const auto &entry : registrations) {
+				invoke(entry, Phase::bubble);
+			}
+		}
+	);
 }
 
 auto Document::hitTestNode(NodeId identity, Point point) const -> std::optional<NodeId> {
@@ -268,6 +425,16 @@ auto Document::hitTest(Point point) const -> std::optional<NodeId> {
 }
 
 void Document::pointerDown(Point point) {
+	pointerDown(PointerInput{.position = point});
+}
+
+void Document::pointerDown(PointerInput input) {
+	const auto point = input.position;
+	stana::detail::requireFinite(point.x);
+	stana::detail::requireFinite(point.y);
+	if (input.clickCount == 0) {
+		throw std::invalid_argument("Pointer click count must be positive");
+	}
 	commit();
 	pointerPosition_ = point;
 	const auto target = hitTest(point);
@@ -278,25 +445,62 @@ void Document::pointerDown(Point point) {
 	const auto event = dispatch<PointerEvent>(
 		*target,
 		EventKind::pointerDown,
-		PointerEvent{.position = point},
+		PointerEvent{
+			.button = input.button,
+			.modifiers = input.modifiers,
+			.clickCount = input.clickCount,
+			.position = point
+		},
 		true
 	);
 	if (event.defaultPrevented) {
 		return;
 	}
+	if (input.button != PointerButton::primary) {
+		return;
+	}
+	bool acquired = false;
 	for (const auto identity : ancestorRoute(*target)) {
 		const auto *node = find(identity);
-		if (node != nullptr && (node->kind == NodeKind::button || node->kind == NodeKind::toggle)) {
-			pressed_ = identity;
-			if (const auto result = focus(identity); !result) {
+		if (node != nullptr &&
+			(node->kind == NodeKind::button || node->kind == NodeKind::toggle || node->editor)) {
+			acquired = true;
+			if (!node->editor) {
+				pressed_ = identity;
+			}
+			if (const auto result = focus(identity, FocusReason::pointer); !result) {
 				report(result.error());
+			}
+			if (const auto *current = find(identity); current != nullptr && current->editor) {
+				selectEditorAt(identity, point, input.modifiers.shift, input.clickCount == 2);
 			}
 			break;
 		}
 	}
+	if (!acquired) {
+		static_cast<void>(focus({}));
+	}
 }
 
 void Document::pointerUp(Point point) {
+	pointerUp(PointerInput{.position = point});
+}
+
+void Document::pointerUp(PointerInput input) {
+	const auto point = input.position;
+	stana::detail::requireFinite(point.x);
+	stana::detail::requireFinite(point.y);
+	if (input.clickCount == 0) {
+		throw std::invalid_argument("Pointer click count must be positive");
+	}
+	if (capturedEditor_) {
+		if (auto *node = find(*capturedEditor_); node != nullptr && node->editor) {
+			node->editor->dragAnchor.reset();
+			node->editor->dragGeneration = stana::detail::nextIdentity();
+			restartCaret(node->id);
+		}
+		capturedEditor_.reset();
+	}
 	pointerPosition_ = point;
 	const auto pressed = std::exchange(pressed_, std::nullopt);
 	const auto bounds = pressed ? interactionBounds(*pressed) : std::nullopt;
@@ -308,7 +512,12 @@ void Document::pointerUp(Point point) {
 		static_cast<void>(dispatch<PointerEvent>(
 			*target,
 			EventKind::pointerUp,
-			PointerEvent{.position = point},
+			PointerEvent{
+				.button = input.button,
+				.modifiers = input.modifiers,
+				.clickCount = input.clickCount,
+				.position = point
+			},
 			true
 		));
 	}
@@ -320,6 +529,24 @@ void Document::pointerUp(Point point) {
 }
 
 void Document::pointerMove(Point point) {
+	pointerMove(PointerInput{.position = point});
+}
+
+void Document::pointerMove(PointerInput input) {
+	const auto point = input.position;
+	stana::detail::requireFinite(point.x);
+	stana::detail::requireFinite(point.y);
+	if (input.clickCount == 0) {
+		throw std::invalid_argument("Pointer click count must be positive");
+	}
+	if (capturedEditor_) {
+		const auto identity = *capturedEditor_;
+		selectEditorAt(identity, point, true, false);
+		if (auto *node = find(identity); node != nullptr && node->editor) {
+			node->editor->dragGeneration = stana::detail::nextIdentity();
+			autoscrollEditor(identity, node->editor->dragGeneration);
+		}
+	}
 	pointerPosition_ = point;
 	const auto target = hitTest(point);
 	updateHover(target, point);
@@ -329,7 +556,12 @@ void Document::pointerMove(Point point) {
 	static_cast<void>(dispatch<PointerEvent>(
 		*target,
 		EventKind::pointerMove,
-		PointerEvent{.position = point},
+		PointerEvent{
+			.button = input.button,
+			.modifiers = input.modifiers,
+			.clickCount = input.clickCount,
+			.position = point
+		},
 		true
 	));
 }
@@ -339,6 +571,13 @@ void Document::pointerLeave() {
 }
 
 void Document::cancelPointer() {
+	if (capturedEditor_) {
+		if (auto *node = find(*capturedEditor_); node != nullptr && node->editor) {
+			node->editor->dragAnchor.reset();
+			node->editor->dragGeneration = stana::detail::nextIdentity();
+		}
+		capturedEditor_.reset();
+	}
 	pressed_.reset();
 }
 
@@ -435,6 +674,10 @@ void Document::acceptPresentation(stana::rendering::PresentationAttempt attempt)
 		}
 	}
 	pinnedGeometry_.erase(pinnedGeometry_.begin(), pinnedGeometry_.upper_bound(attempt.sequence));
+	if (textServices_.invalidateGeometry) {
+		const auto notify = textServices_.invalidateGeometry;
+		notify();
+	}
 }
 
 auto Document::reportGPUCompletion(stana::rendering::PresentationAttempt attempt, bool success)
@@ -581,15 +824,55 @@ void Document::keyActivate() {
 	}
 }
 
-void Document::keyDown(Key key, bool backwards) {
+auto Document::routeKey(Key key, bool released, bool backwards) -> bool {
 	const auto event = dispatch<KeyEvent>(
 		keyboardTarget(),
-		EventKind::keyDown,
+		released ? EventKind::keyUp : EventKind::keyDown,
 		KeyEvent{.key = key, .backwards = backwards},
 		true
 	);
-	if (event.defaultPrevented || isClosed_) {
+	return !event.defaultPrevented && !isClosed_;
+}
+
+void Document::keyDown(Key key, bool backwards) {
+	if (!routeKey(key, false, backwards)) {
 		return;
+	}
+	if (const auto target = textInputTarget()) {
+		const auto sequence = beginInputSequence();
+		if (key == Key::enter || key == Key::escape) {
+			const auto result = editingCommand(
+				*target,
+				sequence,
+				key == Key::enter ? EditingCommand::submit : EditingCommand::cancel
+			);
+			endInputSequence(sequence);
+			if (!result) {
+				report(result.error());
+			}
+			return;
+		}
+		if (key == Key::space) {
+			const auto result = editText(*target, sequence, {.text = " "});
+			endInputSequence(sequence);
+			if (!result) {
+				report(result.error());
+			}
+			return;
+		}
+		if (key == Key::tab) {
+			const auto snapshot = textInputSnapshot(*target);
+			if (snapshot && snapshot->composition) {
+				const auto result =
+					editText(*target, sequence, {.kind = text::StoreEdit::Kind::commit});
+				endInputSequence(sequence);
+				if (!result) {
+					report(result.error());
+				}
+				return;
+			}
+		}
+		endInputSequence(sequence);
 	}
 	switch (key) {
 	case Key::tab:
@@ -598,6 +881,9 @@ void Document::keyDown(Key key, bool backwards) {
 	case Key::space:
 	case Key::enter:
 		keyActivate();
+		break;
+	case Key::escape:
+	case Key::text:
 		break;
 	}
 }
