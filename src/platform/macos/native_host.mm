@@ -992,7 +992,7 @@ auto run(const std::vector<Window> &descriptions) -> std::expected<int, std::str
 																		 configuration.contentHeight
 																	 )];
 			view->state_ = state;
-			[view installTextInput];
+			stana::platform::detail::attachTextInput(view);
 			state->view = view;
 			view.wantsLayer = YES;
 

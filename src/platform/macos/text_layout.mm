@@ -39,7 +39,7 @@ auto resolveTextFont(const FontRequest &request) -> NSFont * {
 	return font;
 }
 
-auto shapeTextLine(const std::string &text, FontRequest font, bool rightToLeft)
+auto shapeTextLine(const std::string &text, const FontRequest &font, bool rightToLeft)
 	-> std::expected<NativeTextLine, std::string> {
 	@autoreleasepool {
 		if (!std::isfinite(font.size) || font.size < 0 || !std::isfinite(font.weight)) {
@@ -76,7 +76,7 @@ auto shapeTextLine(const std::string &text, FontRequest font, bool rightToLeft)
 			};
 			for (NSUInteger offset = 0; offset <= value.length; ++offset) {
 				if (offset < value.length &&
-					CFStringIsSurrogateLowCharacter([value characterAtIndex:offset])) {
+					(CFStringIsSurrogateLowCharacter([value characterAtIndex:offset]) != 0u)) {
 					continue;
 				}
 				CGFloat secondary = 0;

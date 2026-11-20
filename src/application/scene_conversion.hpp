@@ -1,6 +1,5 @@
 #ifndef STANA_SCENE_CONVERSION_HPP
 #define STANA_SCENE_CONVERSION_HPP
-#include "text_services.hpp"
 
 // Included after imports; shared by the production bridge and private native fixtures.
 // Standard headers belong in the includer, before its module declaration.

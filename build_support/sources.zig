@@ -34,7 +34,7 @@ pub const interfaces = [_]Source{
     .{ .path = "modules/tasks/tasks.cppm", .module = "stana:tasks", .imports = &.{ "stana:reactive", "stana:primitives" } },
     .{ .path = "modules/testing/testing.cppm", .module = "stana:testing", .imports = &.{ "stana:ui", "stana:document", "stana:symbol" } },
     .{ .path = "modules/text/text.cppm", .module = "stana:text", .imports = &.{"stana:primitives"} },
-    .{ .path = "modules/ui/ui.cppm", .module = "stana:ui", .imports = &.{ "stana:text", "stana:primitives", "stana:reactive", "stana:tasks", "stana:rendering", "stana:document", "stana:layout", "stana:text", "stana:tasks", "stana:symbol_asset", "stana:symbol_playback" } },
+    .{ .path = "modules/ui/ui.cppm", .module = "stana:ui", .imports = &.{ "stana:text", "stana:primitives", "stana:reactive", "stana:tasks", "stana:rendering", "stana:document", "stana:layout", "stana:symbol_asset", "stana:symbol_playback" } },
 };
 
 pub const portable = [_]Source{

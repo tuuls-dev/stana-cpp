@@ -37,6 +37,16 @@ struct TextSelection {
 /// @brief Returns whether all bytes form canonical, well-formed UTF-8 scalar values.
 /// Embedded NUL is valid; overlong encodings, surrogates and truncated sequences are not.
 [[nodiscard]] auto isValidUtf8(std::string_view text) noexcept -> bool;
+
+/// @brief One scalar boundary in both portable UTF encodings.
+struct ScalarBoundary {
+	std::size_t utf8Offset = 0;
+	std::size_t utf16Offset = 0;
+};
+
+/// @brief Computes all scalar boundaries in one pass, including zero and the final boundary.
+/// @throws std::invalid_argument for malformed UTF-8 or text exceeding ICU's supported size.
+[[nodiscard]] auto scalarBoundaries(const std::string &text) -> std::vector<ScalarBoundary>;
 /// @brief Computes extended-grapheme boundaries as UTF-8 byte offsets using ICU.
 /// Includes offsets zero and text.size(); the empty string has one boundary.
 /// @throws std::invalid_argument if text is malformed UTF-8 or exceeds ICU's size limit.

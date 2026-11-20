@@ -658,7 +658,8 @@ struct MailboxWakeup {
 
 /// @brief Measures UTF-8 text with the same Core Text font contract used for drawing.
 /// @return Logical width and line height, constrained by the requested maximum width.
-[[nodiscard]] auto measureText(const std::string &text, FontRequest font, double maximumWidth)
+[[nodiscard]] auto
+measureText(const std::string &text, const FontRequest &font, double maximumWidth)
 	-> std::pair<double, double>;
 } // namespace stana::platform::detail
 

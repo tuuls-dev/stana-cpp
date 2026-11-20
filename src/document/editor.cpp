@@ -54,7 +54,7 @@ constexpr std::chrono::milliseconds autoscrollPeriod{16};
 }
 
 [[nodiscard]] auto ordered(text::TextRange range) -> text::TextRange {
-	return {std::min(range.start, range.end), std::max(range.start, range.end)};
+	return {.start = std::min(range.start, range.end), .end = std::max(range.start, range.end)};
 }
 
 [[nodiscard]] auto adjacent(const std::vector<std::size_t> &stops, std::size_t head, bool forward)
@@ -229,7 +229,7 @@ void Document::editorChanged(NodeId identity, const std::string &previous) {
 	const auto value = node->text;
 	const auto binding = node->editor->binding;
 	const auto display = node->editor->buffer.displayedText();
-	const auto effectiveText = display;
+	const auto &effectiveText = display;
 	const bool layoutChanged = !node->textLayout || node->textLayout->request.text != effectiveText;
 	invalidate(
 		identity,
@@ -381,8 +381,9 @@ auto Document::editingCommand(
 	}
 	// Never keep an editor reference across host callbacks below.
 	auto snapshot = node->editor->buffer.snapshot();
-	auto range =
-		ordered({snapshot.selection.anchor.utf8Offset, snapshot.selection.head.utf8Offset});
+	auto range = ordered(
+		{.start = snapshot.selection.anchor.utf8Offset, .end = snapshot.selection.head.utf8Offset}
+	);
 	const auto content = snapshot.text;
 	if (command == copy || command == cut) {
 		const auto stamp = node->editor->buffer.stamp();
@@ -443,7 +444,7 @@ auto Document::editingCommand(
 		bool forward = false;
 		bool word = false;
 		if (command == selectAll) {
-			range = {0, content.size()};
+			range = {.start = 0, .end = content.size()};
 			position = range.end;
 			extend = true;
 		}
@@ -515,7 +516,7 @@ auto Document::editingCommand(
 			command == selectAll ? 0 : (extend ? snapshot.selection.anchor.utf8Offset : position);
 		if (deleting) {
 			if (range.start == range.end) {
-				range = ordered({head, position});
+				range = ordered({.start = head, .end = position});
 			}
 			const bool group = !word && oldDeletion == command;
 			const auto erased = node->editor->buffer.apply(
@@ -531,8 +532,8 @@ auto Document::editingCommand(
 			node->editor->deletionGroup = command;
 		} else {
 			const auto selected = node->editor->buffer.select(
-				{.anchor = {anchor, node->editor->buffer.revision()},
-					.head = {position, node->editor->buffer.revision()}}
+				{.anchor = {.utf8Offset = anchor, .revision = node->editor->buffer.revision()},
+					.head = {.utf8Offset = position, .revision = node->editor->buffer.revision()}}
 			);
 			if (!selected) {
 				return selected;
@@ -770,8 +771,8 @@ void Document::selectEditorAt(NodeId identity, Point point, bool extend, bool wo
 		head = adjacent(stops, *hit, true);
 	}
 	if (const auto selected = node->editor->buffer.select(
-			{.anchor = {anchor, node->editor->buffer.revision()},
-				.head = {head, node->editor->buffer.revision()}}
+			{.anchor = {.utf8Offset = anchor, .revision = node->editor->buffer.revision()},
+				.head = {.utf8Offset = head, .revision = node->editor->buffer.revision()}}
 		);
 		!selected) {
 		report(selected.error());

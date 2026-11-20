@@ -152,7 +152,8 @@ auto Document::measure(NodeId identity, Size available) -> Size {
 			} else {
 				node->editor->placeholderLayout.reset();
 			}
-			intrinsic.width = Points{160};
+			constexpr Points preferredInputWidth{160};
+			intrinsic.width = preferredInputWidth;
 		}
 		if (measureText_ && !node->editor) {
 			const auto inputText = node->text;
@@ -209,7 +210,7 @@ auto Document::measure(NodeId identity, Size available) -> Size {
 					if (record == nullptr) {
 						continue;
 					}
-					const double current = record->allocatedWidth->value();
+					const double current = record->allocatedWidth.value().value();
 					const double next = record->frame.maxWidth
 						? std::min(current + share, record->frame.maxWidth->value())
 						: current + share;

@@ -569,7 +569,9 @@ struct EditorState {
 
 /// @brief Per-document host operations; absent optional operations return explicit failures.
 struct TextServices {
-	::stana::text::LayoutProvider layout = [](const ::stana::text::LayoutRequest &request) {
+	::stana::text::LayoutProvider layout = [](
+											   const ::stana::text::LayoutRequest &request
+										   ) -> std::shared_ptr<const ::stana::text::TextLayout> {
 		return ::stana::text::layoutText(request);
 	};
 	std::function<std::expected<std::optional<std::string>, Error>()> readClipboard{};

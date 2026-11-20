@@ -32,11 +32,11 @@ auto createMailboxWakeup(const std::function<void()> &)
 	return std::unexpected("No native UI executor on this platform");
 }
 
-auto measureText(const std::string &, FontRequest, double) -> std::pair<double, double> {
+auto measureText(const std::string &, const FontRequest &, double) -> std::pair<double, double> {
 	unavailable("Native text measurement is unavailable on this platform");
 }
 
-auto shapeTextLine(const std::string &, FontRequest, bool)
+auto shapeTextLine(const std::string &, const FontRequest &, bool)
 	-> std::expected<NativeTextLine, std::string> {
 	return std::unexpected("Native text shaping is unavailable on this platform");
 }

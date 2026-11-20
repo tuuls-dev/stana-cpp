@@ -29,6 +29,11 @@
 - (void)tickFrameLink:(CADisplayLink *)link;
 @end
 
+namespace stana::platform::detail {
+/// @brief Forces the static archive to retain the text-input category, then attaches services.
+void attachTextInput(STANAView *view);
+} // namespace stana::platform::detail
+
 @interface STANAView (TextInput) <NSTextInputClient, NSMenuItemValidation>
 - (void)installTextInput;
 - (BOOL)handleTextKey:(NSEvent *)event;

@@ -6,6 +6,16 @@
 import stana;
 
 namespace {
+constexpr stana::Points siblingWidth{40};
+constexpr stana::Points initialFillWidth{80};
+constexpr stana::Points naturalLineHeight{20};
+constexpr stana::Points expandedRowWidth{200};
+constexpr stana::Points expandedFillWidth{160};
+constexpr stana::Points smallFontSize{10};
+constexpr stana::Points normalFontSize{14};
+constexpr stana::Points explicitLineHeight{30};
+constexpr stana::Points twoLineHeight{60};
+
 void require(bool condition, const std::string &message) {
 	if (!condition) {
 		throw std::runtime_error(message);
@@ -34,8 +44,7 @@ void constrainedWrapping() {
 			.children = stana::ui::children(
 				stana::ui::TextLabel{
 					.text = "X",
-					.layout =
-						{.frame = stana::Frame{.width = stana::Length::points(stana::Points{40})}}
+					.layout = {.frame = stana::Frame{.width = stana::Length::points(siblingWidth)}}
 				},
 				stana::ui::TextLabel{
 					.text = text,
@@ -46,16 +55,16 @@ void constrainedWrapping() {
 	);
 	const auto first = named(host, text.get());
 	require(
-		first.kind == "textLabel" && first.bounds.size.width == stana::Points{80} &&
-			first.bounds.size.height > stana::Points{20},
+		first.kind == "textLabel" && first.bounds.size.width == initialFillWidth &&
+			first.bounds.size.height > naturalLineHeight,
 		"fill label wraps in remaining sibling space"
 	);
 	const auto mounts = host.metrics().mounts;
-	width.set(stana::Frame{.width = stana::Length::points(stana::Points{200})});
+	width.set(stana::Frame{.width = stana::Length::points(expandedRowWidth)});
 	const auto wider = named(host, text.get());
 	require(
 		wider.id == first.id && host.metrics().mounts == mounts &&
-			wider.bounds.size.width == stana::Points{160} &&
+			wider.bounds.size.width == expandedFillWidth &&
 			wider.bounds.size.height < first.bounds.size.height,
 		"width change reflows same occurrence"
 	);
@@ -72,17 +81,17 @@ void typographyAndLineLimits() {
 		stana::ui::TextLabel{
 			.text = "first\nsecond\nthird",
 			.textStyle = {
-				.font = stana::Font::system(stana::Points{10}),
-				.fontSize = stana::Points{14},
+				.font = stana::Font::system(smallFontSize),
+				.fontSize = normalFontSize,
 				.fontStyle = italic,
-				.lineHeight = stana::Points{30},
+				.lineHeight = explicitLineHeight,
 				.maxLines = std::size_t{2},
 				.isStrikethrough = strike
 			}
 		}
 	);
 	require(
-		named(host, "first\nsecond\nthird").bounds.size.height == stana::Points{60},
+		named(host, "first\nsecond\nthird").bounds.size.height == twoLineHeight,
 		"line count clips at explicit line height"
 	);
 	const auto scene = host.scene();
@@ -91,7 +100,7 @@ void typographyAndLineLimits() {
 		if (command.kind == stana::rendering::PaintKind::text) {
 			++textCommands;
 			require(
-				command.font.size == stana::Points{14} &&
+				command.font.size == normalFontSize &&
 					command.font.style == stana::FontStyle::italic,
 				"individual font overrides whole font"
 			);

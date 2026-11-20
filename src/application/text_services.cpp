@@ -131,8 +131,17 @@ namespace native = ::stana::platform::detail;
 		.underlineThickness = Points{shaped->underlineThickness}
 	};
 	const auto graphemes = text::graphemeBoundaries(value);
+	const auto scalars = text::scalarBoundaries(value);
+	const auto byteOffset = [&](std::size_t units) -> std::expected<std::size_t, Error> {
+		const auto found =
+			std::ranges::lower_bound(scalars, units, {}, &text::ScalarBoundary::utf16Offset);
+		if (found == scalars.end() || found->utf16Offset != units) {
+			return std::unexpected(Error::invalidTextRange);
+		}
+		return found->utf8Offset;
+	};
 	for (const auto &stop : shaped->carets) {
-		const auto offset = text::utf8Offset(value, stop.utf16Offset);
+		const auto offset = byteOffset(stop.utf16Offset);
 		if (!offset) {
 			throw std::runtime_error("Invalid native caret offset");
 		}
@@ -144,13 +153,12 @@ namespace native = ::stana::platform::detail;
 		);
 	}
 	for (const auto &run : shaped->runs) {
-		const auto start = text::utf8Offset(value, run.start),
-				   end = text::utf8Offset(value, run.end);
+		const auto start = byteOffset(run.start), end = byteOffset(run.end);
 		if (!start || !end) {
 			throw std::runtime_error("Invalid native run offset");
 		}
 		line.runs.push_back(
-			{.source = {*start, *end},
+			{.source = {.start = *start, .end = *end},
 				.x = Points{run.x},
 				.width = Points{run.width},
 				.rightToLeft = run.rightToLeft}
@@ -170,7 +178,7 @@ namespace native = ::stana::platform::detail;
 	if (!start || !end) {
 		return std::unexpected(Error::invalidTextRange);
 	}
-	return text::TextRange{*start, *end};
+	return text::TextRange{.start = *start, .end = *end};
 }
 
 [[nodiscard]] auto displaySnapshot(const text::StoreSnapshot &snapshot) -> std::string {
@@ -191,7 +199,8 @@ auto installTextServices(const std::shared_ptr<document::detail::Document> &docu
 	-> native::TextInputCallbacks {
 	const auto host = std::make_shared<native::TextInputHost>();
 	document::detail::TextServices services;
-	services.layout = [](const text::LayoutRequest &request) {
+	services.layout =
+		[](const text::LayoutRequest &request) -> std::shared_ptr<const ::stana::text::TextLayout> {
 		return text::layoutText(request, shapeLine);
 	};
 	services.readClipboard = [] -> std::expected<std::optional<std::string>, Error> {
@@ -248,16 +257,16 @@ auto installTextServices(const std::shared_ptr<document::detail::Document> &docu
 			a = composition.replacement.start + composition.selection.start;
 			h = composition.replacement.start + composition.selection.end;
 			result.marked = native::NativeTextRange{
-				*text::utf16Offset(result.displayed, composition.replacement.start),
-				*text::utf16Offset(
+				.start = *text::utf16Offset(result.displayed, composition.replacement.start),
+				.end = *text::utf16Offset(
 					result.displayed,
 					composition.replacement.start + composition.text.size()
 				)
 			};
 		}
 		result.selected = {
-			*text::utf16Offset(result.displayed, std::min(a, h)),
-			*text::utf16Offset(result.displayed, std::max(a, h))
+			.start = *text::utf16Offset(result.displayed, std::min(a, h)),
+			.end = *text::utf16Offset(result.displayed, std::max(a, h))
 		};
 		return result;
 	};
@@ -362,10 +371,10 @@ auto installTextServices(const std::shared_ptr<document::detail::Document> &docu
 			return std::nullopt;
 		}
 		return native::NativeTextRect{
-			result->origin.x.value(),
-			result->origin.y.value(),
-			result->size.width.value(),
-			result->size.height.value()
+			.x = result->origin.x.value(),
+			.y = result->origin.y.value(),
+			.width = result->size.width.value(),
+			.height = result->size.height.value()
 		};
 	};
 	callbacks.index = [weak](double x, double y) -> std::optional<std::size_t> {

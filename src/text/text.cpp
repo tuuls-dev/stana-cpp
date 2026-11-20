@@ -95,8 +95,29 @@ auto isValidUtf8(std::string_view text) noexcept -> bool {
 	return remaining == 0;
 }
 
+auto scalarBoundaries(const std::string &text) -> std::vector<ScalarBoundary> {
+	if (!isValidUtf8(text) ||
+		text.size() > static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max())) {
+		throw std::invalid_argument("Invalid UTF-8 scalar map");
+	}
+	std::vector<ScalarBoundary> result{{}};
+	std::size_t bytes = 0;
+	std::size_t units = 0;
+	while (bytes < text.size()) {
+		const auto leading = static_cast<unsigned char>(text.at(bytes));
+		const std::size_t width = leading < asciiLimit
+			? 1
+			: (leading <= twoByteMaximum ? 2 : (leading <= threeByteMaximum ? 3 : 4));
+		bytes += width;
+		units += width == 4 ? 2 : 1;
+		result.push_back({.utf8Offset = bytes, .utf16Offset = units});
+	}
+	return result;
+}
+
 auto graphemeBoundaries(const std::string &text) -> std::vector<std::size_t> {
 	const auto unicode = unicodeText(text);
+	const auto scalars = scalarBoundaries(text);
 	UErrorCode status = U_ZERO_ERROR;
 	const std::unique_ptr<icu::BreakIterator> iterator{
 		icu::BreakIterator::createCharacterInstance(icu::Locale::getRoot(), status)
@@ -108,9 +129,16 @@ auto graphemeBoundaries(const std::string &text) -> std::vector<std::size_t> {
 	std::vector<std::size_t> boundaries;
 	for (auto boundary = iterator->first(); boundary != icu::BreakIterator::DONE;
 		boundary = iterator->next()) {
-		std::string prefix;
-		unicode.tempSubStringBetween(0, boundary).toUTF8String(prefix);
-		boundaries.push_back(prefix.size());
+		const auto found = std::ranges::lower_bound(
+			scalars,
+			static_cast<std::size_t>(boundary),
+			{},
+			&ScalarBoundary::utf16Offset
+		);
+		if (found == scalars.end() || found->utf16Offset != static_cast<std::size_t>(boundary)) {
+			throw std::runtime_error("ICU split a scalar boundary");
+		}
+		boundaries.push_back(found->utf8Offset);
 	}
 	return boundaries;
 }
@@ -152,6 +180,7 @@ namespace detail {
 namespace {
 [[nodiscard]] auto breaks(const std::string &text, bool words) -> std::vector<std::size_t> {
 	const auto unicode = unicodeText(text);
+	const auto scalars = scalarBoundaries(text);
 	UErrorCode status = U_ZERO_ERROR;
 	const std::unique_ptr<icu::BreakIterator> iterator{
 		words ? icu::BreakIterator::createWordInstance(icu::Locale::getRoot(), status)
@@ -164,9 +193,16 @@ namespace {
 	std::vector<std::size_t> result;
 	for (auto boundary = iterator->first(); boundary != icu::BreakIterator::DONE;
 		boundary = iterator->next()) {
-		std::string prefix;
-		unicode.tempSubStringBetween(0, boundary).toUTF8String(prefix);
-		result.push_back(prefix.size());
+		const auto found = std::ranges::lower_bound(
+			scalars,
+			static_cast<std::size_t>(boundary),
+			{},
+			&ScalarBoundary::utf16Offset
+		);
+		if (found == scalars.end() || found->utf16Offset != static_cast<std::size_t>(boundary)) {
+			throw std::runtime_error("ICU split a scalar boundary");
+		}
+		result.push_back(found->utf8Offset);
 	}
 	return result;
 }
@@ -204,12 +240,11 @@ auto normalizePaste(std::string_view text) -> std::expected<std::string, Error> 
 	for (std::size_t index = 0; index < text.size();) {
 		const auto tail = text.substr(index);
 		std::size_t length = 0;
-		if (tail.starts_with("\r\n")) {
+		if (tail.starts_with("\r\n") || tail.starts_with("\xC2\x85")) {
 			length = 2;
 		} else if (tail.starts_with('\r') || tail.starts_with('\n')) {
 			length = 1;
-		} else if (tail.starts_with("\xC2\x85")) {
-			length = 2;
+
 		} else if (tail.starts_with("\xE2\x80\xA8") || tail.starts_with("\xE2\x80\xA9")) {
 			length = 3;
 		}
@@ -287,7 +322,7 @@ auto TextBuffer::select(TextSelection value) -> std::expected<void, Error> {
 	}
 	const auto a = value.anchor.utf8Offset;
 	const auto h = value.head.utf8Offset;
-	if (!detail::validRange(text_, {std::min(a, h), std::max(a, h)}, true)) {
+	if (!detail::validRange(text_, {.start = std::min(a, h), .end = std::max(a, h)}, true)) {
 		return std::unexpected(Error::invalidTextRange);
 	}
 	if (anchor_ != a || head_ != h || composition_) {
@@ -363,7 +398,7 @@ auto TextBuffer::setMarkedText(std::string value) -> std::expected<void, Error> 
 		{.kind = StoreEdit::Kind::compose,
 			.stamp = stamp(),
 			.text = std::move(value),
-			.selection = {end, end}}
+			.selection = {.start = end, .end = end}}
 	);
 }
 
@@ -409,13 +444,13 @@ auto TextBuffer::apply(const StoreEdit &edit) -> std::expected<void, Error> {
 	}
 	const auto display = displayedText();
 	auto range = edit.replacement.value_or(composition_
-		? TextRange{composition_->replacement.start,
-			composition_->replacement.start + composition_->text.size()}
-		: TextRange{std::min(anchor_, head_), std::max(anchor_, head_)});
+		? TextRange{.start=composition_->replacement.start,
+			.end=composition_->replacement.start + composition_->text.size()}
+		: TextRange{.start=std::min(anchor_, head_), .end=std::max(anchor_, head_)});
 	if (edit.kind == select) {
 		range = {
-			std::min(edit.selection.start, edit.selection.end),
-			std::max(edit.selection.start, edit.selection.end)
+			.start = std::min(edit.selection.start, edit.selection.end),
+			.end = std::max(edit.selection.start, edit.selection.end)
 		};
 	}
 	const auto &source = edit.space == TextSpace::displayed ? display : text_;
@@ -429,7 +464,10 @@ auto TextBuffer::apply(const StoreEdit &edit) -> std::expected<void, Error> {
 		const auto start = composition_->replacement.start;
 		const auto end = start + composition_->text.size();
 		if (range.start >= start && range.end <= end) {
-			const TextRange relative{edit.selection.start - start, edit.selection.end - start};
+			const TextRange relative{
+				.start = edit.selection.start - start,
+				.end = edit.selection.end - start
+			};
 			if (relative != composition_->selection) {
 				composition_->selection = relative;
 				storeRevision_ = stana::detail::nextIdentity();
@@ -453,13 +491,14 @@ auto TextBuffer::apply(const StoreEdit &edit) -> std::expected<void, Error> {
 			relativeSelection.start += prefix.size();
 			relativeSelection.end += prefix.size();
 			range = {
-				std::min(range.start, start),
-				range.end <= end ? old.replacement.end : old.replacement.end + range.end - end
+				.start = std::min(range.start, start),
+				.end =
+					range.end <= end ? old.replacement.end : old.replacement.end + range.end - end
 			};
 		} else if (range.start >= end) {
 			range = {
-				old.replacement.end + range.start - end,
-				old.replacement.end + range.end - end
+				.start = old.replacement.end + range.start - end,
+				.end = old.replacement.end + range.end - end
 			};
 		}
 	}
@@ -469,8 +508,8 @@ auto TextBuffer::apply(const StoreEdit &edit) -> std::expected<void, Error> {
 	if (edit.kind == select) {
 		const bool reversed = edit.selection.start > edit.selection.end;
 		return this->select(
-			{.anchor = {reversed ? range.end : range.start, revision_},
-				.head = {reversed ? range.start : range.end, revision_}}
+			{.anchor = {.utf8Offset = reversed ? range.end : range.start, .revision = revision_},
+				.head = {.utf8Offset = reversed ? range.start : range.end, .revision = revision_}}
 		);
 	}
 	if (edit.kind == compose) {

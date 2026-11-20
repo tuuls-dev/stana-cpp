@@ -1,5 +1,6 @@
 #include "host_view.hpp"
 #include <array>
+#include <exception>
 #include <limits>
 #include <optional>
 #include <string>
@@ -34,7 +35,7 @@ namespace {
 		range.length > std::numeric_limits<NSUInteger>::max() - range.location) {
 		return std::nullopt;
 	}
-	return NativeTextRange{range.location, range.location + range.length};
+	return NativeTextRange{.start = range.location, .end = range.location + range.length};
 }
 
 [[nodiscard]] auto nsRange(NativeTextRange range) -> NSRange {
@@ -58,10 +59,14 @@ class InputScope {
 	auto operator=(InputScope &&) -> InputScope & = delete;
 
 	~InputScope() {
-		const auto sequence = view_->textSequence_;
-		view_->textSequence_ = previous_;
-		if (previous_ == 0 && sequence != 0 && callbacks_.end) {
-			callbacks_.end(sequence);
+		try {
+			const auto sequence = view_->textSequence_;
+			view_->textSequence_ = previous_;
+			if (previous_ == 0 && sequence != 0 && callbacks_.end) {
+				callbacks_.end(sequence);
+			}
+		} catch (...) {
+			std::terminate();
 		}
 	}
 
@@ -148,6 +153,12 @@ void applyNativeEdit(STANAView *view, const NativeTextEdit &edit) {
 	);
 }
 } // namespace
+} // namespace stana::platform::detail
+
+namespace stana::platform::detail {
+void attachTextInput(STANAView *view) {
+	[view installTextInput];
+}
 } // namespace stana::platform::detail
 
 @implementation STANAView (TextInput)
@@ -351,9 +362,9 @@ void applyNativeEdit(STANAView *view, const NativeTextEdit &edit) {
 													encoding:NSUTF8StringEncoding];
 	if (checked->end > string.length ||
 		(checked->start < string.length &&
-			CFStringIsSurrogateLowCharacter([string characterAtIndex:checked->start])) ||
+			(CFStringIsSurrogateLowCharacter([string characterAtIndex:checked->start]) != 0u)) ||
 		(checked->end < string.length &&
-			CFStringIsSurrogateLowCharacter([string characterAtIndex:checked->end]))) {
+			(CFStringIsSurrogateLowCharacter([string characterAtIndex:checked->end]) != 0u))) {
 		if (actual != nullptr) {
 			*actual = NSMakeRange(NSNotFound, 0);
 		}

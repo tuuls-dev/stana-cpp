@@ -298,7 +298,8 @@ auto Document::project(
 			if (node->editor && !placeholder) {
 				const auto range = node->editor->buffer.displayedSelection();
 				selection = layout.selection(
-					{std::min(range.start, range.end), std::max(range.start, range.end)}
+					{.start = std::min(range.start, range.end),
+						.end = std::max(range.start, range.end)}
 				);
 				for (const auto &rect : selection) {
 					scene.commands.push_back(
@@ -366,8 +367,9 @@ auto Document::project(
 				const auto snapshot = node->editor->buffer.snapshot();
 				if (snapshot.composition) {
 					const auto start = snapshot.composition->replacement.start;
-					for (const auto &rect :
-						layout.selection({start, start + snapshot.composition->text.size()})) {
+					for (const auto &rect : layout.selection(
+							 {.start = start, .end = start + snapshot.composition->text.size()}
+						 )) {
 						scene.commands.push_back(
 							{.kind = stana::rendering::PaintKind::line,
 								.bounds = translate(

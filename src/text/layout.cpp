@@ -18,19 +18,21 @@ namespace {
 [[nodiscard]] auto deterministicLine(const std::string &text, const Font &font, Direction direction)
 	-> ShapedLine {
 	constexpr double baseSize = 14;
+	constexpr double ascent = 15;
+	constexpr double descent = 5;
+	constexpr double xHeight = 7;
+	constexpr double scalarAdvance = 8;
 	const double scale = font.size.value() / baseSize;
 	ShapedLine result{
-		.ascent = Points{15 * scale},
-		.descent = Points{5 * scale},
-		.xHeight = Points{7 * scale},
+		.ascent = Points{ascent * scale},
+		.descent = Points{descent * scale},
+		.xHeight = Points{xHeight * scale},
 		.underlineThickness = Points{scale}
 	};
 	const auto graphemes = graphemeBoundaries(text);
 	Points x{};
-	for (std::size_t offset = 0; offset <= text.size(); ++offset) {
-		if (!utf16Offset(text, offset)) {
-			continue;
-		}
+	for (const auto boundary : scalarBoundaries(text)) {
+		const auto offset = boundary.utf8Offset;
 		result.carets.push_back(
 			{.offset = offset,
 				.primary = x,
@@ -38,7 +40,7 @@ namespace {
 				.isGrapheme = std::ranges::binary_search(graphemes, offset)}
 		);
 		if (offset != text.size()) {
-			x += Points{8 * scale};
+			x += Points{scalarAdvance * scale};
 		}
 	}
 	result.width = x;
@@ -49,7 +51,9 @@ namespace {
 			stop.secondary = stop.primary;
 		}
 	}
-	result.runs.push_back({.source = {0, text.size()}, .width = x, .rightToLeft = rtl});
+	result.runs.push_back(
+		{.source = {.start = 0, .end = text.size()}, .width = x, .rightToLeft = rtl}
+	);
 	return result;
 }
 
@@ -111,8 +115,11 @@ auto layoutText(const LayoutRequest &request, const LineShaper &shaper)
 	const auto graphemes = graphemeBoundaries(request.text);
 	const auto opportunities = lineBoundaries(request.text);
 	std::size_t start = 0;
+	std::size_t hardEnd = 0;
 	while (start <= request.text.size()) {
-		std::size_t hardEnd = start;
+		if (start >= hardEnd) {
+			hardEnd = start;
+		}
 		while (hardEnd < request.text.size() && detail::hardBreakSize(request.text, hardEnd) == 0) {
 			++hardEnd;
 		}
@@ -121,10 +128,9 @@ auto layoutText(const LayoutRequest &request, const LineShaper &shaper)
 		if (request.wrap != Wrap::none && request.width && request.width->value() > 0) {
 			std::size_t fitting = start;
 			std::size_t wordEnd = start;
-			for (const auto boundary : graphemes) {
-				if (boundary <= start || boundary > hardEnd) {
-					continue;
-				}
+			const auto first = std::ranges::upper_bound(graphemes, start);
+			const auto last = std::ranges::upper_bound(graphemes, hardEnd);
+			for (const auto boundary : std::ranges::subrange(first, last)) {
 				if (shape(request.text.substr(start, boundary - start)).width > *request.width) {
 					end = fitting == start ? boundary : fitting;
 					if (request.wrap == Wrap::word && wordEnd > start) {
@@ -155,7 +161,7 @@ auto layoutText(const LayoutRequest &request, const LineShaper &shaper)
 			x = extent - line.width;
 		}
 		result->lines.push_back(
-			{.source = {start, end == hardEnd ? end + breakSize : end},
+			{.source = {.start = start, .end = end == hardEnd ? end + breakSize : end},
 				.inkEnd = end,
 				.origin = {.x = x, .y = result->size.height},
 				.baseline = baseline,

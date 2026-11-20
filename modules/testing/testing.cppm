@@ -40,7 +40,9 @@ struct MemoryClipboard {
 
 /// @brief Deterministic portable services installed before mounting any component.
 struct TestPlatform {
-	::stana::text::LayoutProvider layout = [](const ::stana::text::LayoutRequest &request) {
+	::stana::text::LayoutProvider layout = [](
+											   const ::stana::text::LayoutRequest &request
+										   ) -> std::shared_ptr<const ::stana::text::TextLayout> {
 		return ::stana::text::layoutText(request);
 	};
 	std::shared_ptr<MemoryClipboard> clipboard = std::make_shared<MemoryClipboard>();

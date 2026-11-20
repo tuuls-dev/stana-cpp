@@ -944,7 +944,7 @@ void encodeTile(id<MTLBlitCommandEncoder> encoder, const RasterTile &tile, id<MT
 		  destinationOrigin:MTLOriginMake(0, 0, 0)];
 }
 
-auto measureText(const std::string &text, FontRequest font, double maximumWidth)
+auto measureText(const std::string &text, const FontRequest &font, double maximumWidth)
 	-> std::pair<double, double> {
 	@autoreleasepool {
 		const PreparedText prepared{

@@ -11,6 +11,9 @@ import stana;
 namespace {
 using stana::document::EditingCommand;
 using stana::text::StoreEdit;
+constexpr stana::Points hostWidth{300};
+constexpr stana::Points hostHeight{80};
+constexpr std::chrono::milliseconds caretHalfPeriod{500};
 
 void require(bool value, const std::string &message) {
 	if (!value) {
@@ -54,18 +57,26 @@ void compositionSequence() {
 		host.setMarkedText("日本").has_value() && value.get().empty(),
 		"preedit is not model text"
 	);
-	const auto before = input(host).editor->store;
+	const auto before = input(host).editor.value().store;
 	value.set("");
-	require(input(host).editor->store.stamp == before.stamp, "equal model echo preserves store");
+	require(
+		input(host).editor.value().store.stamp == before.stamp,
+		"equal model echo preserves store"
+	);
 	const auto sequence = host.beginInputSequence();
 	require(
-		host.dispatchText(*host.textInputTarget(), sequence, {.kind = StoreEdit::Kind::commit})
+		host.dispatchText(
+				host.textInputTarget().value(),
+				sequence,
+				{.kind = StoreEdit::Kind::commit}
+		)
 			.has_value(),
 		"commit preedit"
 	);
 	require(value.get() == "日本", "committed binding");
 	require(
-		host.dispatchCommand(*host.textInputTarget(), sequence, EditingCommand::submit).has_value(),
+		host.dispatchCommand(host.textInputTarget().value(), sequence, EditingCommand::submit)
+			.has_value(),
 		"same sequence submit"
 	);
 	require(submissions == 0, "composition consumes submit");
@@ -90,7 +101,7 @@ void selectionHistoryAndClipboard() {
 	const stana::reactive::Signal value{std::string{}};
 	const auto clipboard = std::make_shared<stana::testing::MemoryClipboard>();
 	stana::testing::TestHost host{
-		{.width = stana::Points{300}, .height = stana::Points{80}},
+		{.width = hostWidth, .height = hostHeight},
 		{},
 		{.clipboard = clipboard}
 	};
@@ -152,7 +163,7 @@ void staleTargetsAndExternalValues() {
 	stana::testing::TestHost host;
 	host.mount(stana::ui::TextInput{.value = value.binding()});
 	focus(host);
-	const auto target = *host.textInputTarget();
+	const auto target = host.textInputTarget().value();
 	const auto sequence = host.beginInputSequence();
 	require(
 		host.editingCommand(EditingCommand::selectAll).has_value(),
@@ -167,8 +178,8 @@ void staleTargetsAndExternalValues() {
 	require(host.setMarkedText("候補").has_value(), "compose before external value");
 	value.set("external");
 	require(
-		input(host).text == "external" && !input(host).editor->store.composition &&
-			!input(host).editor->store.canUndo,
+		input(host).text == "external" && !input(host).editor.value().store.composition &&
+			!input(host).editor.value().store.canUndo,
 		"different external value resets editor"
 	);
 	value.set("invalid\xE2\x80\xA8value");
@@ -176,10 +187,10 @@ void staleTargetsAndExternalValues() {
 		input(host).text == "external" && host.errors().back() == stana::Error::invalidValue,
 		"invalid external value preserves editor"
 	);
-	const auto active = *host.textInputTarget();
+	const auto active = host.textInputTarget().value();
 	host.setInputActive(false);
 	require(
-		!host.textInputTarget() && input(host).isFocused && !input(host).editor->isActive,
+		!host.textInputTarget() && input(host).isFocused && !input(host).editor.value().isActive,
 		"inactive retains logical focus"
 	);
 	host.setInputActive(true);
@@ -218,7 +229,8 @@ void reentrancyAndMenus() {
 	const auto sequence = host.beginInputSequence();
 	require(host.insertText("new").has_value(), "change state while menu open");
 	require(
-		!host.dispatchCommand(*menuTarget, sequence, EditingCommand::cut) && value.get() == "new",
+		!host.dispatchCommand(menuTarget.value(), sequence, EditingCommand::cut) &&
+			value.get() == "new",
 		"stale menu cannot cut new content"
 	);
 	host.endInputSequence(sequence);
@@ -235,11 +247,7 @@ void bindingSetterReentrancy() {
 		value.set("replacement");
 		return {};
 	};
-	stana::testing::TestHost host{
-		{.width = stana::Points{300}, .height = stana::Points{80}},
-		{},
-		platform
-	};
+	stana::testing::TestHost host{{.width = hostWidth, .height = hostHeight}, {}, platform};
 	host.mount(stana::ui::TextInput{.value = value.binding()});
 	focus(host);
 	require(host.editingCommand(EditingCommand::selectAll).has_value(), "select for reentrant cut");
@@ -255,11 +263,11 @@ void eligibilityAndBlink() {
 	stana::testing::TestHost host;
 	host.mount(stana::ui::TextInput{.value = value.binding(), .interaction = {.inert = inert}});
 	focus(host);
-	require(input(host).editor->isCaretVisible, "initial solid caret");
-	host.advanceTime(std::chrono::milliseconds{500});
-	require(!input(host).editor->isCaretVisible, "deterministic caret blink");
+	require(input(host).editor.value().isCaretVisible, "initial solid caret");
+	host.advanceTime(caretHalfPeriod);
+	require(!input(host).editor.value().isCaretVisible, "deterministic caret blink");
 	require(
-		host.insertText("a").has_value() && input(host).editor->isCaretVisible,
+		host.insertText("a").has_value() && input(host).editor.value().isCaretVisible,
 		"typing resets blink"
 	);
 	inert.set(true);

@@ -59,7 +59,7 @@ struct NativeTextLine {
 	std::shared_ptr<const TextResource> resource{};
 };
 
-[[nodiscard]] auto shapeTextLine(const std::string &text, FontRequest font, bool rightToLeft)
+[[nodiscard]] auto shapeTextLine(const std::string &text, const FontRequest &font, bool rightToLeft)
 	-> std::expected<NativeTextLine, std::string>;
 [[nodiscard]] auto readTextClipboard() -> std::expected<std::optional<std::string>, std::string>;
 [[nodiscard]] auto writeTextClipboard(const std::string &text) -> std::expected<void, std::string>;
