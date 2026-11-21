@@ -5,6 +5,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 import stana;
 
@@ -13,6 +14,7 @@ using stana::document::EditingCommand;
 using stana::text::StoreEdit;
 constexpr stana::Points hostWidth{300};
 constexpr stana::Points hostHeight{80};
+constexpr stana::Points compositionFontSize{28};
 constexpr std::chrono::milliseconds caretHalfPeriod{500};
 
 void require(bool value, const std::string &message) {
@@ -269,6 +271,56 @@ void bindingSetterReentrancy() {
 	);
 }
 
+void compositionLayoutChangeCancelsPointerDefault() {
+	constexpr stana::Points contentStart{8};
+	constexpr stana::Points pointerY{10};
+	const stana::reactive::Signal value{std::string{}};
+	const stana::reactive::Signal font{stana::Font::system(stana::defaults::fontSize)};
+	const auto document =
+		stana::document::detail::Document::create({.width = hostWidth, .height = hostHeight});
+	stana::document::detail::TextServices services;
+	services.finishComposition = [font] -> std::expected<void, stana::Error> {
+		font.set(stana::Font::system(compositionFontSize));
+		return {};
+	};
+	document->setTextServices(std::move(services));
+	stana::ui::MountContext context{.document = document, .parent = document->root()};
+	const auto handle = stana::ui::mount(
+		stana::ui::TextInput{.value = value.binding(), .textStyle = {.font = font}},
+		context
+	);
+	require(handle.requestFocus().has_value(), "focus composition layout probe");
+	const auto target = document->textInputTarget();
+	if (!target) {
+		throw std::runtime_error("Missing composition layout target");
+	}
+	const stana::document::InputSequenceScope sequence{document};
+	require(
+		document
+			->editText(
+				*target,
+				sequence.sequence(),
+				{.kind = StoreEdit::Kind::compose,
+					.text = "abc",
+					.selection = {.start = 3, .end = 3}}
+			)
+			.has_value(),
+		"prepare pointer preedit"
+	);
+	document->pointerDown(stana::Point{.x = contentStart, .y = pointerY});
+	const auto current = document->textInputTarget();
+	if (!current) {
+		throw std::runtime_error("Composition layout target retired");
+	}
+	const auto snapshot = document->textInputSnapshot(*current);
+	require(
+		snapshot && snapshot->text == "abc" && value.get() == "abc" && !snapshot->composition &&
+			snapshot->selection.head.utf8Offset == snapshot->text.size(),
+		"changed shaping cancels the old hit while retaining the composition commit"
+	);
+	document->close();
+}
+
 void eligibilityAndBlink() {
 	const stana::reactive::Signal value{std::string{}};
 	const stana::reactive::Signal inert{false};
@@ -295,6 +347,7 @@ auto main() -> int {
 		reentrancyAndMenus();
 		bindingSetterReentrancy();
 		eligibilityAndBlink();
+		compositionLayoutChangeCancelsPointerDefault();
 		return 0;
 	} catch (const std::exception &error) {
 		std::cerr << error.what() << '\n';

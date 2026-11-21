@@ -236,7 +236,7 @@ void Document::editorChanged(NodeId identity, const std::string &previous) {
 		(layoutChanged ? Dirty::measure : Dirty::arrange) | Dirty::paint | Dirty::snapshot
 	);
 	restartCaret(identity);
-	if (value != previous) {
+	if (value != previous && binding.get() != value) {
 		node = nullptr;
 		binding.set(value);
 	}
@@ -745,8 +745,9 @@ void Document::selectEditorAt(NodeId identity, Point point, bool extend, bool wo
 	}
 	auto *node = find(identity);
 	const auto previous = node->editor->buffer.text();
-	if (node->editor->buffer.snapshot().composition) {
+	if (node->editor->buffer.markedText()) {
 		const auto displayed = node->editor->buffer.displayedText();
+		const auto layout = node->textLayout;
 		const auto finish = textServices_.finishComposition;
 		if (finish) {
 			if (const auto result = finish(); !result) {
@@ -755,14 +756,18 @@ void Document::selectEditorAt(NodeId identity, Point point, bool extend, bool wo
 			}
 		}
 		node = find(identity);
-		if (node == nullptr || !node->editor || focused_ != identity) {
+		if (node == nullptr || !node->editor || focused_ != identity ||
+			focusSession_ != target->session) {
 			return;
 		}
 		if (const auto result = node->editor->buffer.commitMarkedText(); !result) {
 			report(result.error());
 			return;
 		}
-		if (node->editor->buffer.displayedText() != displayed) {
+		if (node->editor->buffer.displayedText() != displayed || !layout || !node->textLayout ||
+			node->textLayout->request != layout->request) {
+			editorChanged(identity, previous);
+			commit();
 			return;
 		}
 	}

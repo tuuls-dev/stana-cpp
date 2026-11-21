@@ -410,7 +410,6 @@ void keyboardFocusAndDefaults() {
 	stana::NodeId firstId{};
 	stana::NodeId secondId{};
 	stana::NodeId stackId{};
-	stana::testing::TestHost host;
 	const auto name = [&](stana::NodeId identity) -> std::string {
 		if (identity == firstId) {
 			return "first";
@@ -443,6 +442,7 @@ void keyboardFocusAndDefaults() {
 		++releases;
 		require(event.phase == stana::ui::Phase::bubble, "key release bubbles");
 	};
+	stana::testing::TestHost host;
 	host
 		.mount(
 			stana::ui::VStack{

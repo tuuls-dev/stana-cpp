@@ -119,8 +119,8 @@ auto shapeTextLine(const std::string &text, const FontRequest &font, bool rightT
 						CGSize advance{};
 						CTRunGetPositions(run, CFRangeMake(glyph, 1), &position);
 						CTRunGetAdvances(run, CFRangeMake(glyph, 1), &advance);
-						left = std::min(left, std::min(position.x, position.x + advance.width));
-						right = std::max(right, std::max(position.x, position.x + advance.width));
+						left = std::min({left, position.x, position.x + advance.width});
+						right = std::max({right, position.x, position.x + advance.width});
 					}
 				}
 				result.runs.push_back(
