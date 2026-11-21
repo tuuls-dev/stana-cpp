@@ -30,6 +30,8 @@ namespace stana::document {
 namespace {
 constexpr Points buttonPadding{10};
 constexpr Points defaultCornerRadius{6};
+constexpr Points inputVerticalPadding{6};
+constexpr Points inputHorizontalPadding{8};
 } // namespace
 
 namespace detail {
@@ -82,6 +84,7 @@ void Document::close() {
 	gpuFailures_.clear();
 	pinnedGeometry_.clear();
 	confirmedGeometry_.reset();
+	stana::reactive::detail::ReactiveRuntime::current().flush();
 }
 
 auto Document::createNode(NodeKind kind, NodeId parent) -> NodeId {
@@ -103,8 +106,12 @@ auto Document::createNode(NodeKind kind, NodeId parent) -> NodeId {
 		node->wrap = text::Wrap::word;
 	}
 	if (kind == NodeKind::textInput) {
-		node->padding =
-			{.top = Points{6}, .leading = Points{8}, .bottom = Points{6}, .trailing = Points{8}};
+		node->padding = {
+			.top = inputVerticalPadding,
+			.leading = inputHorizontalPadding,
+			.bottom = inputVerticalPadding,
+			.trailing = inputHorizontalPadding
+		};
 		node->cornerRadius = Points{4};
 		node->borderWidth = Points{1};
 		node->borderColor = Color::border();
@@ -175,9 +182,12 @@ void Document::remove(NodeId identity) {
 	// Lookup retirement precedes every application cleanup. An owning batch keeps
 	// scopes/storage alive even when cleanup reenters removal or commits a sibling.
 	std::vector<std::unique_ptr<Node>> disposal;
+	bool discardInput = false;
 	for (const auto id : retired) {
 		auto entry = nodes_.extract(id.serial);
 		if (!entry.empty()) {
+			discardInput =
+				discardInput || (focused_ == id && static_cast<bool>(entry.mapped()->editor));
 			disposal.push_back(std::move(entry.mapped()));
 		}
 		if (focused_ == id) {
@@ -204,6 +214,10 @@ void Document::remove(NodeId identity) {
 	}
 	if (find(parentId) != nullptr) {
 		invalidate(parentId, Dirty::measure | Dirty::arrange | Dirty::structure);
+	}
+	if (discardInput && textServices_.discardComposition) {
+		const auto discard = textServices_.discardComposition;
+		discard();
 	}
 	for (auto &record : std::views::reverse(disposal)) {
 		record->scope.dispose();

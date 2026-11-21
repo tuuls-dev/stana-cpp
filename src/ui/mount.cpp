@@ -192,6 +192,14 @@ void applyTypography(
 	);
 	if (placeholder) {
 		bindTypography(
+			properties.isStrikethrough,
+			&Overrides::isStrikethrough,
+			identity,
+			context,
+			true,
+			[](bool) -> void {}
+		);
+		bindTypography(
 			properties.font,
 			&Overrides::font,
 			identity,

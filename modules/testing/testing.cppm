@@ -153,7 +153,7 @@ class TestHost {
 		return editText(
 			{.kind = ::stana::text::StoreEdit::Kind::compose,
 				.text = std::move(value),
-				.selection = {end, end}}
+				.selection = {.start = end, .end = end}}
 		);
 	}
 

@@ -307,7 +307,9 @@ void Document::tab(bool backwards) {
 		for (std::size_t offset = 0; offset < order.size(); ++offset) {
 			const auto candidate = order.at((start + offset) % order.size());
 			if (std::ranges::find(candidates, candidate) != candidates.end()) {
-				static_cast<void>(focus(candidate, FocusReason::traversal));
+				if (const auto result = focus(candidate, FocusReason::traversal); !result) {
+					report(result.error());
+				}
 				return;
 			}
 		}
@@ -478,7 +480,9 @@ void Document::pointerDown(PointerInput input) {
 		}
 	}
 	if (!acquired) {
-		static_cast<void>(focus({}));
+		if (const auto result = focus({}, FocusReason::pointer); !result) {
+			report(result.error());
+		}
 	}
 }
 

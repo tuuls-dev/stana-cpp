@@ -210,7 +210,10 @@ auto Document::measure(NodeId identity, Size available) -> Size {
 					if (record == nullptr) {
 						continue;
 					}
-					const double current = record->allocatedWidth.value().value();
+					if (!record->allocatedWidth) {
+						throw std::logic_error("Missing retained fill allocation");
+					}
+					const double current = record->allocatedWidth->value();
 					const double next = record->frame.maxWidth
 						? std::min(current + share, record->frame.maxWidth->value())
 						: current + share;

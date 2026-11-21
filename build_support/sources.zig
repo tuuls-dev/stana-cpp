@@ -67,6 +67,7 @@ pub const portable = [_]Source{
 
 pub const macos = [_]Source{
     .{ .path = "src/platform/macos/compositor.mm" },
+    .{ .path = "src/platform/macos/clipboard.mm" },
     .{ .path = "src/platform/macos/gpu_programs.mm" },
     .{ .path = "src/platform/macos/gpu_resources.mm" },
     .{ .path = "src/platform/macos/native_host.mm" },

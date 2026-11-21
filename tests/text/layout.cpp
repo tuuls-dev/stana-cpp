@@ -10,6 +10,7 @@ constexpr stana::Points centeredLineX{24};
 constexpr stana::Points explicitLineHeight{30};
 constexpr stana::Points middleCaretX{40};
 constexpr stana::Points selectionWidth{16};
+constexpr stana::Points bidiAdvance{8};
 
 void require(bool condition, const std::string &message) {
 	if (!condition) {
@@ -81,13 +82,66 @@ void geometryAndTypography() {
 		empty->lines.empty() && empty->size == stana::Size{},
 		"zero font has no resources or geometry"
 	);
+	const auto scaledZero = stana::text::layoutText(
+		{.text = "zero",
+			.font = stana::Font::system(stana::Points{}),
+			.lineHeight = stana::Points{}}
+	);
+	require(
+		scaledZero->size == stana::Size{} && scaledZero->lines.empty(),
+		"zero scale permits a resolved zero line height"
+	);
 }
+
+void bidiSelectionFragments() {
+	constexpr std::size_t rtlMiddle = 4;
+	constexpr std::size_t rtlEnd = 6;
+	const auto layout = stana::text::layoutText(
+		{.text = "abאב"},
+		[](const std::string &, const stana::Font &, stana::Direction) -> stana::text::ShapedLine {
+			return {
+				.width = selectionWidth * 2,
+				.ascent = naturalLineHeight,
+				.carets =
+					{{.offset = 0},
+						{.offset = 1, .primary = bidiAdvance, .secondary = bidiAdvance},
+						{.offset = 2, .primary = selectionWidth, .secondary = selectionWidth * 2},
+						{.offset = rtlMiddle,
+							.primary = selectionWidth + bidiAdvance,
+							.secondary = selectionWidth + bidiAdvance},
+						{.offset = rtlEnd, .primary = selectionWidth, .secondary = selectionWidth}},
+				.runs = {
+					{.source = {.start = 0, .end = 2}, .width = selectionWidth},
+					{.source = {.start = 2, .end = rtlEnd},
+						.x = selectionWidth,
+						.width = selectionWidth,
+						.rightToLeft = true}
+				}
+			};
+		}
+	);
+	const auto rtl = layout->selection({.start = 2, .end = rtlEnd});
+	require(
+		rtl.size() == 1 && rtl.front().origin.x == selectionWidth &&
+			rtl.front().size.width == selectionWidth,
+		"RTL run boundaries use their own visual affinity"
+	);
+	const auto split = layout->selection({.start = 1, .end = rtlMiddle});
+	require(
+		split.size() == 2 && split.front().size.width == bidiAdvance &&
+			split.at(1).size.width == bidiAdvance &&
+			split.at(1).origin.x == selectionWidth + bidiAdvance,
+		"mixed-direction selections retain disjoint fragments"
+	);
+}
+
 } // namespace
 
 auto main() -> int {
 	try {
 		wrappingAndHardBreaks();
 		geometryAndTypography();
+		bidiSelectionFragments();
 		return 0;
 	} catch (const std::exception &error) {
 		std::cerr << error.what() << '\n';

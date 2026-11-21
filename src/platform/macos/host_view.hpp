@@ -16,6 +16,7 @@
 	bool frameLinkRetired_;
 	NSTextInputContext *textContext_;
 	std::uint64_t textSequence_;
+	std::optional<stana::platform::detail::NativeTextTarget> textSequenceTarget_;
 	std::optional<stana::platform::detail::NativeTextTarget> menuTextTarget_;
 }
 - (void)dispatchPointerMove:(NSEvent *)event;
@@ -32,6 +33,7 @@
 namespace stana::platform::detail {
 /// @brief Forces the static archive to retain the text-input category, then attaches services.
 void attachTextInput(STANAView *view);
+[[nodiscard]] auto textKeyForEvent(NSEvent *event) -> NativeTextKey;
 } // namespace stana::platform::detail
 
 @interface STANAView (TextInput) <NSTextInputClient, NSMenuItemValidation>

@@ -355,9 +355,8 @@ void providerSettlement() {
 	const auto weak = std::weak_ptr{document};
 	bool effectSawFinal = false;
 	document->setTextMeasure(
-		[text,
-			weak,
-			&effectSawFinal](const std::string &value, stana::Font, stana::Points) -> stana::Size {
+		[text, weak, &effectSawFinal](const std::string &value, const stana::Font &, stana::Points)
+			-> stana::Size {
 			if (value == "middle") {
 				stana::reactive::detail::ReactiveRuntime::current().effects.emplace_back(
 					[weak, &effectSawFinal] -> void {
@@ -426,7 +425,7 @@ void owningCore() {
 	document->commit();
 	const auto old = document->renderSnapshot();
 	document->setTextMeasure(
-		[] [[noreturn]] (const std::string &, stana::Font, stana::Points) -> stana::Size {
+		[] [[noreturn]] (const std::string &, const stana::Font &, stana::Points) -> stana::Size {
 			throw std::runtime_error("provider failure");
 		}
 	);
@@ -441,10 +440,12 @@ void owningCore() {
 			document->metrics().sceneRevisions == old->revision,
 		"C21 no half-publication"
 	);
-	document->setTextMeasure([](const std::string &, stana::Font, stana::Points) -> stana::Size {
-		constexpr double extent = 20;
-		return {.width = stana::Points{extent}, .height = stana::Points{extent}};
-	});
+	document->setTextMeasure(
+		[](const std::string &, const stana::Font &, stana::Points) -> stana::Size {
+			constexpr double extent = 20;
+			return {.width = stana::Points{extent}, .height = stana::Points{extent}};
+		}
+	);
 	document->commit();
 	require(document->renderSnapshot()->revision > old->revision, "C17 new provider recovers");
 	const auto before = document->renderSnapshot();
@@ -466,7 +467,7 @@ void owningCore() {
 	);
 	const auto weak = std::weak_ptr{document};
 	document->setTextMeasure(
-		[weak, text](const std::string &, stana::Font, stana::Points) -> stana::Size {
+		[weak, text](const std::string &, const stana::Font &, stana::Points) -> stana::Size {
 			if (const auto owner = weak.lock()) {
 				owner->remove(text);
 			}

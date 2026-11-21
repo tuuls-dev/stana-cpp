@@ -108,17 +108,26 @@ auto shapeTextLine(const std::string &text, const FontRequest &font, bool rightT
 					range.location + range.length,
 					nullptr
 				);
+				double left = std::min(first, last);
+				double right = std::max(first, last);
+				const auto count = CTRunGetGlyphCount(run);
+				if (count > 0) {
+					left = std::numeric_limits<double>::max();
+					right = std::numeric_limits<double>::lowest();
+					for (CFIndex glyph = 0; glyph < count; ++glyph) {
+						CGPoint position{};
+						CGSize advance{};
+						CTRunGetPositions(run, CFRangeMake(glyph, 1), &position);
+						CTRunGetAdvances(run, CFRangeMake(glyph, 1), &advance);
+						left = std::min(left, std::min(position.x, position.x + advance.width));
+						right = std::max(right, std::max(position.x, position.x + advance.width));
+					}
+				}
 				result.runs.push_back(
 					{.start = start,
 						.end = start + length,
-						.x = std::min(first, last),
-						.width = CTRunGetTypographicBounds(
-							run,
-							CFRangeMake(0, 0),
-							nullptr,
-							nullptr,
-							nullptr
-						),
+						.x = left,
+						.width = std::max(0.0, right - left),
 						.rightToLeft = (CTRunGetStatus(run) & kCTRunStatusRightToLeft) != 0}
 				);
 			}
@@ -129,35 +138,4 @@ auto shapeTextLine(const std::string &text, const FontRequest &font, bool rightT
 	}
 }
 
-auto readTextClipboard() -> std::expected<std::optional<std::string>, std::string> {
-	@autoreleasepool {
-		NSString *const value =
-			[[NSPasteboard generalPasteboard] stringForType:NSPasteboardTypeString];
-		if (value == nil) {
-			return std::optional<std::string>{};
-		}
-		NSData *const bytes = [value dataUsingEncoding:NSUTF8StringEncoding];
-		if (bytes == nil) {
-			return std::unexpected("Clipboard UTF-8 conversion failed");
-		}
-		return std::optional<std::string>{
-			std::string{static_cast<const char *>(bytes.bytes), bytes.length}
-		};
-	}
-}
-
-auto writeTextClipboard(const std::string &text) -> std::expected<void, std::string> {
-	@autoreleasepool {
-		NSString *const value = nativeString(text);
-		if (value == nil) {
-			return std::unexpected("Invalid clipboard UTF-8");
-		}
-		NSPasteboard *const clipboard = [NSPasteboard generalPasteboard];
-		[clipboard clearContents];
-		if (![clipboard setString:value forType:NSPasteboardTypeString]) {
-			return std::unexpected("Clipboard write failed");
-		}
-		return {};
-	}
-}
 } // namespace stana::platform::detail

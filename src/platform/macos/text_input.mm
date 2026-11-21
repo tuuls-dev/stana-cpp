@@ -44,12 +44,17 @@ namespace {
 
 class InputScope {
   public:
-	explicit InputScope(STANAView *view)
+	explicit InputScope(STANAView *view, bool independent = false)
 		: view_(view),
 		  callbacks_(view->state_->callbacks.textInput),
-		  previous_(view->textSequence_) {
-		if (previous_ == 0 && callbacks_.begin) {
-			view_->textSequence_ = callbacks_.begin();
+		  previous_(view->textSequence_),
+		  previousTarget_(view->textSequenceTarget_),
+		  owns_(previous_ == 0 || independent) {
+		if (owns_) {
+			const auto current = nativeState(view);
+			const auto sequence = callbacks_.begin ? callbacks_.begin() : 0;
+			view_->textSequence_ = sequence;
+			view_->textSequenceTarget_ = current ? std::optional{current->target} : std::nullopt;
 		}
 	}
 
@@ -62,7 +67,8 @@ class InputScope {
 		try {
 			const auto sequence = view_->textSequence_;
 			view_->textSequence_ = previous_;
-			if (previous_ == 0 && sequence != 0 && callbacks_.end) {
+			view_->textSequenceTarget_ = previousTarget_;
+			if (owns_ && sequence != 0 && callbacks_.end) {
 				callbacks_.end(sequence);
 			}
 		} catch (...) {
@@ -74,6 +80,8 @@ class InputScope {
 	STANAView *__strong view_;
 	TextInputCallbacks callbacks_;
 	std::uint64_t previous_;
+	std::optional<NativeTextTarget> previousTarget_;
+	bool owns_;
 };
 
 [[nodiscard]] auto commandFor(SEL selector) -> std::optional<TextCommand> {
@@ -142,12 +150,21 @@ class InputScope {
 	return std::nullopt;
 }
 
+[[nodiscard]] auto sequenceMatches(STANAView *view, NativeTextTarget target) -> bool {
+	const auto &captured = view->textSequenceTarget_;
+	return captured && captured->document == target.document && captured->node == target.node &&
+		captured->session == target.session;
+}
+
 void applyNativeEdit(STANAView *view, const NativeTextEdit &edit) {
 	const auto current = nativeState(view);
 	if (!current || !view->state_->callbacks.textInput.edit) {
 		return;
 	}
 	const InputScope scope{view};
+	if (!sequenceMatches(view, current->target)) {
+		return;
+	}
 	static_cast<void>(
 		view->state_->callbacks.textInput.edit(current->target, view->textSequence_, edit)
 	);
@@ -158,6 +175,20 @@ void applyNativeEdit(STANAView *view, const NativeTextEdit &edit) {
 namespace stana::platform::detail {
 void attachTextInput(STANAView *view) {
 	[view installTextInput];
+}
+
+auto textKeyForEvent(NSEvent *event) -> NativeTextKey {
+	NSString *const characters = event.charactersIgnoringModifiers;
+	if ([characters isEqualToString:@"\t"]) {
+		return NativeTextKey::tab;
+	}
+	if ([characters isEqualToString:@"\r"]) {
+		return NativeTextKey::enter;
+	}
+	if ([characters isEqualToString:@"\x1b"]) {
+		return NativeTextKey::escape;
+	}
+	return NativeTextKey::text;
 }
 } // namespace stana::platform::detail
 
@@ -174,13 +205,13 @@ void attachTextInput(STANAView *view) {
 			return false;
 		}
 		[view unmarkText];
-		[[view inputContext] discardMarkedText];
+		[view->textContext_ discardMarkedText];
 		return true;
 	};
 	state_->callbacks.textInput.host->discard = [weak] -> void {
 		STANAView *const view = weak;
 		if (view != nil) {
-			[[view inputContext] discardMarkedText];
+			[view->textContext_ discardMarkedText];
 		}
 	};
 	state_->callbacks.textInput.host->invalidateGeometry = [weak] -> void {
@@ -207,23 +238,18 @@ void attachTextInput(STANAView *view) {
 		return NO;
 	}
 	const auto callbacks = state_->callbacks.textInput;
-	using NativeKey = stana::platform::detail::NativeTextKey;
-	NativeKey key = NativeKey::text;
-	NSString *const characters = event.charactersIgnoringModifiers;
-	if ([characters isEqualToString:@"\t"]) {
-		key = NativeKey::tab;
-	}
-	if ([characters isEqualToString:@"\r"]) {
-		key = NativeKey::enter;
-	}
-	if ([characters isEqualToString:@"\x1b"]) {
-		key = NativeKey::escape;
-	}
+	const auto key = stana::platform::detail::textKeyForEvent(event);
 	if (callbacks.key &&
 		!callbacks.key(key, false, (event.modifierFlags & NSEventModifierFlagShift) != 0)) {
 		return YES;
 	}
-	const stana::platform::detail::InputScope scope{self};
+	const auto next = stana::platform::detail::nativeState(self);
+	if (!next || next->target.document != current->target.document ||
+		next->target.node != current->target.node ||
+		next->target.session != current->target.session) {
+		return YES;
+	}
+	const stana::platform::detail::InputScope scope{self, true};
 	const auto flags = event.modifierFlags;
 	if ((flags & NSEventModifierFlagCommand) != 0) {
 		NSString *const shortcutCharacters = event.charactersIgnoringModifiers.lowercaseString;
@@ -266,6 +292,9 @@ void attachTextInput(STANAView *view) {
 		return;
 	}
 	const stana::platform::detail::InputScope scope{self};
+	if (!stana::platform::detail::sequenceMatches(self, current->target)) {
+		return;
+	}
 	static_cast<void>(state_->callbacks.textInput.command(current->target, textSequence_, command));
 }
 
@@ -440,7 +469,7 @@ void attachTextInput(STANAView *view) {
 	if (!state_ || !menuTextTarget_ || !state_->callbacks.textInput.command) {
 		return;
 	}
-	const stana::platform::detail::InputScope scope{self};
+	const stana::platform::detail::InputScope scope{self, true};
 	static_cast<void>(state_->callbacks.textInput.command(
 		*menuTextTarget_,
 		textSequence_,

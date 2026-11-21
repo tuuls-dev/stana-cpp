@@ -343,6 +343,10 @@ auto Document::editingCommand(
 		tab(command == previousFocus);
 		return {};
 	}
+	if (((command == cut || command == copy) && !textServices_.writeClipboard) ||
+		(command == paste && !textServices_.readClipboard)) {
+		return std::unexpected(Error::unsupportedPlatform);
+	}
 	if (!canEdit(target, command)) {
 		return {};
 	}
@@ -464,10 +468,21 @@ auto Document::editingCommand(
 		if (start || end) {
 			position = start ? 0 : content.size();
 			if (node->textLayout && !node->textLayout->lines.empty()) {
-				const auto &stops = node->textLayout->lines.front().shape.carets;
-				const auto edge = std::ranges::minmax_element(stops, {}, &text::CaretStop::primary);
-				if (edge.min != stops.end()) {
-					position = (start ? edge.min : edge.max)->offset;
+				bool found = false;
+				Points edge{};
+				for (const auto &stop : node->textLayout->lines.front().shape.carets) {
+					if (!stop.isGrapheme) {
+						continue;
+					}
+					for (const bool secondary : {false, true}) {
+						const auto x = secondary ? stop.secondary : stop.primary;
+						if (!found || (start ? x < edge : x > edge)) {
+							found = true;
+							edge = x;
+							position = stop.offset;
+							node->editor->secondaryAffinity = secondary;
+						}
+					}
 				}
 			}
 		} else if (command != selectAll) {

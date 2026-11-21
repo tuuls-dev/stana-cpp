@@ -30,6 +30,23 @@ void require(bool value, const std::string &message) {
 	throw std::runtime_error("Missing editor snapshot");
 }
 
+[[nodiscard]] auto editor(const stana::testing::TestHost &host) -> stana::document::EditorSnapshot {
+	const auto snapshot = input(host);
+	if (!snapshot.editor) {
+		throw std::runtime_error("Missing editor state");
+	}
+	return *snapshot.editor;
+}
+
+[[nodiscard]] auto inputTarget(const stana::testing::TestHost &host)
+	-> stana::document::TextInputTarget {
+	const auto target = host.textInputTarget();
+	if (!target) {
+		throw std::runtime_error("Missing active editor target");
+	}
+	return *target;
+}
+
 void focus(stana::testing::TestHost &host) {
 	require(host.handle(input(host).id).requestFocus().has_value(), "focus editor");
 }
@@ -57,26 +74,18 @@ void compositionSequence() {
 		host.setMarkedText("日本").has_value() && value.get().empty(),
 		"preedit is not model text"
 	);
-	const auto before = input(host).editor.value().store;
+	const auto before = editor(host).store;
 	value.set("");
-	require(
-		input(host).editor.value().store.stamp == before.stamp,
-		"equal model echo preserves store"
-	);
+	require(editor(host).store.stamp == before.stamp, "equal model echo preserves store");
 	const auto sequence = host.beginInputSequence();
 	require(
-		host.dispatchText(
-				host.textInputTarget().value(),
-				sequence,
-				{.kind = StoreEdit::Kind::commit}
-		)
+		host.dispatchText(inputTarget(host), sequence, {.kind = StoreEdit::Kind::commit})
 			.has_value(),
 		"commit preedit"
 	);
 	require(value.get() == "日本", "committed binding");
 	require(
-		host.dispatchCommand(host.textInputTarget().value(), sequence, EditingCommand::submit)
-			.has_value(),
+		host.dispatchCommand(inputTarget(host), sequence, EditingCommand::submit).has_value(),
 		"same sequence submit"
 	);
 	require(submissions == 0, "composition consumes submit");
@@ -163,7 +172,7 @@ void staleTargetsAndExternalValues() {
 	stana::testing::TestHost host;
 	host.mount(stana::ui::TextInput{.value = value.binding()});
 	focus(host);
-	const auto target = host.textInputTarget().value();
+	const auto target = inputTarget(host);
 	const auto sequence = host.beginInputSequence();
 	require(
 		host.editingCommand(EditingCommand::selectAll).has_value(),
@@ -178,8 +187,8 @@ void staleTargetsAndExternalValues() {
 	require(host.setMarkedText("候補").has_value(), "compose before external value");
 	value.set("external");
 	require(
-		input(host).text == "external" && !input(host).editor.value().store.composition &&
-			!input(host).editor.value().store.canUndo,
+		input(host).text == "external" && !editor(host).store.composition &&
+			!editor(host).store.canUndo,
 		"different external value resets editor"
 	);
 	value.set("invalid\xE2\x80\xA8value");
@@ -187,10 +196,10 @@ void staleTargetsAndExternalValues() {
 		input(host).text == "external" && host.errors().back() == stana::Error::invalidValue,
 		"invalid external value preserves editor"
 	);
-	const auto active = host.textInputTarget().value();
+	const auto active = inputTarget(host);
 	host.setInputActive(false);
 	require(
-		!host.textInputTarget() && input(host).isFocused && !input(host).editor.value().isActive,
+		!host.textInputTarget() && input(host).isFocused && !editor(host).isActive,
 		"inactive retains logical focus"
 	);
 	host.setInputActive(true);
@@ -222,6 +231,9 @@ void reentrancyAndMenus() {
 		"select before context menu"
 	);
 	const auto menuTarget = host.contextMenuTarget(point);
+	if (!menuTarget) {
+		throw std::runtime_error("Missing context menu target");
+	}
 	require(
 		menuTarget.has_value() && host.canEdit(EditingCommand::copy),
 		"context menu targets eligible field"
@@ -263,13 +275,10 @@ void eligibilityAndBlink() {
 	stana::testing::TestHost host;
 	host.mount(stana::ui::TextInput{.value = value.binding(), .interaction = {.inert = inert}});
 	focus(host);
-	require(input(host).editor.value().isCaretVisible, "initial solid caret");
+	require(editor(host).isCaretVisible, "initial solid caret");
 	host.advanceTime(caretHalfPeriod);
-	require(!input(host).editor.value().isCaretVisible, "deterministic caret blink");
-	require(
-		host.insertText("a").has_value() && input(host).editor.value().isCaretVisible,
-		"typing resets blink"
-	);
+	require(!editor(host).isCaretVisible, "deterministic caret blink");
+	require(host.insertText("a").has_value() && editor(host).isCaretVisible, "typing resets blink");
 	inert.set(true);
 	require(
 		!input(host).isFocused && !host.textInputTarget(),

@@ -95,7 +95,7 @@ auto layoutText(const LayoutRequest &request, const LineShaper &shaper)
 	}
 	if (request.lineHeight) {
 		stana::detail::requireNonnegative(*request.lineHeight);
-		if (request.lineHeight->value() <= 0) {
+		if (request.lineHeight->value() <= 0 && request.font.size.value() > 0) {
 			throw std::invalid_argument("Explicit line height must be positive");
 		}
 	}
@@ -235,8 +235,21 @@ auto TextLayout::selection(TextRange range) const -> std::vector<Rect> {
 			if (start >= end) {
 				continue;
 			}
-			const auto first = detail::stopX(line.shape, start - line.source.start);
-			const auto last = detail::stopX(line.shape, end - line.source.start);
+			const auto xAt = [&](std::size_t sourceOffset) -> Points {
+				const auto offset = sourceOffset - line.source.start;
+				if (offset == run.source.start) {
+					return run.rightToLeft ? run.x + run.width : run.x;
+				}
+				if (offset == run.source.end) {
+					return run.rightToLeft ? run.x : run.x + run.width;
+				}
+				const auto primary = detail::stopX(line.shape, offset);
+				return primary >= run.x && primary <= run.x + run.width
+					? primary
+					: detail::stopX(line.shape, offset, true);
+			};
+			const auto first = xAt(start);
+			const auto last = xAt(end);
 			result.push_back(
 				{.origin =
 						{.x = line.origin.x + Points{std::min(first.value(), last.value())},

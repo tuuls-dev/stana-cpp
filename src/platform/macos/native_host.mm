@@ -462,7 +462,7 @@ namespace {
 	if (state_ && state_->callbacks.textInput.state && state_->callbacks.textInput.state()) {
 		if (state_->callbacks.textInput.key) {
 			static_cast<void>(state_->callbacks.textInput.key(
-				stana::platform::detail::NativeTextKey::text,
+				stana::platform::detail::textKeyForEvent(event),
 				true,
 				(event.modifierFlags & NSEventModifierFlagShift) != 0
 			));

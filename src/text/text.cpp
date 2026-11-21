@@ -135,7 +135,7 @@ auto graphemeBoundaries(const std::string &text) -> std::vector<std::size_t> {
 			{},
 			&ScalarBoundary::utf16Offset
 		);
-		if (found == scalars.end() || found->utf16Offset != static_cast<std::size_t>(boundary)) {
+		if (found == scalars.end() || !std::cmp_equal(found->utf16Offset, boundary)) {
 			throw std::runtime_error("ICU split a scalar boundary");
 		}
 		boundaries.push_back(found->utf8Offset);
@@ -199,7 +199,7 @@ namespace {
 			{},
 			&ScalarBoundary::utf16Offset
 		);
-		if (found == scalars.end() || found->utf16Offset != static_cast<std::size_t>(boundary)) {
+		if (found == scalars.end() || !std::cmp_equal(found->utf16Offset, boundary)) {
 			throw std::runtime_error("ICU split a scalar boundary");
 		}
 		result.push_back(found->utf8Offset);
