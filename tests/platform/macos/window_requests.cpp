@@ -74,7 +74,7 @@ auto runContracts() -> int {
 		require(requests->emit(action).has_value(), "request emission");
 	};
 	const Window window{
-		.content = stana::ui::Text{.text = ""},
+		.content = stana::ui::TextLabel{.text = ""},
 		.options =
 			{.contentSize =
 					stana::Size{
@@ -320,7 +320,7 @@ auto transparentCaptureContracts() -> int {
 	const stana::reactive::Signal<WindowBackground> background{TransparentBackground{}};
 	constexpr std::uint8_t halfAlpha = 128;
 	const Window window{
-		.content = stana::ui::Text{.text = ""},
+		.content = stana::ui::TextLabel{.text = ""},
 		.options =
 			{.contentSize =
 					stana::Size{
@@ -402,7 +402,7 @@ auto menuAndPrintContracts() -> int {
 	const auto menuShown = std::make_shared<bool>(false);
 
 	const Window window{
-		.content = stana::ui::Text{.text = "Native menu and print cancellation"},
+		.content = stana::ui::TextLabel{.text = "Native menu and print cancellation"},
 		.options =
 			{.contentSize =
 					stana::Size{
@@ -481,7 +481,7 @@ auto ownerClosureContracts() -> int {
 	const auto owner = WindowId::create();
 	const Window parent{
 		.id = owner,
-		.content = stana::ui::Text{.text = "Owner closure"},
+		.content = stana::ui::TextLabel{.text = "Owner closure"},
 		.options = {.title = "Stana owner lifecycle contracts", .requests = source->stream()},
 		.events = {.onEvent = [source, closed](const WindowEvent &event) -> void {
 			if (std::holds_alternative<WindowReady>(event)) {
@@ -493,7 +493,7 @@ auto ownerClosureContracts() -> int {
 		}}
 	};
 	const Window child{
-		.content = stana::ui::Text{.text = "Unpresented modal child"},
+		.content = stana::ui::TextLabel{.text = "Unpresented modal child"},
 		.options =
 			{.role = DialogWindow{.owner = owner, .modal = true},
 				.title = "Stana owned modal lifecycle contracts"},

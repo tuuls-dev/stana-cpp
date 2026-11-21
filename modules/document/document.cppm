@@ -21,6 +21,8 @@ import :primitives;
 import :reactive;
 import :rendering;
 import :layout;
+import :text;
+import :tasks;
 export import :symbol_asset;
 export import :symbol_playback;
 export import :symbol_geometry;
@@ -36,7 +38,8 @@ enum class NodeKind : std::uint8_t {
 	hstack,
 	zstack,
 	spacer,
-	text,
+	textLabel,
+	textInput,
 	button,
 	toggle,
 	scroll,
@@ -96,9 +99,11 @@ enum class EventKind : std::uint8_t {
 
 /// @brief Keys the document handles. Native adapters map them from the physical keyboard.
 enum class Key : std::uint8_t {
-	tab,   ///< Tab. KeyEvent::backwards selects the reverse focus order.
-	space, ///< Space. The default activates the focused control.
-	enter  ///< Return. The default activates the focused control.
+	tab,	///< Tab. KeyEvent::backwards selects the reverse focus order.
+	space,	///< Space. The default activates the focused control.
+	enter,	///< Return. The default activates the focused control.
+	escape, ///< Escape cancels an editor action.
+	text	///< Native text interpretation supplies insertion or semantic commands.
 };
 
 /// @brief Mutable click dispatch. preventDefault() suppresses a toggle's built-in flip.
@@ -116,6 +121,25 @@ struct ClickEvent {
 	void preventDefault() noexcept { defaultPrevented = true; }
 };
 
+/// @brief Portable pointer button vocabulary, independent of native button numbers.
+enum class PointerButton : std::uint8_t { primary, secondary, middle };
+
+/// @brief Portable modifier state; platform shortcut interpretation remains adapter-owned.
+struct Modifiers {
+	bool shift = false;
+	bool control = false;
+	bool alt = false;
+	bool meta = false;
+};
+
+/// @brief Rich pointer input. Count must be positive; positions must be finite.
+struct PointerInput {
+	Point position{};
+	PointerButton button = PointerButton::primary;
+	Modifiers modifiers{};
+	std::uint32_t clickCount = 1;
+};
+
 /// @brief Pointer dispatch context shared by press, release, motion, enter, and leave.
 ///
 /// position uses document-relative, top-left logical points, not physical pixels or
@@ -123,6 +147,9 @@ struct ClickEvent {
 /// default and still lets later registrations on the route run. Enter and leave do
 /// not walk ancestors; a parent is entered only when the pointer crosses its boundary.
 struct PointerEvent {
+	PointerButton button = PointerButton::primary;
+	Modifiers modifiers{};
+	std::uint32_t clickCount = 1;
 	Point position{};			   ///< Document-relative pointer position in logical points.
 	Phase phase = Phase::bubble;   ///< Capture while walking toward the target, then bubble.
 	NodeId target{};			   ///< Hit target, or the occurrence entered or left.
@@ -147,15 +174,21 @@ struct KeyEvent {
 	void preventDefault() noexcept { defaultPrevented = true; }
 };
 
+/// @brief Cause of a logical focus transition, independent of native activation.
+enum class FocusReason : std::uint8_t { programmatic, pointer, traversal, eligibility, removal };
+
 /// @brief Notification that keyboard focus moved. The change is already published.
 ///
-/// preventDefault() does not restore the previous focus. Disposal of the focused
-/// occurrence clears focus without a blur event, because the occurrence is already gone.
+/// preventDefault() does not restore the previous focus. Removal delivers a captured blur after
+/// lookup retirement; its handle is already stale.
 struct FocusEvent {
-	Phase phase = Phase::bubble;   ///< Capture while walking toward the target, then bubble.
-	NodeId target{};			   ///< Occurrence that gained or lost focus.
-	NodeId current{};			   ///< Occurrence whose registrations are running.
-	bool defaultPrevented = false; ///< Set by preventDefault(); focus has already changed.
+	FocusReason reason = FocusReason::programmatic;
+	std::optional<NodeId> relatedTarget{};
+	std::optional<std::string> value{}; ///< Owning committed editor value on blur.
+	Phase phase = Phase::bubble;		///< Capture while walking toward the target, then bubble.
+	NodeId target{};					///< Occurrence that gained or lost focus.
+	NodeId current{};					///< Occurrence whose registrations are running.
+	bool defaultPrevented = false;		///< Set by preventDefault(); focus has already changed.
 
 	void preventDefault() noexcept { defaultPrevented = true; }
 };
@@ -194,6 +227,80 @@ struct EventRegistration {
 	EventHandler handler{};		 ///< Payload callable selected by kind.
 };
 
+/// @brief Portable semantic editing actions; platform shortcuts map to these values.
+enum class EditingCommand : std::uint8_t {
+	left,
+	right,
+	wordBackward,
+	wordForward,
+	lineStart,
+	lineEnd,
+	selectLeft,
+	selectRight,
+	selectWordBackward,
+	selectWordForward,
+	selectLineStart,
+	selectLineEnd,
+	deleteBackward,
+	deleteForward,
+	deleteWordBackward,
+	deleteWordForward,
+	selectAll,
+	cut,
+	copy,
+	paste,
+	undo,
+	redo,
+	submit,
+	cancel,
+	nextFocus,
+	previousFocus
+};
+
+/// @brief One physical input action. Native interpretation reuses it for all callbacks.
+struct InputSequence {
+	std::uint64_t identity = 0;
+	auto operator<=>(const InputSequence &) const = default;
+};
+
+/// @brief Ends a document input sequence on every exit, including application exceptions.
+class InputSequenceScope {
+  public:
+	explicit InputSequenceScope(std::shared_ptr<detail::Document> document);
+	InputSequenceScope(const InputSequenceScope &) = delete;
+	InputSequenceScope(InputSequenceScope &&) = delete;
+	auto operator=(const InputSequenceScope &) -> InputSequenceScope & = delete;
+	auto operator=(InputSequenceScope &&) -> InputSequenceScope & = delete;
+	~InputSequenceScope();
+
+	[[nodiscard]] auto sequence() const noexcept -> InputSequence { return sequence_; }
+
+  private:
+	std::shared_ptr<detail::Document> document_;
+	InputSequence sequence_{};
+};
+
+/// @brief A focused editor qualified by occurrence, active focus session and store state.
+struct TextInputTarget {
+	NodeId node{};
+	std::uint64_t session = 0;
+	::stana::text::StoreStamp stamp{};
+};
+
+/// @brief Owning application callback value; text is committed, never preedit.
+struct TextInputEvent {
+	NodeId target{};
+	std::string value{};
+};
+
+/// @brief Owning editor inspection from the last complete publication.
+struct EditorSnapshot {
+	::stana::text::StoreSnapshot store{};
+	Points horizontalScroll{};
+	bool isActive = false;
+	bool isCaretVisible = false;
+};
+
 /// @brief A read-only description of one visible node from the document's last commit.
 ///
 /// TestHost::nodes() returns these values for assertions about rendered content,
@@ -220,6 +327,7 @@ struct NodeSnapshot {
 	bool isFocused = false;
 	/// @brief Explicit accessible name; no value differs from an explicitly empty label.
 	std::optional<std::string> accessibilityLabel{};
+	std::optional<EditorSnapshot> editor{}; ///< Present only for TextInput.
 };
 
 namespace detail {
@@ -314,13 +422,21 @@ struct GeometryRecord {
 	std::shared_ptr<const std::vector<NodeId>>
 		children{}; ///< Immutable acknowledged painter/hit order.
 
+	::stana::text::StoreStamp textStamp{};
+	std::shared_ptr<const ::stana::text::TextLayout> textLayout{};
+	Point textOrigin{};
+	Points textScroll{};
+	Rect textClip{};
+
 	[[nodiscard]] auto operator==(const GeometryRecord &other) const -> bool {
 		const bool sameChildren = children == other.children ||
 			((!children || children->empty()) && (!other.children || other.children->empty())) ||
 			(children && other.children && *children == *other.children);
 		return routeGeneration == other.routeGeneration && bounds == other.bounds &&
 			rectangularClip == other.rectangularClip && parent == other.parent &&
-			eligible == other.eligible && sameChildren;
+			eligible == other.eligible && sameChildren && textStamp == other.textStamp &&
+			textLayout == other.textLayout && textOrigin == other.textOrigin &&
+			textScroll == other.textScroll && textClip == other.textClip;
 	}
 };
 struct GeometryIndex;
@@ -416,6 +532,55 @@ struct SymbolState {
 /// Do not retain a Node pointer across application callbacks: those callbacks may
 /// remove the occurrence. Resolve its NodeId again instead. Application code uses
 /// NodeHandle and NodeSnapshot rather than accessing this implementation record.
+/// @brief Retained optional typography overrides, resolved after the whole font.
+struct TypographyOverrides {
+	std::optional<Font> font{};
+	std::optional<std::string> fontFamily{};
+	std::optional<Points> fontSize{};
+	std::optional<FontWeight> fontWeight{};
+	std::optional<FontStyle> fontStyle{};
+	std::optional<Color> foreground{};
+	std::optional<Points> lineHeight{};
+	std::optional<bool> isStrikethrough{};
+};
+
+/// @brief Occurrence-owned editor state; no native text storage or parallel scope.
+struct EditorState {
+	::stana::reactive::Binding<std::string> binding;
+	::stana::text::TextBuffer buffer;
+	std::string placeholder{};
+	TypographyOverrides placeholderStyle{};
+	std::shared_ptr<const ::stana::text::TextLayout> placeholderLayout{};
+	std::function<void(const TextInputEvent &)> onSubmit{};
+	std::function<void(const TextInputEvent &)> onCancel{};
+	Points scroll{};
+	bool caretVisible = true;
+	bool typingGroup = false;
+	std::optional<EditingCommand> deletionGroup{};
+	std::uint64_t blinkGeneration = 0;
+	std::uint64_t dragGeneration = 0;
+	std::optional<std::size_t> dragAnchor{};
+	bool secondaryAffinity = false;
+
+	explicit EditorState(::stana::reactive::Binding<std::string> value)
+		: binding(std::move(value)),
+		  buffer(binding.get()) {}
+};
+
+/// @brief Per-document host operations; absent optional operations return explicit failures.
+struct TextServices {
+	::stana::text::LayoutProvider layout = [](
+											   const ::stana::text::LayoutRequest &request
+										   ) -> std::shared_ptr<const ::stana::text::TextLayout> {
+		return ::stana::text::layoutText(request);
+	};
+	std::function<std::expected<std::optional<std::string>, Error>()> readClipboard{};
+	std::function<std::expected<void, Error>(const std::string &)> writeClipboard{};
+	std::function<std::expected<void, Error>()> finishComposition{};
+	std::function<void()> discardComposition{};
+	std::function<void()> invalidateGeometry{};
+};
+
 struct Node {
 	NodeWork work{}; ///< Classified local work and persistent projection cache.
 	NodeId id{};	 ///< Identity used by document lookup and non-owning handles.
@@ -430,8 +595,16 @@ struct Node {
 	Size measured{}; ///< Latest intrinsic/constrained size computed before arrangement.
 	Insets
 		padding{}; ///< Resolved content insets; leading/trailing remain logical until arrangement.
+	std::optional<Points> allocatedWidth{};
 	Frame frame{}; ///< Resolved explicit axis sizing and min/max constraints.
-	Font font{};   ///< Unscaled system-font request shared by measurement and scene text commands.
+	TypographyOverrides textOverrides{};
+	::stana::text::Wrap wrap = ::stana::text::Wrap::none;
+	Alignment textAlignment = Alignment::leading;
+	std::optional<std::size_t> maxLines{};
+	bool isStrikethrough = false;
+	std::shared_ptr<const ::stana::text::TextLayout> textLayout{};
+	std::unique_ptr<EditorState> editor{};
+	Font font{}; ///< Unscaled system-font request shared by measurement and scene text commands.
 	Color foreground = Color::black();	///< Text color used when isForegroundExplicit is set.
 	Color background = Color::clear();	///< Resolved fill behind this occurrence and descendants.
 	Color borderColor = Color::clear(); ///< Resolved outline color when borderWidth is positive.
@@ -530,7 +703,8 @@ class Document : public std::enable_shared_from_this<Document> {
 
 	void report(Error error);
 	[[nodiscard]] auto activate(NodeId identity) -> std::expected<void, Error>;
-	[[nodiscard]] auto focus(NodeId identity) -> std::expected<void, Error>;
+	[[nodiscard]] auto focus(NodeId identity, FocusReason reason = FocusReason::programmatic)
+		-> std::expected<void, Error>;
 	void tab(bool backwards = false);
 	void pointerDown(Point point);
 	void pointerUp(Point point);
@@ -541,9 +715,35 @@ class Document : public std::enable_shared_from_this<Document> {
 	void keyActivate();
 	/// @brief Routes a key press, then runs Tab, Space, or Return defaults unless prevented.
 	void keyDown(Key key, bool backwards = false);
+	[[nodiscard]] auto routeKey(Key key, bool released = false, bool backwards = false) -> bool;
 	/// @brief Routes a key release. Release has no built-in default.
 	void keyUp(Key key, bool backwards = false);
 	void setTextMeasure(std::function<Size(const std::string &, Font, Points)> measure);
+	void setTextServices(TextServices services);
+	void setInputActive(bool active);
+	[[nodiscard]] auto beginInputSequence() -> InputSequence;
+	void endInputSequence(InputSequence sequence);
+	[[nodiscard]] auto textInputTarget() const -> std::optional<TextInputTarget>;
+	[[nodiscard]] auto textInputSnapshot(TextInputTarget target) const
+		-> std::expected<::stana::text::StoreSnapshot, Error>;
+	[[nodiscard]] auto
+	editText(TextInputTarget target, InputSequence sequence, ::stana::text::StoreEdit edit)
+		-> std::expected<void, Error>;
+	[[nodiscard]] auto
+	editingCommand(TextInputTarget target, InputSequence sequence, EditingCommand command)
+		-> std::expected<void, Error>;
+	[[nodiscard]] auto canEdit(TextInputTarget target, EditingCommand command) const -> bool;
+	[[nodiscard]] auto textCaretRect(TextInputTarget target, std::size_t offset) const
+		-> std::expected<Rect, Error>;
+	[[nodiscard]] auto textIndexAt(Point point, bool graphemesOnly = true) const
+		-> std::expected<std::size_t, Error>;
+	[[nodiscard]] auto contextMenuTarget(Point point) -> std::optional<TextInputTarget>;
+	void pointerDown(PointerInput input);
+	void pointerUp(PointerInput input);
+	void pointerMove(PointerInput input);
+	void reconcileEditors();
+	void externalEditorChanged(NodeId identity);
+	void queueFocusLoss(NodeId identity, FocusReason reason);
 	void setOnPublish(std::function<void()> callback);
 	/// @brief Uses last-confirmed immutable geometry for coordinate-driven input.
 	/// Native hosts enable this before presentation; default headless tests use
@@ -675,11 +875,39 @@ class Document : public std::enable_shared_from_this<Document> {
 	std::vector<Error> errors_;
 	bool isDirty_ = true;
 	bool isClosed_ = false;
+	std::optional<std::optional<NodeId>> pendingFocus_{};
+	bool changingFocus_ = false;
+	std::vector<NodeId> focusBookmark_{};
+	std::optional<NodeId> focusBookmarkTarget_{};
 	std::optional<NodeId> focused_;
 	std::optional<NodeId> pressed_;
 	std::optional<NodeId> hovered_; ///< Deepest occurrence under the pointer, if any.
 	Point pointerPosition_{};		///< Last routed pointer position, used when the pointer leaves.
 	bool updatingHover_ = false;	///< Prevents re-entrant enter/leave routing.
+	TextServices textServices_{};
+	bool inputActive_ = true;
+	std::uint64_t focusSession_ = 0;
+	std::optional<NodeId> capturedEditor_{};
+
+	struct SequenceState {
+		InputSequence id{};
+		bool compositionConsumed = false;
+	};
+
+	std::vector<SequenceState> inputSequences_{};
+	std::vector<
+		std::pair<::stana::text::LayoutRequest, std::weak_ptr<const ::stana::text::TextLayout>>>
+		textCache_{};
+	[[nodiscard]] auto validateEditor(TextInputTarget target) const -> std::expected<Node *, Error>;
+	[[nodiscard]] auto sequenceState(InputSequence sequence) -> SequenceState *;
+	void editorChanged(NodeId identity, const std::string &previous);
+	void restartCaret(NodeId identity);
+	void blinkCaret(NodeId identity, std::uint64_t generation);
+	void autoscrollEditor(NodeId identity, std::uint64_t generation);
+	void selectEditorAt(NodeId identity, Point point, bool extend, bool word);
+	[[nodiscard]] auto
+	resolveTextLayout(Node &node, std::optional<Points> width, bool placeholder = false)
+		-> std::shared_ptr<const ::stana::text::TextLayout>;
 	std::function<Size(const std::string &, Font, Points)> measureText_;
 	std::function<void()> onPublish_;
 	bool usesPresentationGeometry_ = false; ///< Selects acknowledged geometry for location input.

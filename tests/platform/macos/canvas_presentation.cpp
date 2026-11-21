@@ -194,7 +194,7 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 					stana::ui::GPUCanvas{.drawing = scenario->drawing, .layout = {.frame = fill}},
 					stana::ui::VStack{
 						.children = stana::ui::children(
-							stana::ui::Text{.text = "CPU above GPU"},
+							stana::ui::TextLabel{.text = "CPU above GPU"},
 							stana::ui::Toggle{
 								.text = "metadata anchor",
 								.value = scenario->metadata.binding()

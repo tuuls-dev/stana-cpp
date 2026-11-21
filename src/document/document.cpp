@@ -30,6 +30,8 @@ namespace stana::document {
 namespace {
 constexpr Points buttonPadding{10};
 constexpr Points defaultCornerRadius{6};
+constexpr Points inputVerticalPadding{6};
+constexpr Points inputHorizontalPadding{8};
 } // namespace
 
 namespace detail {
@@ -82,6 +84,7 @@ void Document::close() {
 	gpuFailures_.clear();
 	pinnedGeometry_.clear();
 	confirmedGeometry_.reset();
+	stana::reactive::detail::ReactiveRuntime::current().flush();
 }
 
 auto Document::createNode(NodeKind kind, NodeId parent) -> NodeId {
@@ -95,6 +98,25 @@ auto Document::createNode(NodeKind kind, NodeId parent) -> NodeId {
 	node->kind = kind;
 	node->clip =
 		kind == NodeKind::scroll || kind == NodeKind::cpuCanvas || kind == NodeKind::gpuCanvas;
+	if (kind == NodeKind::scroll) {
+		node->frame.width = Length::fill();
+		node->frame.height = Length::fill();
+	}
+	if (kind == NodeKind::textLabel) {
+		node->wrap = text::Wrap::word;
+	}
+	if (kind == NodeKind::textInput) {
+		node->padding = {
+			.top = inputVerticalPadding,
+			.leading = inputHorizontalPadding,
+			.bottom = inputVerticalPadding,
+			.trailing = inputHorizontalPadding
+		};
+		node->cornerRadius = Points{4};
+		node->borderWidth = Points{1};
+		node->borderColor = Color::border();
+		node->background = Color::background();
+	}
 	if (kind == NodeKind::button || kind == NodeKind::toggle) {
 		node->padding = Insets::all(buttonPadding);
 		node->cornerRadius = defaultCornerRadius;
@@ -151,19 +173,29 @@ void Document::remove(NodeId identity) {
 			retired.insert(retired.end(), record->children.begin(), record->children.end());
 		}
 	}
+	for (const auto id : retired) {
+		queueFocusLoss(id, FocusReason::removal);
+	}
 	if (auto *parent = find(parentId)) {
 		std::erase(parent->children, identity);
 	}
 	// Lookup retirement precedes every application cleanup. An owning batch keeps
 	// scopes/storage alive even when cleanup reenters removal or commits a sibling.
 	std::vector<std::unique_ptr<Node>> disposal;
+	bool discardInput = false;
 	for (const auto id : retired) {
 		auto entry = nodes_.extract(id.serial);
 		if (!entry.empty()) {
+			discardInput =
+				discardInput || (focused_ == id && static_cast<bool>(entry.mapped()->editor));
 			disposal.push_back(std::move(entry.mapped()));
 		}
 		if (focused_ == id) {
+			focusSession_ = stana::detail::nextIdentity();
 			focused_.reset();
+		}
+		if (capturedEditor_ == id) {
+			capturedEditor_.reset();
 		}
 		if (pressed_ == id) {
 			pressed_.reset();
@@ -182,6 +214,10 @@ void Document::remove(NodeId identity) {
 	}
 	if (find(parentId) != nullptr) {
 		invalidate(parentId, Dirty::measure | Dirty::arrange | Dirty::structure);
+	}
+	if (discardInput && textServices_.discardComposition) {
+		const auto discard = textServices_.discardComposition;
+		discard();
 	}
 	for (auto &record : std::views::reverse(disposal)) {
 		record->scope.dispose();
@@ -298,18 +334,19 @@ void Document::setEnvironment(Environment environment) {
 		if (directionChanged) {
 			domains = domains | Dirty::arrange | Dirty::snapshot;
 			if (node->kind == NodeKind::cpuCanvas || node->kind == NodeKind::gpuCanvas ||
-				node->kind == NodeKind::symbol || node->kind == NodeKind::text ||
-				node->kind == NodeKind::button || node->kind == NodeKind::toggle ||
-				node->cornerRadii || node->borderWidths || !node->boxShadows.empty()) {
+				node->kind == NodeKind::symbol || node->kind == NodeKind::textInput ||
+				node->kind == NodeKind::textLabel || node->kind == NodeKind::button ||
+				node->kind == NodeKind::toggle || node->cornerRadii || node->borderWidths ||
+				!node->boxShadows.empty()) {
 				domains = domains | Dirty::paint;
 			}
 		}
 		if (node->kind == NodeKind::symbol && (colorChanged || motionChanged)) {
 			domains = domains | Dirty::paint;
 		}
-		if (node->kind == NodeKind::text || node->kind == NodeKind::button ||
-			node->kind == NodeKind::toggle) {
-			if (textChanged) {
+		if (node->kind == NodeKind::textInput || node->kind == NodeKind::textLabel ||
+			node->kind == NodeKind::button || node->kind == NodeKind::toggle) {
+			if (textChanged || directionChanged) {
 				domains = domains | Dirty::measure | Dirty::paint;
 			}
 			if (themeChanged && !node->isForegroundExplicit) {
@@ -347,8 +384,8 @@ void Document::setTextMeasure(std::function<Size(const std::string &, Font, Poin
 	textEnvironment_ = stana::detail::nextIdentity();
 	for (const auto &[serial, node] : nodes_) {
 		static_cast<void>(serial);
-		if (node->kind == NodeKind::text || node->kind == NodeKind::button ||
-			node->kind == NodeKind::toggle) {
+		if (node->kind == NodeKind::textInput || node->kind == NodeKind::textLabel ||
+			node->kind == NodeKind::button || node->kind == NodeKind::toggle) {
 			invalidate(node->id, Dirty::measure | Dirty::paint);
 		}
 	}

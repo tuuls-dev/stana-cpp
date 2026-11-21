@@ -147,10 +147,10 @@ struct ReactiveRuntime {
 		flushing = true;
 		try {
 			std::size_t iterations = 0;
+			constexpr std::size_t iterationLimit = 10000;
 			bool again = true;
 			while (again) {
 				while (!pending.empty()) {
-					constexpr std::size_t iterationLimit = 10000;
 					if (++iterations > iterationLimit) {
 						throw std::logic_error("Stana reactive update did not settle");
 					}
@@ -186,9 +186,12 @@ struct ReactiveRuntime {
 					again = true;
 					continue;
 				}
-				auto actions = std::move(effects);
-				effects.clear();
-				for (auto &action : actions) {
+				if (!effects.empty()) {
+					if (++iterations > iterationLimit) {
+						throw std::logic_error("Stana effects did not settle");
+					}
+					auto action = std::move(effects.front());
+					effects.pop_front();
 					action();
 				}
 				again = !pending.empty() || !effects.empty();

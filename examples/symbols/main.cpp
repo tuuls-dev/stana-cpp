@@ -132,7 +132,7 @@ auto reportSymbol(const Diagnostic &diagnostic) -> void {
 
 /// @brief One labeled Lucide symbol on the gallery's dark card.
 [[nodiscard]] auto iconCard(const std::string &name, const Asset &asset, Color tint)
-	-> VStack<std::tuple<Symbol, Text>> {
+	-> VStack<std::tuple<Symbol, TextLabel>> {
 	const std::string label = "Lucide " + name;
 	return {
 		.spacing = cardSpacing,
@@ -161,7 +161,7 @@ auto reportSymbol(const Diagnostic &diagnostic) -> void {
 				.accessibility = {.label = label},
 				.onError = reportSymbol
 			},
-			Text{
+			TextLabel{
 				.text = name,
 				.textStyle = {
 					.font = Font::system(labelFontSize, FontWeight{mediumWeight}),
@@ -189,13 +189,13 @@ auto main() -> int {
 							.spacing = 7_pt,
 							.layout = {.frame = headingFrame},
 							.children = children(
-								Text{
+								TextLabel{
 									.text = "Lucide, rendered by Stana",
 									.textStyle =
 										{.font = Font::system(26_pt, FontWeight{semiboldWeight}),
 											.foreground = Color::white()}
 								},
-								Text{
+								TextLabel{
 									.text = "Ten SVG symbols. Compile-time "
 											"geometry. "
 											"Native macOS "
@@ -231,7 +231,7 @@ auto main() -> int {
 								}
 							)
 						},
-						Text{
+						TextLabel{
 							.text = "STNSymbol  ·  36 pt  ·  currentColor     /    "
 									" Artwork: "
 									"Lucide",

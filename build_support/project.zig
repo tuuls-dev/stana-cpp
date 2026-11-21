@@ -90,6 +90,9 @@ fn addContracts(project: *Project, tests: *Build.Step) void {
         .{ "reactive.threadSafeWrites", "reactive/thread_safe_writes.cpp" },
         .{ "ui", "ui/contracts.cpp" },
         .{ "ui.events", "ui/events.cpp" },
+        .{ "ui.textInput", "ui/text_input.cpp" },
+        .{ "ui.textLabel", "ui/text_label.cpp" },
+        .{ "text.layout", "text/layout.cpp" },
         .{ "text", "text/contracts.cpp" },
         .{ "tasks", "tasks/contracts.cpp" },
         .{ "presentation", "rendering/presentation.cpp" },
@@ -216,6 +219,7 @@ fn addNativeTests(project: *Project, tests: *Build.Step, version: []const u8, gu
         }
         previous = nativeExecutable(project, previous, "shared-copy", &.{"tests/platform/macos/shared_copy.mm"}, 30, false);
     }
+    previous = nativeExecutable(project, previous, "textInput", &.{"tests/platform/macos/text_input.mm"}, 60, false);
     previous = nativeExecutable(project, previous, "canvas.offscreen", &.{ "tests/platform/macos/canvas_offscreen.mm", "tests/platform/macos/canvas_fixture.cpp" }, 120, false);
     previous = nativeExecutable(project, previous, "shadows", &.{ "tests/platform/macos/shadows.mm", "tests/platform/macos/shadow_fixture.cpp" }, 120, true);
     native.dependOn(previous.?);

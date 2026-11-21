@@ -365,7 +365,7 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 												.height = stana::Length::fill()
 											}},
 								.children = stana::ui::children(
-									stana::ui::Text{
+									stana::ui::TextLabel{
 										.text = "sparse label",
 										.textStyle = {.foreground = scenario->foreground}
 									},
@@ -385,7 +385,7 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 			.parent = scenario->otherDocument->root()
 		};
 		static_cast<void>(
-			stana::ui::mount(stana::ui::Text{.text = scenario->secondaryText}, otherContext)
+			stana::ui::mount(stana::ui::TextLabel{.text = scenario->secondaryText}, otherContext)
 		);
 	});
 	scenario->queue();

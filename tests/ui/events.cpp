@@ -109,7 +109,7 @@ void requirePoint(stana::Point actual, stana::Point expected, const std::string 
 struct Panel {
 	stana::ui::Events events{};
 
-	[[nodiscard]] auto render(stana::ui::ComponentContext &) const -> stana::ui::Text {
+	[[nodiscard]] auto render(stana::ui::ComponentContext &) const -> stana::ui::TextLabel {
 		return {.text = "panel"};
 	}
 };
@@ -370,7 +370,7 @@ void scrollPreventionAndZeroDelta() {
 							stana::Frame{
 								.height = stana::Length::points(stana::Points{contentHeight})
 							}},
-				.children = stana::ui::children(stana::ui::Text{.text = "scrolled"})
+				.children = stana::ui::children(stana::ui::TextLabel{.text = "scrolled"})
 			}
 		}
 	);
@@ -410,7 +410,6 @@ void keyboardFocusAndDefaults() {
 	stana::NodeId firstId{};
 	stana::NodeId secondId{};
 	stana::NodeId stackId{};
-	stana::testing::TestHost host;
 	const auto name = [&](stana::NodeId identity) -> std::string {
 		if (identity == firstId) {
 			return "first";
@@ -443,6 +442,7 @@ void keyboardFocusAndDefaults() {
 		++releases;
 		require(event.phase == stana::ui::Phase::bubble, "key release bubbles");
 	};
+	stana::testing::TestHost host;
 	host
 		.mount(
 			stana::ui::VStack{
@@ -720,7 +720,7 @@ void disposalDuringDispatchReleasesHandlers() {
 											++second;
 										}
 									)},
-							.children = stana::ui::children(stana::ui::Text{.text = "gone"})
+							.children = stana::ui::children(stana::ui::TextLabel{.text = "gone"})
 						};
 					}
 				}
@@ -909,7 +909,7 @@ void visualComponentsShareTheRegistry() {
 				}
 			)},
 			.children = stana::ui::children(
-				stana::ui::Text{
+				stana::ui::TextLabel{
 					.text = "label",
 					.events = {stana::ui::on(
 						stana::ui::Event::pointerDown,

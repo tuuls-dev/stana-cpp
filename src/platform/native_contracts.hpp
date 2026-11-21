@@ -2,6 +2,7 @@
 #define STANA_NATIVE_CONTRACTS_HPP
 
 #include "../gpu/contracts.hpp"
+#include "text_contracts.hpp"
 #include <chrono>
 #include <compare>
 #include <cstddef>
@@ -34,18 +35,23 @@ enum class PaintOperation : std::uint8_t {
 /// The C++ application adapter produces this value; the native raster pass reads it.
 struct Command {
 	PaintOperation operation = PaintOperation::fill; ///< Paint opcode.
-	double x = 0;		   ///< Document-relative left coordinate in logical points.
-	double y = 0;		   ///< Document-relative top coordinate in logical points.
-	double width = 0;	   ///< Logical horizontal extent.
-	double height = 0;	   ///< Logical vertical extent.
-	double red = 0;		   ///< Red component in encoded sRGB.
-	double green = 0;	   ///< Green component in encoded sRGB.
-	double blue = 0;	   ///< Blue component in encoded sRGB.
-	double alpha = 1;	   ///< Opacity applied by scene projection.
-	double radius = 0;	   ///< Rounding radius for rectangles/clips.
-	double lineWidth = 1;  ///< Outline thickness in logical points.
-	std::string text{};	   ///< Owned UTF-8 label, including embedded NUL bytes.
-	double fontSize = 0;   ///< Resolved, scaled font size in logical points.
+	double x = 0;		  ///< Document-relative left coordinate in logical points.
+	double y = 0;		  ///< Document-relative top coordinate in logical points.
+	double width = 0;	  ///< Logical horizontal extent.
+	double height = 0;	  ///< Logical vertical extent.
+	double red = 0;		  ///< Red component in encoded sRGB.
+	double green = 0;	  ///< Green component in encoded sRGB.
+	double blue = 0;	  ///< Blue component in encoded sRGB.
+	double alpha = 1;	  ///< Opacity applied by scene projection.
+	double radius = 0;	  ///< Rounding radius for rectangles/clips.
+	double lineWidth = 1; ///< Outline thickness in logical points.
+	std::string text{};	  ///< Owned UTF-8 label, including embedded NUL bytes.
+	double fontSize = 0;  ///< Resolved, scaled font size in logical points.
+	std::optional<std::string> fontFamily{};
+	bool fontItalic = false;
+	bool textRightToLeft = false;
+	std::shared_ptr<const TextResource> textResource{};
+	std::optional<double> textBaseline{};
 	double fontWeight = 0; ///< Native system-font weight request.
 	std::optional<stana::gpu::detail::BoxGeometry> boxGeometry{};
 	std::optional<stana::gpu::detail::Shadow> shadow{};
@@ -528,6 +534,7 @@ struct WindowHostControl {
 /// Native hosts own this value until closure. Callback captures must not borrow
 /// component descriptions, because descriptions are already destroyed after mounting.
 struct Window {
+	TextInputCallbacks textInput{};
 	std::string title{};				 ///< Initial UTF-8 native title.
 	double width = 0;					 ///< Initial content width in logical points.
 	double height = 0;					 ///< Initial content height in logical points.
@@ -540,9 +547,9 @@ struct Window {
 	std::function<void(double, double)> resize{}; ///< Reflows the retained viewport.
 	std::function<void(bool isDark)>
 		appearance{}; ///< Reports whether the current system appearance is dark.
-	std::function<void(double, double)> pointerDown{}; ///< Dispatches a logical-coordinate press.
-	std::function<void(double, double)> pointerUp{};   ///< Dispatches logical-coordinate release.
-	std::function<void(double, double)> pointerMove{}; ///< Dispatches logical-coordinate motion.
+	std::function<void(NativePointer)> pointerDown{}; ///< Dispatches a logical-coordinate press.
+	std::function<void(NativePointer)> pointerUp{};	  ///< Dispatches logical-coordinate release.
+	std::function<void(NativePointer)> pointerMove{}; ///< Dispatches logical-coordinate motion.
 	std::function<void()> pointerLeave{}; ///< Clears hover when the pointer exits the view.
 	std::function<void(double, double, double)> scroll{}; ///< Dispatches vertical scrolling.
 	std::function<void(KeyAction, KeyPhase)> key{}; ///< Dispatches a portable key press or release.
@@ -649,15 +656,10 @@ struct MailboxWakeup {
 [[nodiscard]] auto createMailboxWakeup(const std::function<void()> &onWake)
 	-> std::expected<MailboxWakeup, std::string>;
 
-/// @brief Native system-font parameters, grouped to prevent swapping size and weight.
-struct FontRequest {
-	double size = 0;   ///< Logical point size after environment scaling.
-	double weight = 0; ///< Native system font weight, zero for regular.
-};
-
 /// @brief Measures UTF-8 text with the same Core Text font contract used for drawing.
 /// @return Logical width and line height, constrained by the requested maximum width.
-[[nodiscard]] auto measureText(const std::string &text, FontRequest font, double maximumWidth)
+[[nodiscard]] auto
+measureText(const std::string &text, const FontRequest &font, double maximumWidth)
 	-> std::pair<double, double>;
 } // namespace stana::platform::detail
 

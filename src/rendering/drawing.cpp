@@ -2,6 +2,7 @@ module;
 #include <algorithm>
 #include <cmath>
 #include <compare>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -113,7 +114,8 @@ auto PaintCommand::operator==(const PaintCommand &other) const -> bool {
 			std::is_eq(lineWidth <=> other.lineWidth);
 	case text:
 		return bounds == other.bounds && color == other.color && this->text == other.text &&
-			font == other.font;
+			font == other.font && textResource == other.textResource &&
+			textBaseline == other.textBaseline;
 	}
 	throw std::logic_error("Unknown drawing command");
 }

@@ -40,7 +40,7 @@ struct Ink {
 	bool unknown = false;
 };
 
-struct PreparedText {
+struct PreparedText final : TextResource {
 	CoreOwner<CTLineRef> line;
 	double ascent = 0;
 	explicit PreparedText(const Command &);

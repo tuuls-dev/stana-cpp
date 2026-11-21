@@ -1,4 +1,5 @@
 #include "../../diagnostics/log.hpp"
+#include "host_view.hpp"
 #include "presentation.hpp"
 #include "window_configuration.hpp"
 
@@ -92,32 +93,26 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 	state->callbacks.appearance([matched isEqualToString:NSAppearanceNameDarkAqua]);
 }
 
-} // namespace stana::platform::detail
-
-/// @brief AppKit view that translates native events into the retained document callbacks.
-/// The native view hierarchy owns this object; state_ owns no strong view reference.
-@interface STANAView : NSView {
-  @public
-	std::shared_ptr<stana::platform::detail::WindowState>
-		state_; ///< Engine callbacks and renderer resources.
-	CADisplayLink *frameLink_;
-	NSScreen *frameScreen_;
-	NSMutableArray *visibilityObservers_;
-	NSTrackingArea *trackingArea_;
-	bool reportedHostVisible_;
-	bool visibilityArmed_;
-	bool frameLinkRetired_;
+namespace {
+[[nodiscard]] auto pointerInput(NSView *view, NSEvent *event) -> NativePointer {
+	const auto point = [view convertPoint:event.locationInWindow fromView:nil];
+	const auto flags = event.modifierFlags;
+	const auto count =
+		std::clamp<NSInteger>(event.clickCount, 1, std::numeric_limits<std::uint32_t>::max());
+	return {
+		.x = point.x,
+		.y = point.y,
+		.button = static_cast<std::uint8_t>(std::min<NSInteger>(event.buttonNumber, 2)),
+		.shift = (flags & NSEventModifierFlagShift) != 0,
+		.control = (flags & NSEventModifierFlagControl) != 0,
+		.alt = (flags & NSEventModifierFlagOption) != 0,
+		.meta = (flags & NSEventModifierFlagCommand) != 0,
+		.clickCount = static_cast<std::uint32_t>(count)
+	};
 }
-- (void)dispatchPointerMove:(NSEvent *)event;
-- (void)dispatchKey:(NSEvent *)event released:(BOOL)released;
-- (instancetype)initWithFrame:(NSRect)frameRect;
-- (void)installFrameLink;
-- (void)stopFrameLink;
-- (void)setFrameDemand:(BOOL)demand;
-- (void)publishCurrentVisibility;
-- (void)retargetFrameLink;
-- (void)tickFrameLink:(CADisplayLink *)link;
-@end
+} // namespace
+
+} // namespace stana::platform::detail
 
 @implementation STANAView
 
@@ -348,8 +343,7 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 		!state_->callbacks.pointerMove) {
 		return;
 	}
-	const auto point = [self convertPoint:event.locationInWindow fromView:nil];
-	state_->callbacks.pointerMove(point.x, point.y);
+	state_->callbacks.pointerMove(stana::platform::detail::pointerInput(self, event));
 }
 
 - (void)dispatchKey:(NSEvent *)event released:(BOOL)released {
@@ -384,6 +378,7 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 
 - (void)rightMouseDown:(NSEvent *)event {
 	stana::platform::detail::publishWindowInteraction(state_, event, 0);
+	[super rightMouseDown:event];
 }
 
 - (void)rightMouseUp:(NSEvent *)event {
@@ -391,6 +386,10 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 }
 
 - (void)mouseDown:(NSEvent *)event {
+	if ((event.modifierFlags & NSEventModifierFlagControl) != 0) {
+		[self rightMouseDown:event];
+		return;
+	}
 	stana::platform::detail::publishWindowInteraction(state_, event, 0);
 	if (state_) {
 		logPointerGate(*state_, "down");
@@ -402,7 +401,7 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 				return std::array{Field{"x", point.x}, Field{"y", point.y}};
 			});
 		}
-		state_->callbacks.pointerDown(point.x, point.y);
+		state_->callbacks.pointerDown(stana::platform::detail::pointerInput(self, event));
 	}
 }
 
@@ -418,7 +417,7 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 				return std::array{Field{"x", point.x}, Field{"y", point.y}};
 			});
 		}
-		state_->callbacks.pointerUp(point.x, point.y);
+		state_->callbacks.pointerUp(stana::platform::detail::pointerInput(self, event));
 	}
 }
 
@@ -453,10 +452,23 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 }
 
 - (void)keyDown:(NSEvent *)event {
+	if ([self handleTextKey:event]) {
+		return;
+	}
 	[self dispatchKey:event released:NO];
 }
 
 - (void)keyUp:(NSEvent *)event {
+	if (state_ && state_->callbacks.textInput.state && state_->callbacks.textInput.state()) {
+		if (state_->callbacks.textInput.key) {
+			static_cast<void>(state_->callbacks.textInput.key(
+				stana::platform::detail::textKeyForEvent(event),
+				true,
+				(event.modifierFlags & NSEventModifierFlagShift) != 0
+			));
+		}
+		return;
+	}
 	[self dispatchKey:event released:YES];
 }
 
@@ -562,6 +574,9 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 }
 
 - (void)windowDidBecomeKey:(NSNotification *)notification {
+	if (state_ && state_->callbacks.textInput.active) {
+		state_->callbacks.textInput.active(true);
+	}
 	static_cast<void>(notification);
 	if (state_ && !state_->isClosed) {
 		if (state_->view != nil) {
@@ -573,6 +588,9 @@ void publishAppearance(const std::shared_ptr<WindowState> &state) {
 }
 
 - (void)windowDidResignKey:(NSNotification *)notification {
+	if (state_ && state_->callbacks.textInput.active) {
+		state_->callbacks.textInput.active(false);
+	}
 	static_cast<void>(notification);
 	stana::platform::detail::publishWindowObservation(state_);
 }
@@ -974,6 +992,7 @@ auto run(const std::vector<Window> &descriptions) -> std::expected<int, std::str
 																		 configuration.contentHeight
 																	 )];
 			view->state_ = state;
+			stana::platform::detail::attachTextInput(view);
 			state->view = view;
 			view.wantsLayer = YES;
 

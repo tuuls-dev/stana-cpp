@@ -71,8 +71,8 @@ void sparseWork() {
 	host.mount(
 		stana::ui::VStack{
 			.children = stana::ui::children(
-				stana::ui::Text{.text = text, .textStyle = {.foreground = color}},
-				stana::ui::Text{.text = "unrelated"},
+				stana::ui::TextLabel{.text = text, .textStyle = {.foreground = color}},
+				stana::ui::TextLabel{.text = "unrelated"},
 				stana::ui::Button{.text = "focus"}
 			)
 		}
@@ -175,12 +175,12 @@ void differential() {
 			.appearance = {.opacity = opacity},
 			.interaction = {.isEnabled = enabled},
 			.children = stana::ui::children(
-				stana::ui::Text{.text = text, .appearance = {.visibility = visible}},
+				stana::ui::TextLabel{.text = text, .appearance = {.visibility = visible}},
 				stana::ui::HStack{
 					.spacing = spacing,
 					.children = stana::ui::children(
-						stana::ui::Text{.text = "sibling"},
-						stana::ui::Text{.text = "other"}
+						stana::ui::TextLabel{.text = "sibling"},
+						stana::ui::TextLabel{.text = "other"}
 					)
 				},
 				stana::ui::If{
@@ -280,8 +280,8 @@ void motionAndFocus() {
 								.height = stana::Length::points(stana::Points{contentHeight})
 							}},
 				.children = stana::ui::children(
-					stana::ui::Text{.text = "scrolling"},
-					stana::ui::Text{.text = "unchanged measurement"}
+					stana::ui::TextLabel{.text = "scrolling"},
+					stana::ui::TextLabel{.text = "unchanged measurement"}
 				)
 			}
 		}
@@ -337,7 +337,7 @@ void providerSettlement() {
 		{.width = stana::Points{viewport}, .height = stana::Points{viewport}}
 	);
 	const auto identity =
-		document->createNode(stana::document::detail::NodeKind::text, document->root());
+		document->createNode(stana::document::detail::NodeKind::textLabel, document->root());
 	const stana::reactive::Signal text{std::string{"old"}};
 	document->bind(
 		identity,
@@ -355,9 +355,8 @@ void providerSettlement() {
 	const auto weak = std::weak_ptr{document};
 	bool effectSawFinal = false;
 	document->setTextMeasure(
-		[text,
-			weak,
-			&effectSawFinal](const std::string &value, stana::Font, stana::Points) -> stana::Size {
+		[text, weak, &effectSawFinal](const std::string &value, const stana::Font &, stana::Points)
+			-> stana::Size {
 			if (value == "middle") {
 				stana::reactive::detail::ReactiveRuntime::current().effects.emplace_back(
 					[weak, &effectSawFinal] -> void {
@@ -400,8 +399,8 @@ void owningCore() {
 	);
 	const auto group =
 		document->createNode(stana::document::detail::NodeKind::group, document->root());
-	const auto first = document->createNode(stana::document::detail::NodeKind::text, group);
-	const auto second = document->createNode(stana::document::detail::NodeKind::text, group);
+	const auto first = document->createNode(stana::document::detail::NodeKind::textLabel, group);
+	const auto second = document->createNode(stana::document::detail::NodeKind::textLabel, group);
 	bool staleDuringCleanup = false;
 	static_cast<void>(document->find(first)->scope.own([&] -> void {
 		staleDuringCleanup = !document->handle(first).isAlive();
@@ -421,12 +420,12 @@ void owningCore() {
 			!stana::rendering::detail::geometryFind(document->renderSnapshot()->geometry, second),
 		"C16 retire before reentrant cleanup"
 	);
-	const auto text = document->createNode(stana::document::detail::NodeKind::text, group);
+	const auto text = document->createNode(stana::document::detail::NodeKind::textLabel, group);
 	document->find(text)->text = "provider";
 	document->commit();
 	const auto old = document->renderSnapshot();
 	document->setTextMeasure(
-		[] [[noreturn]] (const std::string &, stana::Font, stana::Points) -> stana::Size {
+		[] [[noreturn]] (const std::string &, const stana::Font &, stana::Points) -> stana::Size {
 			throw std::runtime_error("provider failure");
 		}
 	);
@@ -441,10 +440,12 @@ void owningCore() {
 			document->metrics().sceneRevisions == old->revision,
 		"C21 no half-publication"
 	);
-	document->setTextMeasure([](const std::string &, stana::Font, stana::Points) -> stana::Size {
-		constexpr double extent = 20;
-		return {.width = stana::Points{extent}, .height = stana::Points{extent}};
-	});
+	document->setTextMeasure(
+		[](const std::string &, const stana::Font &, stana::Points) -> stana::Size {
+			constexpr double extent = 20;
+			return {.width = stana::Points{extent}, .height = stana::Points{extent}};
+		}
+	);
 	document->commit();
 	require(document->renderSnapshot()->revision > old->revision, "C17 new provider recovers");
 	const auto before = document->renderSnapshot();
@@ -466,7 +467,7 @@ void owningCore() {
 	);
 	const auto weak = std::weak_ptr{document};
 	document->setTextMeasure(
-		[weak, text](const std::string &, stana::Font, stana::Points) -> stana::Size {
+		[weak, text](const std::string &, const stana::Font &, stana::Points) -> stana::Size {
 			if (const auto owner = weak.lock()) {
 				owner->remove(text);
 			}
@@ -485,6 +486,10 @@ void owningCore() {
 	);
 	const auto overlay =
 		ordered->createNode(stana::document::detail::NodeKind::zstack, ordered->root());
+	ordered->find(overlay)->frame = {
+		.width = stana::Length::fill(),
+		.height = stana::Length::fill()
+	};
 	const auto back = ordered->createNode(stana::document::detail::NodeKind::button, overlay);
 	const auto front = ordered->createNode(stana::document::detail::NodeKind::button, overlay);
 	ordered->commit();

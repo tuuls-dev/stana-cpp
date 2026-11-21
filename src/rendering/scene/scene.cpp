@@ -46,8 +46,10 @@ constexpr Points focusBorderWidth{2};
 		return "zstack";
 	case spacer:
 		return "spacer";
-	case text:
-		return "text";
+	case textLabel:
+		return "textLabel";
+	case textInput:
+		return "textInput";
 	case button:
 		return "button";
 	case toggle:
@@ -69,10 +71,6 @@ constexpr Points focusBorderWidth{2};
 	return color;
 }
 
-/// @brief Label color for text that has no author-supplied foreground.
-[[nodiscard]] auto themeLabel(Theme theme) -> Color {
-	return theme == Theme::dark ? Color::white() : Color::black();
-}
 } // namespace
 
 namespace {
@@ -268,29 +266,136 @@ auto Document::project(
 					.boxGeometry = rich ? std::optional{contours} : std::nullopt}
 			);
 		}
-		if (node->kind == NodeKind::text || node->kind == NodeKind::button ||
-			node->kind == NodeKind::toggle) {
-			auto font = node->font;
-			font.size *= environment_.textScale;
-			stana::detail::requireNonnegative(font.size);
+		if (node->textLayout) {
+			const bool placeholder = node->editor && node->editor->buffer.displayedText().empty();
+			const auto &layout = placeholder && node->editor->placeholderLayout
+				? *node->editor->placeholderLayout
+				: *node->textLayout;
 			const auto bounds = stana::layout::detail::contentRect(
 				node->bounds,
 				node->padding,
 				environment_.direction
 			);
-			const Color foreground = node->isForegroundExplicit
-				? node->foreground
-				: stana::rendering::detail::themeLabel(environment_.theme);
-			scene.commands.push_back(
-				{.kind = stana::rendering::PaintKind::text,
-					.bounds = bounds,
-					.color = stana::rendering::detail::withOpacity(
-						foreground.resolved(environment_.theme, environment_.highContrast),
-						opacity
-					),
-					.text = node->text,
-					.font = font}
+			const auto scroll = node->editor ? node->editor->scroll : Points{};
+			Color foreground = node->isForegroundExplicit ? node->foreground : Color::text();
+			if (placeholder) {
+				foreground =
+					node->editor->placeholderStyle.foreground.value_or(Color::secondaryText());
+			}
+			foreground = stana::rendering::detail::withOpacity(
+				foreground.resolved(environment_.theme, environment_.highContrast),
+				opacity
 			);
+			const auto translate = [&](Rect rect) -> Rect {
+				rect.origin.x += bounds.origin.x - scroll;
+				rect.origin.y += bounds.origin.y;
+				return rect;
+			};
+			scene.commands.push_back(
+				{.kind = stana::rendering::PaintKind::pushClip, .bounds = bounds}
+			);
+			std::vector<Rect> selection;
+			if (node->editor && !placeholder) {
+				const auto range = node->editor->buffer.displayedSelection();
+				selection = layout.selection(
+					{.start = std::min(range.start, range.end),
+						.end = std::max(range.start, range.end)}
+				);
+				for (const auto &rect : selection) {
+					scene.commands.push_back(
+						{.kind = stana::rendering::PaintKind::fillRect,
+							.bounds = translate(rect),
+							.color = stana::rendering::detail::withOpacity(
+								Color::accent().resolved(
+									environment_.theme,
+									environment_.highContrast
+								),
+								opacity
+							)}
+					);
+				}
+			}
+			const auto appendGlyphs = [&](Color color) -> void {
+				for (const auto &line : layout.lines) {
+					if (line.inkEnd == line.source.start) {
+						continue;
+					}
+					const Rect lineBounds{
+						.origin = line.origin,
+						.size = {.width = line.shape.width, .height = line.height}
+					};
+					scene.commands.push_back(
+						{.kind = stana::rendering::PaintKind::text,
+							.bounds = translate(lineBounds),
+							.color = color,
+							.text = layout.request.text.substr(
+								line.source.start,
+								line.inkEnd - line.source.start
+							),
+							.font = layout.request.font,
+							.textResource = line.shape.resource,
+							.textBaseline = line.baseline - line.origin.y}
+					);
+					if (placeholder ? node->editor->placeholderStyle.isStrikethrough.value_or(
+										  node->isStrikethrough
+									  )
+									: node->isStrikethrough) {
+						scene.commands.push_back(
+							{.kind = stana::rendering::PaintKind::line,
+								.bounds = translate(
+									{.origin =
+											{.x = line.origin.x,
+												.y = line.baseline -
+													Points{line.shape.xHeight.value() / 2}},
+										.size = {.width = line.shape.width}}
+								),
+								.color = color,
+								.lineWidth = line.shape.underlineThickness}
+						);
+					}
+				}
+			};
+			appendGlyphs(foreground);
+			for (const auto &rect : selection) {
+				scene.commands.push_back(
+					{.kind = stana::rendering::PaintKind::pushClip, .bounds = translate(rect)}
+				);
+				appendGlyphs(stana::rendering::detail::withOpacity(Color::white(), opacity));
+				scene.commands.push_back({.kind = stana::rendering::PaintKind::popClip});
+			}
+			if (node->editor) {
+				const auto snapshot = node->editor->buffer.snapshot();
+				if (snapshot.composition) {
+					const auto start = snapshot.composition->replacement.start;
+					for (const auto &rect : layout.selection(
+							 {.start = start, .end = start + snapshot.composition->text.size()}
+						 )) {
+						scene.commands.push_back(
+							{.kind = stana::rendering::PaintKind::line,
+								.bounds = translate(
+									{.origin =
+											{.x = rect.origin.x,
+												.y = layout.lines.front().baseline + Points{2}},
+										.size = {.width = rect.size.width}}
+								),
+								.color = foreground,
+								.lineWidth = Points{1}}
+						);
+					}
+				}
+				const auto selectionRange = node->editor->buffer.displayedSelection();
+				if (focused_ == identity && inputActive_ && node->editor->caretVisible &&
+					selectionRange.start == selectionRange.end) {
+					scene.commands.push_back(
+						{.kind = stana::rendering::PaintKind::fillRect,
+							.bounds = translate(
+								layout.caret(selectionRange.end, node->editor->secondaryAffinity)
+							),
+							.color = foreground}
+					);
+				}
+			}
+			scene.commands.push_back({.kind = stana::rendering::PaintKind::popClip});
 		}
 		const auto content =
 			stana::layout::detail::contentRect(node->bounds, node->padding, environment_.direction);
@@ -408,7 +513,10 @@ auto Document::project(
 			.bounds = node->bounds,
 			.isEnabled = context.eligible,
 			.isFocused = focused_ == identity,
-			.accessibilityLabel = node->accessibilityLabel
+			.accessibilityLabel = node->accessibilityLabel,
+			.editor = node->editor ? std::optional<EditorSnapshot>{{.store = node->editor->buffer.snapshot(),
+				.horizontalScroll = node->editor->scroll, .isActive = focused_ == identity && inputActive_,
+				.isCaretVisible = node->editor->caretVisible && focused_ == identity && inputActive_}} : std::nullopt
 		});
 	}
 	if (context.visible) {
@@ -425,7 +533,24 @@ auto Document::project(
 				.rectangularClip = incoming.rectangularClip,
 				.parent = node->parent,
 				.eligible = context.eligible,
-				.children = orderedChildren}
+				.children = orderedChildren,
+				.textStamp = node->editor ? node->editor->buffer.stamp() : text::StoreStamp{},
+				.textLayout = node->editor ? node->textLayout : nullptr,
+				.textOrigin = stana::layout::detail::contentRect(
+					node->bounds,
+					node->padding,
+					environment_.direction
+				)
+					.origin,
+				.textScroll = node->editor ? node->editor->scroll : Points{},
+				.textClip = stana::rendering::detail::intersect(
+					incoming.rectangularClip,
+					stana::layout::detail::contentRect(
+						node->bounds,
+						node->padding,
+						environment_.direction
+					)
+				)}
 		);
 	} else {
 		geometry = stana::rendering::detail::geometryErase(geometry, identity);
@@ -505,6 +630,7 @@ void Document::commit() {
 			try {
 				static_cast<void>(measure(root_, viewport_));
 				arrange(root_, {.size = viewport_});
+				reconcileEditors();
 				reconcileSymbols();
 			} catch (...) {
 				// Defer to the existing runtime before any publication or effects.

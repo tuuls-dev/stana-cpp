@@ -42,7 +42,7 @@ struct AsyncComponent {
 		context.task(delayedWrite(value, lifetime), [](const std::exception_ptr &error) -> void {
 			std::rethrow_exception(error);
 		});
-		return stana::ui::Text{.text = value.map([](int current) -> std::string {
+		return stana::ui::TextLabel{.text = value.map([](int current) -> std::string {
 			return std::to_string(current);
 		})};
 	}

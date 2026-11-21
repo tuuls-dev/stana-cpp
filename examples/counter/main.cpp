@@ -23,7 +23,7 @@ auto main() -> int {
 					.spacing = 16_pt,
 					.layout = {.padding = Insets::all(28_pt)},
 					.children = children(
-						Text{
+						TextLabel{
 							.text = count.map([](int value) -> std::string {
 								return "Count: " + std::to_string(value);
 							}),

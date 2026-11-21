@@ -3,7 +3,9 @@ module;
 #include <chrono>
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -29,16 +31,61 @@ struct GPUCanvasPaint {
 using MixedPaint =
 	std::variant<::stana::rendering::PaintCommand, GPUCanvasPaint, ::stana::symbol::Presentation>;
 
+/// @brief Fresh per-host plain-text clipboard, with explicit failure injection.
+struct MemoryClipboard {
+	std::optional<std::string> text{};
+	bool failRead = false;
+	bool failWrite = false;
+};
+
+/// @brief Deterministic portable services installed before mounting any component.
+struct TestPlatform {
+	::stana::text::LayoutProvider layout = [](
+											   const ::stana::text::LayoutRequest &request
+										   ) -> std::shared_ptr<const ::stana::text::TextLayout> {
+		return ::stana::text::layoutText(request);
+	};
+	std::shared_ptr<MemoryClipboard> clipboard = std::make_shared<MemoryClipboard>();
+	std::function<std::expected<std::optional<std::string>, Error>()> readClipboard{};
+	std::function<std::expected<void, Error>(const std::string &)> writeClipboard{};
+};
+
 /// @brief Deterministic consumer host. Uses the production mount/document path without
 /// creating NSApplication, a native window, or a wall-clock-driven scheduler.
 class TestHost {
   public:
 	explicit TestHost(
 		Size size = {.width = defaultWidth, .height = defaultHeight},
-		Environment environment = {}
+		Environment environment = {},
+		TestPlatform platform = {}
 	)
 		: lease_(::stana::reactive::detail::acquireHeadlessExecutorLease()),
-		  document_(::stana::document::detail::Document::create(size, environment)) {}
+		  document_(::stana::document::detail::Document::create(size, environment)) {
+		::stana::document::detail::TextServices services;
+		services.layout = std::move(platform.layout);
+		services.readClipboard = platform.readClipboard
+			? std::move(platform.readClipboard)
+			: [clipboard = platform.clipboard] -> std::expected<std::optional<std::string>, Error> {
+			if (!clipboard || clipboard->failRead) {
+				return std::unexpected(Error::nativeFailure);
+			}
+			return clipboard->text;
+		};
+		services.writeClipboard = platform.writeClipboard
+			? std::move(platform.writeClipboard)
+			: [clipboard =
+					  platform.clipboard](const std::string &value) -> std::expected<void, Error> {
+			if (!clipboard || clipboard->failWrite) {
+				return std::unexpected(Error::nativeFailure);
+			}
+			clipboard->text = value;
+			return {};
+		};
+		services.finishComposition = [] -> std::expected<void, Error> {
+			return {};
+		};
+		document_->setTextServices(std::move(services));
+	}
 
 	TestHost(const TestHost &) = delete;
 	TestHost(TestHost &&) = delete;
@@ -56,6 +103,94 @@ class TestHost {
 			using ::stana::ui::mount;
 			static_cast<void>(mount(description, context));
 		});
+	}
+
+	/// @brief Starts one physical/native-style action; refresh targets before each callback.
+	[[nodiscard]] auto beginInputSequence() -> ::stana::document::InputSequence {
+		return document_->beginInputSequence();
+	}
+
+	void endInputSequence(::stana::document::InputSequence sequence) {
+		document_->endInputSequence(sequence);
+	}
+
+	[[nodiscard]] auto textInputTarget() const
+		-> std::optional<::stana::document::TextInputTarget> {
+		return document_->textInputTarget();
+	}
+
+	[[nodiscard]] auto dispatchText(
+		::stana::document::TextInputTarget target,
+		::stana::document::InputSequence sequence,
+		::stana::text::StoreEdit edit
+	) -> std::expected<void, Error> {
+		return document_->editText(target, sequence, std::move(edit));
+	}
+
+	[[nodiscard]] auto dispatchCommand(
+		::stana::document::TextInputTarget target,
+		::stana::document::InputSequence sequence,
+		::stana::document::EditingCommand command
+	) -> std::expected<void, Error> {
+		return document_->editingCommand(target, sequence, command);
+	}
+
+	[[nodiscard]] auto editText(::stana::text::StoreEdit edit) -> std::expected<void, Error> {
+		const auto target = document_->textInputTarget();
+		if (!target) {
+			return std::unexpected(Error::notFocusable);
+		}
+		const ::stana::document::InputSequenceScope scope{document_};
+		return document_->editText(*target, scope.sequence(), std::move(edit));
+	}
+
+	[[nodiscard]] auto insertText(std::string value) -> std::expected<void, Error> {
+		return editText({.text = std::move(value)});
+	}
+
+	[[nodiscard]] auto setMarkedText(std::string value) -> std::expected<void, Error> {
+		const auto end = value.size();
+		return editText(
+			{.kind = ::stana::text::StoreEdit::Kind::compose,
+				.text = std::move(value),
+				.selection = {.start = end, .end = end}}
+		);
+	}
+
+	[[nodiscard]] auto commitMarkedText() -> std::expected<void, Error> {
+		return editText({.kind = ::stana::text::StoreEdit::Kind::commit});
+	}
+
+	[[nodiscard]] auto cancelMarkedText() -> std::expected<void, Error> {
+		return editText({.kind = ::stana::text::StoreEdit::Kind::cancel});
+	}
+
+	[[nodiscard]] auto editingCommand(::stana::document::EditingCommand command)
+		-> std::expected<void, Error> {
+		const auto target = document_->textInputTarget();
+		if (!target) {
+			return std::unexpected(Error::notFocusable);
+		}
+		const ::stana::document::InputSequenceScope scope{document_};
+		return document_->editingCommand(*target, scope.sequence(), command);
+	}
+
+	[[nodiscard]] auto canEdit(::stana::document::EditingCommand command) const -> bool {
+		const auto target = document_->textInputTarget();
+		return target && document_->canEdit(*target, command);
+	}
+
+	void setInputActive(bool active) { document_->setInputActive(active); }
+
+	void pointerDown(::stana::document::PointerInput input) { document_->pointerDown(input); }
+
+	void pointerUp(::stana::document::PointerInput input) { document_->pointerUp(input); }
+
+	void pointerMove(::stana::document::PointerInput input) { document_->pointerMove(input); }
+
+	[[nodiscard]] auto contextMenuTarget(Point point)
+		-> std::optional<::stana::document::TextInputTarget> {
+		return document_->contextMenuTarget(point);
 	}
 
 	/// @brief Enables native-style last-confirmed geometry and initial input gating.
