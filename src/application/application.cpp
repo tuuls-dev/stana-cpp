@@ -3,11 +3,13 @@ module;
 #include "../platform/native_contracts.hpp"
 
 #include "../diagnostics/log.hpp"
+#include "../gpu/color.hpp"
 #include "../gpu/limits.hpp"
 #include <algorithm>
 #include <array>
 #include <bit>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <exception>
 #include <functional>

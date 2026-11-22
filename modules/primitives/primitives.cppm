@@ -12,6 +12,7 @@ module;
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <variant>
 
 export module stana:primitives;
 
@@ -259,118 +260,145 @@ struct Frame {
 	}
 };
 
-/// @brief Portable RGBA paint value used by styling and drawing commands.
-/// Components store these values without native color objects; renderer adapters
-/// interpret them in the scene color contract. Channels remain encoded SDR and are
-/// not linearized or premultiplied here. Alpha uses Opacity.
-struct Color {
-	enum class Token : std::uint8_t {
-		explicitColor,
-		surface,
-		background,
-		text,
-		secondaryText,
-		accent,
-		border
-	};
-	SdrChannel red{};					///< Red channel in the encoded SDR contract.
-	SdrChannel green{};					///< Green channel in the encoded SDR contract.
-	SdrChannel blue{};					///< Blue channel in the encoded SDR contract.
-	Opacity alpha{1};					///< Opacity; zero is transparent and one is opaque.
-	Token token = Token::explicitColor; ///< Explicit numeric colors are never theme-dependent.
+/// @brief Encoded SDR sRGB channels plus opacity.
+/// RGBA here is specifically encoded sRGB, not an arbitrary RGB working space.
+/// Channels are not linearized or premultiplied. Construction does not clamp;
+/// wrapping into Color diagnoses invalid values.
+struct ColorRGBA {
+	SdrChannel red{};	///< Encoded sRGB red in [0, 1].
+	SdrChannel green{}; ///< Encoded sRGB green in [0, 1].
+	SdrChannel blue{};	///< Encoded sRGB blue in [0, 1].
+	Opacity alpha{1};	///< Independent opacity; zero is transparent and one is opaque.
+	auto operator<=>(const ColorRGBA &) const = default;
+};
+
+/// @brief Authored OKLCH coordinates plus opacity.
+/// Hue is stored as the authored Angle and is not wrapped or normalized on
+/// construction or inspection. Conversion uses trigonometric periodicity.
+/// Chroma is not normalized to [0, 1]. Out-of-gamut chroma is retained here;
+/// destination clipping happens only during paint preparation.
+struct ColorOKLCH {
+	OklchLightness lightness{0}; ///< Lightness in [0, 1].
+	OklchChroma chroma{0};		 ///< Nonnegative chroma; not an SDR-normalized channel.
+	Angle hue{};				 ///< Authored hue in radians; not reduced modulo a turn.
+	Opacity alpha{1};			 ///< Independent opacity; zero is transparent and one is opaque.
+	auto operator<=>(const ColorOKLCH &) const = default;
+};
+
+/// @brief Concrete styling/drawing paint that retains either encoded sRGB or OKLCH.
+///
+/// Color is not a theme token and does not resolve semantic roles. Wrapping
+/// ColorRGBA or ColorOKLCH is lossless and does not convert color spaces.
+/// Inspect the retained representation with asRGBA()/asOKLCH(); the wrong kind
+/// returns nullptr. Equality is representation-aware: RGB and OKLCH remain
+/// distinct even when they would paint alike. Renderer working-space conversion
+/// happens during paint preparation, not when copying, wrapping, or inspecting.
+class Color {
+  public:
+	/// @brief Opaque encoded-sRGB black, matching the previous default.
+	constexpr Color() : value_(ColorRGBA{}) {}
+
+	/// @brief Lossless wrap of encoded sRGB. Diagnoses nonfinite or out-of-range channels.
+	constexpr Color(ColorRGBA value) : value_(validated(value)) {}
+
+	/// @brief Lossless wrap of authored OKLCH. Diagnoses invalid coordinates; no RGB conversion.
+	constexpr Color(ColorOKLCH value) : value_(validated(value)) {}
 
 	[[nodiscard]] static constexpr auto
-	rgb(SdrChannel red, SdrChannel green, SdrChannel blue, Opacity alpha = Opacity{1}) noexcept
-		-> Color {
-		return {.red = red, .green = green, .blue = blue, .alpha = alpha};
+	rgb(SdrChannel red, SdrChannel green, SdrChannel blue, Opacity alpha = Opacity{1}) -> Color {
+		return Color{ColorRGBA{.red = red, .green = green, .blue = blue, .alpha = alpha}};
 	}
 
-	[[nodiscard]] static constexpr auto
-	rgb(double red, double green, double blue, double alpha = 1) noexcept -> Color {
+	/// @brief Existing RGB convenience overload; channels are encoded sRGB in [0, 1].
+	[[nodiscard]] static constexpr auto rgb(double red, double green, double blue, double alpha = 1)
+		-> Color {
 		return rgb(SdrChannel{red}, SdrChannel{green}, SdrChannel{blue}, Opacity{alpha});
 	}
 
-	[[nodiscard]] static constexpr auto white() noexcept -> Color { return rgb(1, 1, 1); }
-
-	[[nodiscard]] static constexpr auto black() noexcept -> Color { return rgb(0, 0, 0); }
-
-	[[nodiscard]] static constexpr auto clear() noexcept -> Color { return rgb(0, 0, 0, 0); }
-
-	[[nodiscard]] static constexpr auto accent() noexcept -> Color {
-		return {
-			.red = SdrChannel{defaults::accentRed},
-			.green = SdrChannel{defaults::accentGreen},
-			.blue = SdrChannel{defaults::accentBlue},
-			.alpha = Opacity{1},
-			.token = Token::accent
+	/// @brief Stores the authored OKLCH coordinates. There is no raw-double overload.
+	[[nodiscard]] static constexpr auto
+	oklch(OklchLightness lightness, OklchChroma chroma, Angle hue, Opacity alpha = Opacity{1})
+		-> Color {
+		return Color{
+			ColorOKLCH{.lightness = lightness, .chroma = chroma, .hue = hue, .alpha = alpha}
 		};
 	}
 
-	[[nodiscard]] static constexpr auto surface() noexcept -> Color {
-		return {.token = Token::surface};
+	[[nodiscard]] static constexpr auto white() -> Color { return rgb(1, 1, 1); }
+
+	[[nodiscard]] static constexpr auto black() -> Color { return rgb(0, 0, 0); }
+
+	[[nodiscard]] static constexpr auto clear() -> Color { return rgb(0, 0, 0, 0); }
+
+	/// @brief Owned RGBA payload, or nullptr when this Color retains OKLCH.
+	/// The pointer is invalidated by replacing or destroying this Color.
+	[[nodiscard]] auto asRGBA() const noexcept -> const ColorRGBA * {
+		return std::get_if<ColorRGBA>(&value_);
 	}
 
-	[[nodiscard]] static constexpr auto background() noexcept -> Color {
-		return {.token = Token::background};
+	/// @brief Owned OKLCH payload, or nullptr when this Color retains RGBA.
+	/// The pointer is invalidated by replacing or destroying this Color.
+	[[nodiscard]] auto asOKLCH() const noexcept -> const ColorOKLCH * {
+		return std::get_if<ColorOKLCH>(&value_);
 	}
 
-	[[nodiscard]] static constexpr auto text() noexcept -> Color { return {.token = Token::text}; }
-
-	[[nodiscard]] static constexpr auto secondaryText() noexcept -> Color {
-		return {.token = Token::secondaryText};
+	[[nodiscard]] auto alpha() const noexcept -> Opacity {
+		return std::visit(
+			[](const auto &payload) -> Opacity {
+				return payload.alpha;
+			},
+			value_
+		);
 	}
 
-	[[nodiscard]] static constexpr auto border() noexcept -> Color {
-		return {.token = Token::border};
-	}
-
-	[[nodiscard]] auto resolved(Theme theme, bool highContrast = false) const noexcept -> Color {
-		constexpr double secondaryDark = 0.72;
-		constexpr double secondaryDarkBlue = 0.74;
-		constexpr double secondaryLight = 0.36;
-		constexpr double secondaryLightBlue = 0.38;
-		constexpr double surfaceDark = 0.17;
-		constexpr double surfaceDarkBlue = 0.18;
-		constexpr double backgroundDark = 0.11;
-		constexpr double backgroundDarkBlue = 0.12;
-		constexpr double backgroundLight = 0.96;
-		constexpr double backgroundLightBlue = 0.97;
-		const bool dark = theme == Theme::dark;
-		Color result;
-		switch (token) {
-		case Token::explicitColor:
-			return *this;
-		case Token::accent:
-			result = rgb(defaults::accentRed, defaults::accentGreen, defaults::accentBlue);
-			break;
-		case Token::text:
-			result = dark ? white() : black();
-			break;
-		case Token::secondaryText:
-			result = dark ? rgb(secondaryDark, secondaryDark, secondaryDarkBlue)
-						  : rgb(secondaryLight, secondaryLight, secondaryLightBlue);
-			break;
-		case Token::surface:
-			result = dark ? rgb(surfaceDark, surfaceDark, surfaceDarkBlue) : white();
-			break;
-		case Token::background:
-			result = dark ? rgb(backgroundDark, backgroundDark, backgroundDarkBlue)
-						  : rgb(backgroundLight, backgroundLight, backgroundLightBlue);
-			break;
-		case Token::border: {
-			const double value = highContrast ? (dark ? 0.8 : 0.2) : (dark ? 0.36 : 0.76);
-			result = rgb(value, value, value);
-			break;
-		}
-		}
-		result.alpha = alpha;
-		return result;
+	/// @brief Same retained representation with only alpha replaced. Does not multiply
+	/// the existing alpha or convert coordinates.
+	[[nodiscard]] auto withAlpha(Opacity alpha) const -> Color {
+		return std::visit(
+			[alpha](auto payload) -> Color {
+				payload.alpha = alpha;
+				return Color{payload};
+			},
+			value_
+		);
 	}
 
 	auto operator<=>(const Color &) const = default;
 
 	[[nodiscard]] auto operator==(const Color &other) const -> bool {
 		return std::is_eq(*this <=> other);
+	}
+
+  private:
+	std::variant<ColorRGBA, ColorOKLCH> value_;
+
+	[[nodiscard]] static constexpr auto validated(ColorRGBA value) -> ColorRGBA {
+		for (const double channel :
+			{value.red.value(), value.green.value(), value.blue.value(), value.alpha.value()}) {
+			if (!std::isfinite(channel) || channel < 0 || channel > 1) {
+				throw std::invalid_argument("ColorRGBA channel out of range");
+			}
+		}
+		return value;
+	}
+
+	[[nodiscard]] static constexpr auto validated(ColorOKLCH value) -> ColorOKLCH {
+		const double lightness = value.lightness.value();
+		if (!std::isfinite(lightness) || lightness < 0 || lightness > 1) {
+			throw std::invalid_argument("OklchLightness out of range");
+		}
+		const double chroma = value.chroma.value();
+		if (!std::isfinite(chroma) || chroma < 0) {
+			throw std::invalid_argument("OklchChroma out of range");
+		}
+		if (!std::isfinite(value.hue.radians())) {
+			throw std::invalid_argument("OKLCH hue must be finite");
+		}
+		if (!std::isfinite(value.alpha.value()) || value.alpha.value() < 0 ||
+			value.alpha.value() > 1) {
+			throw std::invalid_argument("Opacity out of range");
+		}
+		return value;
 	}
 };
 

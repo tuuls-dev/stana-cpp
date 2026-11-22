@@ -18,6 +18,7 @@ module;
 
 export module stana:document;
 import :primitives;
+import :theming;
 import :reactive;
 import :rendering;
 import :layout;
@@ -507,7 +508,7 @@ inline constexpr Points defaultSymbolSize{24};
 struct SymbolState {
 	::stana::symbol::Asset asset{};
 	Points size = defaultSymbolSize;
-	Color color = Color::text();
+	::stana::theming::ColorSource color = ::stana::theming::ColorToken::text();
 	std::optional<Points> strokeWidth{};
 	::stana::symbol::Playback playback = ::stana::symbol::Playback::none();
 	::stana::symbol::PlaybackState playbackState{};
@@ -539,7 +540,7 @@ struct TypographyOverrides {
 	std::optional<Points> fontSize{};
 	std::optional<FontWeight> fontWeight{};
 	std::optional<FontStyle> fontStyle{};
-	std::optional<Color> foreground{};
+	std::optional<::stana::theming::ColorSource> foreground{};
 	std::optional<Points> lineHeight{};
 	std::optional<bool> isStrikethrough{};
 };
@@ -605,10 +606,13 @@ struct Node {
 	std::shared_ptr<const ::stana::text::TextLayout> textLayout{};
 	std::unique_ptr<EditorState> editor{};
 	Font font{}; ///< Unscaled system-font request shared by measurement and scene text commands.
-	Color foreground = Color::black();	///< Text color used when isForegroundExplicit is set.
-	Color background = Color::clear();	///< Resolved fill behind this occurrence and descendants.
-	Color borderColor = Color::clear(); ///< Resolved outline color when borderWidth is positive.
-	Points borderWidth{};				///< Nonnegative outline width in logical points.
+	::stana::theming::ColorSource foreground =
+		Color::black(); ///< Text color used when isForegroundExplicit is set.
+	::stana::theming::ColorSource background =
+		Color::clear(); ///< Fill behind this occurrence and descendants.
+	::stana::theming::ColorSource borderColor =
+		Color::clear();	   ///< Outline color when borderWidth is positive.
+	Points borderWidth{};  ///< Nonnegative outline width in logical points.
 	Points cornerRadius{}; ///< Rounding radius shared by fill, outline and clip projection.
 	std::optional<CornerRadii>
 		cornerRadii{}; ///< Opt-in outer contour; scalar fallback is preserved.

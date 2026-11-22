@@ -20,6 +20,7 @@ module;
 module stana;
 import :document;
 import :primitives;
+import :theming;
 import :reactive;
 import :rendering;
 import :symbol_geometry;
@@ -67,8 +68,13 @@ constexpr Points focusBorderWidth{2};
 }
 
 [[nodiscard]] auto withOpacity(Color color, Opacity opacity) -> Color {
-	color.alpha = Opacity{color.alpha.value() * opacity.value()};
-	return color;
+	return color.withAlpha(Opacity{color.alpha().value() * opacity.value()});
+}
+
+[[nodiscard]] auto
+resolvePaint(const theming::ColorSource &source, const Environment &environment, Opacity opacity)
+	-> Color {
+	return withOpacity(theming::resolveColor(source, environment), opacity);
 }
 
 } // namespace
@@ -229,13 +235,15 @@ auto Document::project(
 			node->boxShadows,
 			radii,
 			widths,
-			node->isForegroundExplicit ? node->foreground : Color::text(),
+			node->isForegroundExplicit ? node->foreground : theming::ColorToken::text(),
 			environment_
 		);
 		const auto appendShadows = [&](bool inset) -> void {
 			for (auto shadow : shadows) {
 				if (shadow.isInset == inset) {
-					shadow.color.alpha = Opacity{shadow.color.alpha.value() * opacity.value()};
+					shadow.color = shadow.color.withAlpha(
+						Opacity{shadow.color.alpha().value() * opacity.value()}
+					);
 					scene.commands.push_back(
 						{.kind = stana::rendering::PaintKind::boxShadow,
 							.bounds = shadow.ink,
@@ -245,12 +253,15 @@ auto Document::project(
 			}
 		};
 		appendShadows(false);
-		if (node->background.alpha.value() > 0) {
+		if (stana::rendering::detail::resolvePaint(node->background, environment_, opacity)
+				.alpha()
+				.value() > 0) {
 			scene.commands.push_back(
 				{.kind = stana::rendering::PaintKind::fillRect,
 					.bounds = node->bounds,
-					.color = stana::rendering::detail::withOpacity(
-						node->background.resolved(environment_.theme, environment_.highContrast),
+					.color = stana::rendering::detail::resolvePaint(
+						node->background,
+						environment_,
 						opacity
 					),
 					.cornerRadius = node->cornerRadius,
@@ -277,15 +288,15 @@ auto Document::project(
 				environment_.direction
 			);
 			const auto scroll = node->editor ? node->editor->scroll : Points{};
-			Color foreground = node->isForegroundExplicit ? node->foreground : Color::text();
+			theming::ColorSource foreground =
+				node->isForegroundExplicit ? node->foreground : theming::ColorToken::text();
 			if (placeholder) {
-				foreground =
-					node->editor->placeholderStyle.foreground.value_or(Color::secondaryText());
+				foreground = node->editor->placeholderStyle.foreground.value_or(
+					theming::ColorToken::secondaryText()
+				);
 			}
-			foreground = stana::rendering::detail::withOpacity(
-				foreground.resolved(environment_.theme, environment_.highContrast),
-				opacity
-			);
+			Color foregroundPaint =
+				stana::rendering::detail::resolvePaint(foreground, environment_, opacity);
 			const auto translate = [&](Rect rect) -> Rect {
 				rect.origin.x += bounds.origin.x - scroll;
 				rect.origin.y += bounds.origin.y;
@@ -305,11 +316,9 @@ auto Document::project(
 					scene.commands.push_back(
 						{.kind = stana::rendering::PaintKind::fillRect,
 							.bounds = translate(rect),
-							.color = stana::rendering::detail::withOpacity(
-								Color::accent().resolved(
-									environment_.theme,
-									environment_.highContrast
-								),
+							.color = stana::rendering::detail::resolvePaint(
+								theming::ColorToken::accent(),
+								environment_,
 								opacity
 							)}
 					);
@@ -355,7 +364,7 @@ auto Document::project(
 					}
 				}
 			};
-			appendGlyphs(foreground);
+			appendGlyphs(foregroundPaint);
 			for (const auto &rect : selection) {
 				scene.commands.push_back(
 					{.kind = stana::rendering::PaintKind::pushClip, .bounds = translate(rect)}
@@ -378,7 +387,7 @@ auto Document::project(
 												.y = layout.lines.front().baseline + Points{2}},
 										.size = {.width = rect.size.width}}
 								),
-								.color = foreground,
+								.color = foregroundPaint,
 								.lineWidth = Points{1}}
 						);
 					}
@@ -391,7 +400,7 @@ auto Document::project(
 							.bounds = translate(
 								layout.caret(selectionRange.end, node->editor->secondaryAffinity)
 							),
-							.color = foreground}
+							.color = foregroundPaint}
 					);
 				}
 			}
@@ -420,10 +429,8 @@ auto Document::project(
 							command.bounds.size.height.value() / 2}
 					)};
 				}
-				command.color = stana::rendering::detail::withOpacity(
-					command.color.resolved(environment_.theme, environment_.highContrast),
-					opacity
-				);
+				command.color =
+					stana::rendering::detail::resolvePaint(command.color, environment_, opacity);
 			}
 			scene.commands.push_back(std::move(command));
 		}
@@ -445,7 +452,7 @@ auto Document::project(
 				content,
 				environment_.direction,
 				symbol.effect,
-				symbol.color.resolved(environment_.theme, environment_.highContrast),
+				theming::resolveColor(symbol.color, environment_),
 				symbol.strokeWidth,
 				symbol.generation,
 				symbol.available,
@@ -488,9 +495,10 @@ auto Document::project(
 			paint->suffix.push_back(
 				{.kind = stana::rendering::PaintKind::strokeRect,
 					.bounds = node->bounds,
-					.color = stana::rendering::detail::withOpacity(
-						(focused_ == identity ? Color::accent() : node->borderColor)
-							.resolved(environment_.theme, environment_.highContrast),
+					.color = stana::rendering::detail::resolvePaint(
+						focused_ == identity ? theming::ColorSource{theming::ColorToken::accent()}
+											 : node->borderColor,
+						environment_,
 						opacity
 					),
 					.cornerRadius = node->cornerRadius,
@@ -661,7 +669,7 @@ void Document::commit() {
 			draft->revision = metrics_.sceneRevisions + 1;
 			draft->size = viewport_;
 			draft->background = surfaceBackground_
-				? surfaceBackground_->resolved(environment_.theme, environment_.highContrast)
+				? *surfaceBackground_
 				: (environment_.theme == Theme::dark ? Color::black() : Color::white());
 			draft->textEnvironment = textEnvironment_;
 			draft->geometry =

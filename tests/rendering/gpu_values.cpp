@@ -59,7 +59,7 @@ void drawingValues() {
 		stana::Point{.x = stana::Points{1}, .y = stana::Points{1}},
 		stana::Point{.x = stana::Points{1}, .y = stana::Points{1}}
 	};
-	drawing.strokePolyline(points, stana::Color::accent());
+	drawing.strokePolyline(points, stana::theming::ColorToken::accent());
 	const stana::rendering::GPUDrawing moved{std::move(drawing)};
 	appendAfterMove(drawing);
 	require(!(drawing == moved), "moved-from drawing reusable");

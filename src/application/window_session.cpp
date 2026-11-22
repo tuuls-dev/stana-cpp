@@ -1,9 +1,11 @@
 module;
 
+#include "../gpu/color.hpp"
 #include "../platform/native_contracts.hpp"
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -20,6 +22,7 @@ module;
 module stana;
 import :application;
 
+#include "../rendering/color_space.hpp"
 #include "window_session.hpp"
 
 namespace stana::application::detail {
@@ -618,11 +621,12 @@ auto nativeConfigurationFromOptions(const WindowOptions &options) -> WindowConfi
 	}
 	if (const auto *solid = std::get_if<SolidBackground>(&snapshot.background)) {
 		configuration.backgroundKind = 1;
+		const auto prepared = stana::rendering::detail::prepareEncoded(solid->color);
 		configuration.background = {
-			.red = solid->color.red.value(),
-			.green = solid->color.green.value(),
-			.blue = solid->color.blue.value(),
-			.alpha = solid->color.alpha.value()
+			.red = prepared.red,
+			.green = prepared.green,
+			.blue = prepared.blue,
+			.alpha = prepared.alpha
 		};
 	} else if (std::holds_alternative<TransparentBackground>(snapshot.background)) {
 		configuration.backgroundKind = 2;

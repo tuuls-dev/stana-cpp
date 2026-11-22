@@ -5,6 +5,7 @@ module;
 #include <array>
 #include <cmath>
 #include <compare>
+#include <cstdint>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -13,16 +14,47 @@ module;
 module stana;
 import :rendering_shadow;
 import :primitives;
+import :theming;
+
+#include "color_space.hpp"
 
 namespace stana::rendering::detail {
 namespace {
-void validateColor(Color color) {
-	for (const double value :
-		{color.red.value(), color.green.value(), color.blue.value(), color.alpha.value()}) {
-		stana::detail::requireNonnegative(value);
-		if (value > 1) {
-			throw std::invalid_argument("Shadow SDR color exceeds one");
+void validateColor(const Color &color) {
+	if (const auto *rgba = color.asRGBA()) {
+		for (const double value :
+			{rgba->red.value(), rgba->green.value(), rgba->blue.value(), rgba->alpha.value()}) {
+			stana::detail::requireNonnegative(value);
+			if (value > 1) {
+				throw std::invalid_argument("Shadow SDR color exceeds one");
+			}
 		}
+		return;
+	}
+	const auto *oklch = color.asOKLCH();
+	if (oklch == nullptr) {
+		throw std::invalid_argument("Shadow color has no retained representation");
+	}
+	const double lightness = oklch->lightness.value();
+	if (!std::isfinite(lightness) || lightness < 0 || lightness > 1) {
+		throw std::invalid_argument("Shadow OKLCH lightness out of range");
+	}
+	const double chroma = oklch->chroma.value();
+	if (!std::isfinite(chroma) || chroma < 0) {
+		throw std::invalid_argument("Shadow OKLCH chroma out of range");
+	}
+	if (!std::isfinite(oklch->hue.radians())) {
+		throw std::invalid_argument("Shadow OKLCH hue must be finite");
+	}
+	const double alpha = oklch->alpha.value();
+	if (!std::isfinite(alpha) || alpha < 0 || alpha > 1) {
+		throw std::invalid_argument("Shadow OKLCH opacity out of range");
+	}
+}
+
+void validateColorSource(const theming::ColorSource &source) {
+	if (const auto *color = source.asColor()) {
+		validateColor(*color);
 	}
 }
 
@@ -114,7 +146,7 @@ void validateBoxShadows(std::span<const BoxShadow> shadows) {
 		stana::detail::requireFinite(shadow.spreadRadius.value());
 		stana::detail::requireNonnegative(shadow.blurRadius);
 		if (shadow.color) {
-			validateColor(*shadow.color);
+			validateColorSource(*shadow.color);
 		}
 	}
 }
@@ -166,19 +198,18 @@ auto prepareBoxShadows(
 	std::span<const BoxShadow> shadows,
 	CornerRadii radii,
 	BorderWidths widths,
-	Color foreground,
+	theming::ColorSource foreground,
 	Environment environment
 ) -> std::vector<ShadowPaint> {
 	validateBoxShadows(shadows);
-	validateColor(foreground);
+	validateColorSource(foreground);
 	const auto geometry = boxGeometry(bounds, radii, widths, environment.direction);
 	std::vector<ShadowPaint> result;
 	result.reserve(shadows.size());
 	// Reverse within the authored list, including mixed groups in an explicit GPU command.
 	for (const auto &shadow : std::views::reverse(shadows)) {
-		const auto color =
-			shadow.color.value_or(foreground).resolved(environment.theme, environment.highContrast);
-		if (color.alpha.value() <= 0) {
+		const auto color = theming::resolveColor(shadow.color.value_or(foreground), environment);
+		if (color.alpha().value() <= 0) {
 			continue;
 		}
 		const auto clip = shadow.isInset ? geometry.padding : geometry.outer;
@@ -224,7 +255,7 @@ auto interpolateBoxShadows(
 	std::span<const BoxShadow> from,
 	std::span<const BoxShadow> to,
 	Progress progress,
-	Color foreground,
+	theming::ColorSource foreground,
 	Environment environment
 ) -> std::vector<BoxShadow> {
 	stana::detail::requireNonnegative(progress.value());
@@ -237,8 +268,9 @@ auto interpolateBoxShadows(
 	const std::array foregroundShadow{BoxShadow{.color = foreground}};
 	detail::validateBoxShadows(foregroundShadow);
 	const auto resolve = [&](BoxShadow shadow) -> BoxShadow {
-		shadow.color =
-			shadow.color.value_or(foreground).resolved(environment.theme, environment.highContrast);
+		shadow.color = theming::ColorSource{
+			theming::resolveColor(shadow.color.value_or(foreground), environment)
+		};
 		return shadow;
 	};
 	for (std::size_t index = 0; index < std::min(from.size(), to.size()); ++index) {
@@ -260,27 +292,52 @@ auto interpolateBoxShadows(
 		const BoxShadow zero{.color = Color::clear(), .isInset = inset};
 		const auto start = resolve(index < from.size() ? from.subspan(index, 1).front() : zero);
 		const auto end = resolve(index < to.size() ? to.subspan(index, 1).front() : zero);
-		const auto a = start.color.value_or(Color::clear());
-		const auto b = end.color.value_or(Color::clear());
-		const double alpha = std::lerp(a.alpha.value(), b.alpha.value(), progressValue);
+		const auto a = theming::resolveColor(start.color.value_or(Color::clear()), environment);
+		const auto b = theming::resolveColor(end.color.value_or(Color::clear()), environment);
+		if (a == b && a.asRGBA() != nullptr) {
+			result.push_back(
+				{.offset =
+						{.x = Points{std::lerp(
+							 start.offset.x.value(),
+							 end.offset.x.value(),
+							 progressValue
+						 )},
+							.y = Points{std::lerp(
+								start.offset.y.value(),
+								end.offset.y.value(),
+								progressValue
+							)}},
+					.blurRadius = Points{std::lerp(
+						start.blurRadius.value(),
+						end.blurRadius.value(),
+						progressValue
+					)},
+					.spreadRadius = Points{std::lerp(
+						start.spreadRadius.value(),
+						end.spreadRadius.value(),
+						progressValue
+					)},
+					.color = a,
+					.isInset = inset}
+			);
+			continue;
+		}
+		const auto aLinear = detail::prepareLinear(a);
+		const auto bLinear = detail::prepareLinear(b);
+		const double alpha = std::lerp(aLinear.alpha, bLinear.alpha, progressValue);
 		const auto channel = [&](double first, double second) -> SdrChannel {
 			if (alpha <= 0) {
 				return SdrChannel{0};
 			}
 			if (std::is_eq(first <=> second) || std::is_eq(progressValue <=> 0.0)) {
-				return SdrChannel{first};
+				return SdrChannel{stana::gpu::detail::encodeSRGB(first)};
 			}
 			if (std::is_eq(progressValue <=> 1.0)) {
-				return SdrChannel{second};
+				return SdrChannel{stana::gpu::detail::encodeSRGB(second)};
 			}
 			return SdrChannel{std::clamp(
 				stana::gpu::detail::encodeSRGB(
-					std::lerp(
-						stana::gpu::detail::decodeSRGB(first) * a.alpha.value(),
-						stana::gpu::detail::decodeSRGB(second) * b.alpha.value(),
-						progressValue
-					) /
-					alpha
+					std::lerp(first * aLinear.alpha, second * bLinear.alpha, progressValue) / alpha
 				),
 				0.0,
 				1.0
@@ -308,9 +365,9 @@ auto interpolateBoxShadows(
 					progressValue
 				)},
 				.color = Color::rgb(
-					channel(a.red.value(), b.red.value()),
-					channel(a.green.value(), b.green.value()),
-					channel(a.blue.value(), b.blue.value()),
+					channel(aLinear.red, bLinear.red),
+					channel(aLinear.green, bLinear.green),
+					channel(aLinear.blue, bLinear.blue),
 					Opacity{alpha}
 				),
 				.isInset = inset}

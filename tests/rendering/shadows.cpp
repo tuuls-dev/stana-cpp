@@ -37,6 +37,14 @@ void near(double actual, double expected) {
 	require(std::abs(actual - expected) < numericTolerance, "shadow numeric contract");
 }
 
+[[nodiscard]] auto shadowRgba(const std::optional<stana::theming::ColorSource> &source)
+	-> stana::ColorRGBA {
+	const auto color = stana::theming::resolveColor(source.value_or(stana::Color::clear()), {});
+	const auto *payload = color.asRGBA();
+	require(payload != nullptr, "interpolated shadow stays RGBA");
+	return *payload;
+}
+
 void values() {
 	using namespace stana;
 	using rendering::BoxShadow;
@@ -62,14 +70,14 @@ void values() {
 	const auto middle = interpolateBoxShadows(start, end, Progress{midpoint});
 	near(middle.front().offset.x.value(), 0);
 	near(middle.front().blurRadius.value(), 4);
-	near(middle.front().color.value_or(Color::clear()).red.value(), 1);
-	near(middle.front().color.value_or(Color::clear()).blue.value(), 0);
-	near(middle.front().color.value_or(Color::clear()).alpha.value(), midpoint);
+	near(shadowRgba(middle.front().color).red.value(), 1);
+	near(shadowRgba(middle.front().color).blue.value(), 0);
+	near(shadowRgba(middle.front().color).alpha.value(), midpoint);
 	require(interpolateBoxShadows({}, {}, Progress{midpoint}).empty(), "empty interpolation");
 	const auto padded = interpolateBoxShadows({}, start, Progress{midpoint});
 	near(padded.front().offset.x.value(), -4);
-	near(padded.front().color.value_or(Color::clear()).alpha.value(), midpoint);
-	const std::array inset{BoxShadow{.color = Color::surface(), .isInset = true}};
+	near(shadowRgba(padded.front().color).alpha.value(), midpoint);
+	const std::array inset{BoxShadow{.color = theming::ColorToken::surface(), .isInset = true}};
 	require(
 		!interpolateBoxShadows(start, inset, Progress{beforeMidpoint}).front().isInset &&
 			interpolateBoxShadows(start, inset, Progress{midpoint}).front().isInset,
@@ -80,10 +88,13 @@ void values() {
 		omitted,
 		omitted,
 		Progress{midpoint},
-		Color::text(),
+		theming::ColorToken::text(),
 		{.theme = Theme::dark}
 	);
-	require(dark.front().color == Color::white(), "omitted themed foreground");
+	require(
+		dark.front().color == theming::ColorSource{Color::white()},
+		"omitted themed foreground"
+	);
 	near(
 		interpolateBoxShadows(start, start, Progress{0}).front().offset.x.value(),
 		-offsetMagnitude
@@ -214,8 +225,7 @@ void geometryAndValidation() {
 		BoxShadow{.offset = {.y = Points{infinity}}},
 		BoxShadow{.blurRadius = Points{-1}},
 		BoxShadow{.blurRadius = Points{nan}},
-		BoxShadow{.spreadRadius = Points{infinity}},
-		BoxShadow{.color = Color::rgb(1, 0, 0, -1)}
+		BoxShadow{.spreadRadius = Points{infinity}}
 	};
 	for (const auto &shadow : invalid) {
 		const std::array single{shadow};
@@ -225,8 +235,16 @@ void geometryAndValidation() {
 		} catch (const std::invalid_argument &) {
 			rejected = true;
 		}
-		require(rejected, "nonfinite geometry/invalid color rejected");
+		require(rejected, "nonfinite geometry rejected");
 	}
+	bool rejectedColor = false;
+	try {
+		const std::array single{BoxShadow{.color = Color::rgb(1, 0, 0, -1)}};
+		static_cast<void>(rendering::detail::prepareBoxShadows(bounds, single));
+	} catch (const std::invalid_argument &) {
+		rejectedColor = true;
+	}
+	require(rejectedColor, "invalid shadow color rejected");
 	for (const CornerRadii corners :
 		{CornerRadii::all(Points{-1}), CornerRadii::all(Points{nan})}) {
 		bool rejected = false;
@@ -248,7 +266,7 @@ void geometryAndValidation() {
 	require(rejected, "invalid edge width rejected");
 	const auto half = rendering::interpolateBoxShadows({}, inset, Progress{midpoint});
 	require(
-		half.front().isInset && half.front().color.value_or(Color::black()).alpha < Opacity{1},
+		half.front().isInset && shadowRgba(half.front().color).alpha < Opacity{1},
 		"unequal inset list pads matching inset transparent layers"
 	);
 }

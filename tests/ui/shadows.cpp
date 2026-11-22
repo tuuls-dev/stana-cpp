@@ -50,7 +50,9 @@ void retained() {
 	using Shadows = std::vector<rendering::BoxShadow>;
 	const reactive::Signal shadows{Shadows{
 		{.offset = {.x = Points{8}, .y = Points{6}}, .blurRadius = Points{12}},
-		{.offset = {.x = Points{-2}, .y = Points{1}}, .color = Color::accent(), .isInset = true}
+		{.offset = {.x = Points{-2}, .y = Points{1}},
+			.color = theming::ColorToken::accent(),
+			.isInset = true}
 	}};
 	const auto computedShadows = shadows.map([](const Shadows &value) -> Shadows {
 		return value;
@@ -124,7 +126,7 @@ void retained() {
 	);
 	opacity.set(Opacity{halfOpacity});
 	require(
-		shadow(shadowCommands(host).front()).color.alpha <= Opacity{halfOpacity},
+		shadow(shadowCommands(host).front()).color.alpha() <= Opacity{halfOpacity},
 		"opacity multiplies shadow alpha"
 	);
 	const auto current = host.metrics();

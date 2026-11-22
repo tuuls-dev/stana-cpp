@@ -269,7 +269,7 @@ void mountedTransformFollowsLayout() {
 		node.bounds,
 		stana::Direction::leftToRight,
 		{},
-		stana::Color::text().resolved(stana::Theme::light),
+		stana::theming::resolveColor(stana::theming::ColorToken::text(), {}),
 		std::nullopt,
 		leaf.generation,
 		true,
@@ -508,7 +508,11 @@ void themeResolvesCurrentColor() {
 	environment.theme = stana::Theme::dark;
 	host.setEnvironment(environment);
 	require(
-		requirePaint(host).color == stana::Color::text().resolved(stana::Theme::dark),
+		requirePaint(host).color ==
+			stana::theming::resolveColor(
+				stana::theming::ColorToken::text(),
+				{.theme = stana::Theme::dark}
+			),
 		"currentColor follows the document theme"
 	);
 }

@@ -114,7 +114,7 @@ auto graphics(const GPUProgram &value) -> GPUDrawing {
 		Point{.x = chartBaseline, .y = 90_pt},
 		Point{.x = 296_pt, .y = 24_pt}
 	};
-	drawing.strokePolyline(points, Color::text(), 4_pt);
+	drawing.strokePolyline(points, theming::ColorToken::text(), 4_pt);
 	return drawing;
 }
 
@@ -128,7 +128,7 @@ auto chart(int update) -> Drawing {
 					{.x = chartInset + static_cast<double>(index) * (barWidth + contentSpacing),
 						.y = chartBaseline - height},
 				.size = {.width = barWidth, .height = height}},
-			Color::accent()
+			theming::ColorToken::accent()
 		);
 	}
 	return drawing;

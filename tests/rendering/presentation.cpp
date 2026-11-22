@@ -317,7 +317,7 @@ void compositePins() {
 	stana::testing::TestHost host;
 	int clicks = 0;
 	const stana::reactive::Signal padding{stana::Insets::all(stana::Points{0})};
-	const stana::reactive::Signal color{stana::Color::black()};
+	const stana::reactive::Signal color{stana::theming::ColorSource{stana::Color::black()}};
 	host.mount(
 		stana::ui::VStack{
 			.layout = {.padding = padding},
@@ -342,7 +342,10 @@ void compositePins() {
 	require(clicks == 0, "P10 old/new gated before GPU exposes pixels");
 	constexpr unsigned publications = 128;
 	for (unsigned index = 0; index < publications; ++index) {
-		color.set(index % 2 == 0 ? stana::Color::accent() : stana::Color::black());
+		color.set(
+			index % 2 == 0 ? stana::theming::ColorSource{stana::theming::ColorToken::accent()}
+						   : stana::theming::ColorSource{stana::Color::black()}
+		);
 	}
 	host.reportTilePresentation(attempt, {.tile = stana::rendering::TileId{0}, .timestamp = at(1)});
 	host.reportGPUCompletion(attempt, true);

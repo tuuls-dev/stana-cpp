@@ -100,7 +100,7 @@ void require(bool condition, const std::string &message) {
 
 /// @brief Drives actual production sessions; synthetic evidence cannot satisfy this fixture.
 struct Scenario : std::enable_shared_from_this<Scenario> {
-	stana::reactive::Signal<stana::Color> foreground{stana::Color::black()};
+	stana::reactive::Signal<stana::theming::ColorSource> foreground{stana::Color::black()};
 	stana::reactive::Signal<bool> anchor{false};
 	stana::reactive::Signal<std::string> secondaryText{std::string{"independent"}};
 	std::shared_ptr<stana::document::detail::Document> document;
@@ -170,7 +170,7 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 				before = current;
 				otherBefore = other;
 				coreBefore = document->metrics();
-				foreground.set(stana::Color::accent());
+				foreground.set(stana::theming::ColorToken::accent());
 				next(Stage::sparse);
 			} else if (stage == Stage::sparse && ready(current) &&
 				current.confirmedRevision > before.confirmedRevision) {
@@ -248,7 +248,11 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 				stana::testing::fixtures::platform::macos::showWindow(primaryTitle, false);
 				constexpr unsigned publications = 129;
 				for (unsigned index = 0; index < publications; ++index) {
-					foreground.set(index % 2 == 0 ? stana::Color::black() : stana::Color::accent());
+					foreground.set(
+						index % 2 == 0
+							? stana::theming::ColorSource{stana::Color::black()}
+							: stana::theming::ColorSource{stana::theming::ColorToken::accent()}
+					);
 				}
 				next(Stage::occluded);
 			} else if (stage == Stage::occluded) {

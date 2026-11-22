@@ -17,6 +17,7 @@ module;
 
 export module stana:ui;
 export import :primitives;
+export import :theming;
 export import :reactive;
 export import :tasks;
 export import :rendering;
@@ -37,7 +38,7 @@ struct TextProperties {
 	/// @brief Optional reactive system font; changes invalidate intrinsic text measurement.
 	std::optional<::stana::reactive::Property<Font>> font{};
 	/// @brief Optional reactive text color; omission keeps the receiving control default.
-	std::optional<::stana::reactive::Property<Color>> foreground{};
+	std::optional<::stana::reactive::Property<::stana::theming::ColorSource>> foreground{};
 	/// @brief Individual reactive overrides applied after .font.
 	std::optional<::stana::reactive::Property<std::string>> fontFamily{};
 	std::optional<::stana::reactive::Property<Points>> fontSize{};
@@ -63,11 +64,11 @@ struct TextProperties {
 /// its mounted scope. Use If when the branch and its resources should be removed.
 struct AppearanceProperties {
 	/// @brief Optional reactive fill behind this node and its children.
-	std::optional<::stana::reactive::Property<Color>> background{};
+	std::optional<::stana::reactive::Property<::stana::theming::ColorSource>> background{};
 	/// @brief Optional reactive subtree opacity in [0, 1]; zero opacity does not dispose state.
 	std::optional<::stana::reactive::Property<Opacity>> opacity{};
 	/// @brief Optional reactive outline color used when borderWidth is positive.
-	std::optional<::stana::reactive::Property<Color>> borderColor{};
+	std::optional<::stana::reactive::Property<::stana::theming::ColorSource>> borderColor{};
 	/// @brief Optional reactive outline thickness in finite, nonnegative logical points.
 	std::optional<::stana::reactive::Property<Points>> borderWidth{};
 	/// @brief Optional reactive rounding radius used by background and clip geometry.
@@ -1050,7 +1051,8 @@ inline constexpr Points defaultSize{24};
 struct Symbol {
 	::stana::reactive::Property<Asset> asset{};
 	::stana::reactive::Property<Points> size = defaultSize;
-	::stana::reactive::Property<Color> color = Color::text();
+	::stana::reactive::Property<::stana::theming::ColorSource> color =
+		::stana::theming::ColorToken::text();
 	::stana::reactive::Property<Playback> animation = Playback::none();
 	::stana::reactive::Property<std::optional<Points>> strokeWidth{};
 	::stana::layout::LayoutProperties layout{};

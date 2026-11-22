@@ -11,6 +11,7 @@ export module stana:rendering_gpu;
 export import :rendering_program;
 export import :rendering_shadow;
 import :primitives;
+import :theming;
 
 export namespace stana::rendering {
 /// @brief Straight scene-linear extended-sRGB, bounded to finite binary16 color range.
@@ -64,7 +65,7 @@ class GPUMesh {
 };
 
 namespace detail {
-using GPUColor = std::variant<Color, ExtendedColor>;
+using GPUColor = std::variant<::stana::theming::ColorSource, ExtendedColor>;
 
 struct GPURect {
 	Rect bounds;
@@ -106,9 +107,9 @@ class GPUDrawing {
 	GPUDrawing(GPUDrawing &&) noexcept;
 	auto operator=(GPUDrawing &&) noexcept -> GPUDrawing &;
 	~GPUDrawing();
-	void fillRect(Rect, Color, Points cornerRadius = Points{});
+	void fillRect(Rect, ::stana::theming::ColorSource, Points cornerRadius = Points{});
 	void fillRect(Rect, ExtendedColor, Points cornerRadius = Points{});
-	void fillEllipse(Rect, Color);
+	void fillEllipse(Rect, ::stana::theming::ColorSource);
 	void fillEllipse(Rect, ExtendedColor);
 	/// @brief Records owning shadow data at this painter position; no caller span is retained.
 	/// Outer shadows precede fills, inset shadows follow fills, and foreground follows inset
@@ -121,8 +122,12 @@ class GPUDrawing {
 		BorderWidths borderWidths = {}
 	);
 	void drawMesh(GPUMesh);
-	void
-	strokePolyline(std::span<const Point>, Color, Points width = Points{1}, bool closed = false);
+	void strokePolyline(
+		std::span<const Point>,
+		::stana::theming::ColorSource,
+		Points width = Points{1},
+		bool closed = false
+	);
 	void strokePolyline(
 		std::span<const Point>,
 		ExtendedColor,

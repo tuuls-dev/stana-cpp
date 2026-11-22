@@ -84,6 +84,7 @@ fn addContracts(project: *Project, tests: *Build.Step) void {
         .{ "symbols.scene", "symbols/scene.cpp" },
         .{ "ui.frame", "ui/frame.cpp" },
         .{ "primitives", "primitives/contracts.cpp" },
+        .{ "theming", "theming/contracts.cpp" },
         .{ "smoke", "smoke.cpp" },
         .{ "application", "application/contracts.cpp" },
         .{ "reactive", "reactive/contracts.cpp" },
@@ -103,6 +104,7 @@ fn addContracts(project: *Project, tests: *Build.Step) void {
         .{ "shaders", "rendering/shader/compiler.cpp" },
         .{ "gpu-validation", "rendering/gpu_validation.cpp" },
         .{ "shadows", "rendering/shadows.cpp" },
+        .{ "color-space", "rendering/color_space.cpp" },
         .{ "ui.shadows", "ui/shadows.cpp" },
     };
     for (contracts) |entry| {

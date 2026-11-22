@@ -23,6 +23,7 @@ module;
 module stana;
 import :document;
 import :primitives;
+import :theming;
 import :reactive;
 import :rendering;
 
@@ -114,13 +115,13 @@ auto Document::createNode(NodeKind kind, NodeId parent) -> NodeId {
 		};
 		node->cornerRadius = Points{4};
 		node->borderWidth = Points{1};
-		node->borderColor = Color::border();
-		node->background = Color::background();
+		node->borderColor = theming::ColorToken::border();
+		node->background = theming::ColorToken::background();
 	}
 	if (kind == NodeKind::button || kind == NodeKind::toggle) {
 		node->padding = Insets::all(buttonPadding);
 		node->cornerRadius = defaultCornerRadius;
-		node->background = Color::accent();
+		node->background = theming::ColorToken::accent();
 		node->foreground = Color::white();
 		node->isForegroundExplicit = true;
 	}
@@ -357,8 +358,8 @@ void Document::setEnvironment(Environment environment) {
 			domains = domains | Dirty::paint;
 		}
 		if (colorChanged) {
-			const auto semantic = [](Color color) -> bool {
-				return color.token != Color::Token::explicitColor;
+			const auto semantic = [](const theming::ColorSource &source) -> bool {
+				return source.asToken() != nullptr;
 			};
 			if (semantic(node->background) || semantic(node->foreground) ||
 				semantic(node->borderColor) ||
@@ -366,6 +367,12 @@ void Document::setEnvironment(Environment environment) {
 					node->drawing.commands,
 					[&](const stana::rendering::PaintCommand &command) -> bool {
 						return semantic(command.color);
+					}
+				) ||
+				std::ranges::any_of(
+					node->boxShadows,
+					[&](const stana::rendering::BoxShadow &shadow) -> bool {
+						return shadow.color && semantic(*shadow.color);
 					}
 				)) {
 				domains = domains | Dirty::paint;

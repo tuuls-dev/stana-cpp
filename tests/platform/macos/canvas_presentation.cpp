@@ -179,7 +179,7 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 	stana::rendering::Drawing background;
 	background.fillRect(
 		{.size = {.width = stana::Points{extent}, .height = stana::Points{extent}}},
-		stana::Color::accent()
+		stana::theming::ColorToken::accent()
 	);
 	const stana::Frame fill{.width = stana::Length::fill(), .height = stana::Length::fill()};
 	stana::reactive::Transaction::perform([&] -> void {
