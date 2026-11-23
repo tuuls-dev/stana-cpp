@@ -516,6 +516,8 @@ void installWindowHostControl(
 			owner->interactionEvent = nil;
 		}
 		owner->layer.opaque = window.opaque;
+		owner->hostLayer.opaque = window.opaque;
+		owner->fallbackLayer.opaque = window.opaque;
 		for (const auto &tile : owner->tileLayers) {
 			tile.opaque = window.opaque;
 		}

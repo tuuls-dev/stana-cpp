@@ -281,8 +281,8 @@ namespace {
 	const bool sizeChanged = !NSEqualSizes(self.frame.size, size);
 	[super setFrameSize:size];
 	if (state_ && !state_->isClosed && sizeChanged) {
-		stana::platform::detail::installSurface(state_);
 		state_->callbacks.resize(size.width, size.height);
+		stana::platform::detail::noteLiveResize(state_);
 		stana::platform::detail::requestFrame(state_);
 	}
 }
@@ -309,9 +309,11 @@ namespace {
 
 - (void)viewDidChangeBackingProperties {
 	[super viewDidChangeBackingProperties];
-	if (state_ && !state_->isClosed && self.window != nil &&
+	// Compare the installed root, not the unset scale. scale stays 0 until the first
+	// grid, and treating that as a live resize gates input before any present can confirm.
+	if (state_ && !state_->isClosed && self.window != nil && state_->layer != nil &&
 		std::is_neq(self.window.backingScaleFactor <=> state_->layer.contentsScale)) {
-		stana::platform::detail::installSurface(state_);
+		stana::platform::detail::noteLiveResize(state_);
 		stana::platform::detail::requestFrame(state_);
 	}
 }

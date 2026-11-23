@@ -15,10 +15,21 @@ struct PhysicalViewport {
 [[nodiscard]] auto windowOpacity(const std::string &title) -> double;
 
 void resizeWindow(const std::string &title, PhysicalViewport);
+void setPresentDelay(const std::string &title, std::chrono::milliseconds delay);
+[[nodiscard]] auto surfaceContinuity(const std::string &title) -> bool;
+[[nodiscard]] auto surfaceSettled(const std::string &title) -> bool;
+[[nodiscard]] auto fallbackCoversContent(const std::string &title) -> bool;
+[[nodiscard]] auto replacementBackgroundReady(const std::string &title) -> bool;
+[[nodiscard]] auto retainedHostLayers(const std::string &title) -> std::size_t;
+[[nodiscard]] auto compositorFullResets(const std::string &title) -> std::uint64_t;
+[[nodiscard]] auto compositorResizeInvalidations(const std::string &title) -> std::uint64_t;
+void staleBackingScale(const std::string &title);
 void showWindow(const std::string &title, bool visible);
 void replaceAttachment(const std::string &title);
 [[nodiscard]] auto activateToolbar(const std::string &title) -> bool;
 void pressWindow(const std::string &title);
+/// @brief Left press and release at a content-view point (origin top-left).
+void clickContent(const std::string &title, double x, double y);
 void dismissWindowMenuAfter(std::chrono::milliseconds delay);
 void cancelPrintPanelAfter(std::chrono::milliseconds delay);
 void closeWindow(const std::string &title);
