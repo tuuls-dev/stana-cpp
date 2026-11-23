@@ -233,6 +233,10 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 					current.renderingWork.tileCount == smallEdgeTiles,
 					"onscreen partial-edge resize uses six initialized tiles"
 				);
+				require(
+					stana::testing::fixtures::platform::macos::surfaceSettled(primaryTitle),
+					"settled resize presents the new surface without a leftover fallback"
+				);
 				record(current);
 				before = current;
 				stana::testing::fixtures::platform::macos::replaceAttachment(primaryTitle);
@@ -283,6 +287,10 @@ struct Scenario : std::enable_shared_from_this<Scenario> {
 					current.renderingWork.tileCount == edgeTiles &&
 						current.renderingWork.cpuUploadBytes == 0,
 					"partial edge grid fully initialized without upload"
+				);
+				require(
+					stana::testing::fixtures::platform::macos::surfaceSettled(primaryTitle),
+					"settled resize presents the new surface without a leftover fallback"
 				);
 				record(current);
 				verified = true;

@@ -389,6 +389,20 @@ void Compositor::reset(std::uint64_t epoch) {
 	shadows_.reset();
 	cancelCompilation(resources_.device, window_);
 	compilerActive_ = false;
+	compilingEpoch_ = 0;
+	++fullResets_;
+}
+
+void Compositor::invalidateForResize(std::uint64_t epoch) {
+	epoch_ = epoch;
+	ready_.reset();
+	changed_.clear();
+	cpuCache_.clear();
+	symbolCache_.clear();
+	shadows_.reset();
+	// In-flight compilation observes the epoch and releases compilerActive_.
+	// Program instances and builtin pipelines remain valid across a size change.
+	++resizeInvalidations_;
 }
 
 void Compositor::close() {
@@ -439,6 +453,7 @@ void Compositor::compile(
 		return;
 	}
 	compilerActive_ = true;
+	compilingEpoch_ = epoch_;
 	instance.requestedVersion = program->version;
 	const auto weak = weak_from_this();
 	const auto epoch = epoch_;
@@ -450,8 +465,23 @@ void Compositor::compile(
 			Result<std::shared_ptr<const Pipeline>> compiled,
 			bool built
 		) -> void {
-			if (const auto owner = weak.lock();
-				owner && !owner->closed_ && owner->epoch_ == epoch) {
+			if (const auto owner = weak.lock(); owner && !owner->closed_) {
+				if (owner->epoch_ != epoch) {
+					// A newer compile owns the flag once compilingEpoch_ moves.
+					if (owner->compilingEpoch_ == epoch) {
+						owner->compilerActive_ = false;
+						owner->compilingEpoch_ = 0;
+						const auto found = owner->instances_.find(key);
+						if (found != owner->instances_.end() && !found->second.pipeline &&
+							found->second.requestedVersion == program->version) {
+							found->second.requestedVersion = 0;
+						}
+					}
+					if (owner->wake_) {
+						owner->wake_();
+					}
+					return;
+				}
 				owner->compilerActive_ = false;
 				const auto found = owner->instances_.find(key);
 				if (found != owner->instances_.end() && found->second.desired &&

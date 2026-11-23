@@ -281,8 +281,8 @@ namespace {
 	const bool sizeChanged = !NSEqualSizes(self.frame.size, size);
 	[super setFrameSize:size];
 	if (state_ && !state_->isClosed && sizeChanged) {
-		stana::platform::detail::installSurface(state_);
 		state_->callbacks.resize(size.width, size.height);
+		stana::platform::detail::noteLiveResize(state_);
 		stana::platform::detail::requestFrame(state_);
 	}
 }
@@ -310,8 +310,8 @@ namespace {
 - (void)viewDidChangeBackingProperties {
 	[super viewDidChangeBackingProperties];
 	if (state_ && !state_->isClosed && self.window != nil &&
-		std::is_neq(self.window.backingScaleFactor <=> state_->layer.contentsScale)) {
-		stana::platform::detail::installSurface(state_);
+		std::is_neq(self.window.backingScaleFactor <=> state_->scale)) {
+		stana::platform::detail::noteLiveResize(state_);
 		stana::platform::detail::requestFrame(state_);
 	}
 }

@@ -6,6 +6,7 @@
 #include "window_configuration.hpp"
 #import <AppKit/AppKit.h>
 #import <QuartzCore/CAMetalLayer.h>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -51,6 +52,12 @@ struct WindowState {
 	bool offscreenTimedOut = false;
 	std::uint64_t offscreenGeneration = 0;
 	CALayer *layer = nil;
+	CALayer *hostLayer = nil;	   ///< Stable view layer. Tile roots are its sublayers.
+	CALayer *fallbackLayer = nil; ///< Last displayed root, above the replacement until handoff.
+	bool contentPresented = false;
+	bool preserveGridResources = false;
+	std::uint64_t surfaceInstallGeneration = 0;
+	std::chrono::milliseconds presentDelay{};
 	__weak NSView *view = nil;
 	std::vector<CAMetalLayer *> tileLayers;
 	TileGrid grid;
@@ -92,6 +99,11 @@ void rendererFailure(const std::shared_ptr<WindowState> &, const gpu::Failure &)
 void requestFrame(const std::shared_ptr<WindowState> &);
 /// @brief Invalidates input/evidence before draining and replacing an entire attachment.
 void installSurface(const std::shared_ptr<WindowState> &);
+/// @brief Coalesces a size or scale change onto the newest target.
+/// Displayed pixels stay until that target presents. Document resize is the caller's job.
+void noteLiveResize(const std::shared_ptr<WindowState> &);
+/// @brief Test hook: hold scheduled drawable presentation so continuity can be observed.
+void setPresentDelay(const std::shared_ptr<WindowState> &, std::chrono::milliseconds);
 void closeRenderer(const std::shared_ptr<WindowState> &);
 } // namespace stana::platform::detail
 #endif

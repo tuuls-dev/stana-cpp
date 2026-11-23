@@ -44,8 +44,9 @@ void fail(const std::shared_ptr<WindowState> &state, const std::string &message)
 	stop();
 }
 
-void replaceGrid(const std::shared_ptr<WindowState> &state);
+void replaceGrid(const std::shared_ptr<WindowState> &state, bool preserveResources);
 void processTransition(const std::shared_ptr<WindowState> &, FramePhase before, FrameAction);
+void noteLiveResizeBody(const std::shared_ptr<WindowState> &state);
 
 void arm(const std::shared_ptr<WindowState> &state, std::chrono::milliseconds delay) {
 	advance(state->timerGeneration);
@@ -128,7 +129,8 @@ void processTransition(
 		break;
 	case FrameAction::replaceGrid:
 		try {
-			replaceGrid(state);
+			const bool preserve = std::exchange(state->preserveGridResources, false);
+			replaceGrid(state, preserve);
 			requestFrame(state);
 		} catch (const std::exception &error) {
 			fail(state, error.what());
@@ -140,10 +142,170 @@ void processTransition(
 	}
 }
 
-void replaceGrid(const std::shared_ptr<WindowState> &state) {
+void applySceneBackground(CALayer *layer, SceneColor background) {
+	if (layer == nil) {
+		return;
+	}
+	const CoreOwner color{CGColorCreateGenericRGB(
+		background.red,
+		background.green,
+		background.blue,
+		background.alpha >= 1.0 ? 1.0 : 0.0
+	)};
+	layer.backgroundColor = color.get();
+}
+
+[[nodiscard]] auto disabledLayerActions() -> NSDictionary * {
+	return @{
+		@"sublayers" : NSNull.null,
+		@"bounds" : NSNull.null,
+		@"position" : NSNull.null,
+		@"contents" : NSNull.null,
+		@"backgroundColor" : NSNull.null
+	};
+}
+
+void ensureHost(const std::shared_ptr<WindowState> &state, NSView *view, double scale) {
+	const bool opaque = state->nativeWindow == nil || state->nativeWindow.opaque;
+	if (state->hostLayer == nil || view.layer != state->hostLayer) {
+		CALayer *const host = [CALayer layer];
+		host.geometryFlipped = YES;
+		host.masksToBounds = YES;
+		host.opaque = opaque;
+		host.frame = NSRectToCGRect(view.bounds);
+		host.contentsScale = scale;
+		host.edgeAntialiasingMask = 0;
+		host.shouldRasterize = NO;
+		host.actions = disabledLayerActions();
+		CALayer *const previous = view.layer;
+		if (previous != nil && state->contentPresented && state->layer == previous) {
+			[host addSublayer:previous];
+		} else if (state->fallbackLayer != nil &&
+			(state->fallbackLayer.superlayer == previous || previous == state->fallbackLayer)) {
+			[host addSublayer:state->fallbackLayer];
+		}
+		view.wantsLayer = YES;
+		view.layer = host;
+		state->hostLayer = host;
+	}
+	state->hostLayer.opaque = opaque;
+	state->hostLayer.frame = NSRectToCGRect(view.bounds);
+	state->hostLayer.contentsScale = scale;
+	state->hostLayer.actions = disabledLayerActions();
+}
+
+/// @brief Keep one displayed root above the replacement. Unpublished roots are discarded.
+void retireDisplayedRoot(const std::shared_ptr<WindowState> &state, LogicalSize presentedSize) {
+	CALayer *const current = state->layer;
+	if (state->contentPresented && current != nil) {
+		if (state->fallbackLayer != nil && state->fallbackLayer != current) {
+			[state->fallbackLayer removeFromSuperlayer];
+		}
+		current.frame = CGRectMake(0, 0, presentedSize.width, presentedSize.height);
+		if (current.superlayer != state->hostLayer) {
+			[state->hostLayer addSublayer:current];
+		}
+		state->fallbackLayer = current;
+		state->contentPresented = false;
+		state->layer = nil;
+		state->tileLayers.clear();
+		return;
+	}
+	if (current != nil && current != state->fallbackLayer) {
+		[current removeFromSuperlayer];
+		state->layer = nil;
+		state->tileLayers.clear();
+	}
+}
+
+void assertDisplayedContinuity(const WindowState &state, bool hadDisplayedRoot) {
+	if (!hadDisplayedRoot || state.view == nil || state.view.window == nil ||
+		state.hostLayer == nil) {
+		return;
+	}
+	if (state.fallbackLayer == nil && !state.contentPresented) {
+		throw std::logic_error("Replacement surface is visible without displayed content");
+	}
+	if (state.fallbackLayer != nil && state.fallbackLayer.superlayer != state.hostLayer) {
+		throw std::logic_error("Displayed fallback is not owned by the host layer");
+	}
+	if (state.layer != nil && state.layer.superlayer != state.hostLayer) {
+		throw std::logic_error("Replacement root is not owned by the host layer");
+	}
+	if (state.hostLayer.sublayers.count > 2) {
+		throw std::logic_error("Resize retained more than one fallback surface");
+	}
+}
+
+void finishCoalescedInstall(const std::shared_ptr<WindowState> &state) {
+	if (state->isClosed || state->scheduler.phase() == FramePhase::draining ||
+		state->scheduler.phase() == FramePhase::failed ||
+		state->scheduler.phase() == FramePhase::closed) {
+		return;
+	}
+	NSView *const view = state->view;
+	if (view == nil || view.window == nil) {
+		return;
+	}
+	const double scale = view.window.backingScaleFactor;
+	const LogicalSize size{.width = view.bounds.size.width, .height = view.bounds.size.height};
+	if (state->scheduler.phase() == FramePhase::idle && state->layer != nil &&
+		state->logicalSize == size && std::is_eq(state->scale <=> scale)) {
+		state->preserveGridResources = false;
+		requestFrame(state);
+		return;
+	}
+	const bool preserve = std::exchange(state->preserveGridResources, false);
+	replaceGrid(state, preserve);
+	requestFrame(state);
+}
+
+void noteLiveResizeBody(const std::shared_ptr<WindowState> &state) {
+	if (state->isClosed || state->scheduler.phase() == FramePhase::failed ||
+		state->scheduler.phase() == FramePhase::closed) {
+		return;
+	}
+	NSView *const view = state->view;
+	if (view == nil || view.window == nil) {
+		return;
+	}
+	const double scale = view.window.backingScaleFactor;
+	if (state->hostLayer != nil && view.layer == state->hostLayer) {
+		[CATransaction begin];
+		[CATransaction setDisableActions:YES];
+		state->hostLayer.frame = NSRectToCGRect(view.bounds);
+		state->hostLayer.contentsScale = scale;
+		if (const auto scene = state->callbacks.scene()) {
+			applySceneBackground(state->hostLayer, (*scene)->background);
+		}
+		[CATransaction commit];
+	}
+	invalidateEvidence(state);
+	static_cast<void>(state->scheduler.invalidateSurface(now()));
+	state->preserveGridResources = true;
+	if (state->scheduler.phase() == FramePhase::draining) {
+		armNextWake(state);
+	}
+	advance(state->surfaceInstallGeneration);
+	const auto token = state->surfaceInstallGeneration;
+	const auto weak = std::weak_ptr{state};
+	dispatch_async(dispatch_get_main_queue(), ^{
+	  if (const auto current = weak.lock(); current && !current->isClosed &&
+		  current->surfaceInstallGeneration == token) {
+		  try {
+			  finishCoalescedInstall(current);
+		  } catch (const std::exception &error) {
+			  fail(current, error.what());
+		  }
+	  }
+	});
+}
+
+void replaceGrid(const std::shared_ptr<WindowState> &state, bool preserveResources) {
 	if (state->scheduler.phase() == FramePhase::draining) {
 		throw std::logic_error("Unsafe grid replacement before GPU completion");
 	}
+	advance(state->surfaceEpoch);
 	NSView *const view = state->view;
 	if (view.window == nil) {
 		state->tiles.clear();
@@ -156,6 +318,9 @@ void replaceGrid(const std::shared_ptr<WindowState> &state) {
 		state->logicalSize = {};
 		state->scale = 0;
 		state->layer = nil;
+		state->hostLayer = nil;
+		state->fallbackLayer = nil;
+		state->contentPresented = false;
 		view.layer = nil;
 		state->work.tileCount = 0;
 		state->work.estimatedDrawableBytes = 0;
@@ -166,10 +331,18 @@ void replaceGrid(const std::shared_ptr<WindowState> &state) {
 	if (!scene) {
 		throw std::runtime_error(scene.error());
 	}
-	state->hybridSurface = gpu::Compositor::requiresHybrid(*scene, state->callbacks.colorMode);
-	state->linearOutput = gpu::Compositor::requiresLinear(*scene, state->callbacks.colorMode) &&
+	const bool nextHybrid = gpu::Compositor::requiresHybrid(*scene, state->callbacks.colorMode);
+	const bool nextLinear = gpu::Compositor::requiresLinear(*scene, state->callbacks.colorMode) &&
 		state->callbacks.colorMode != gpu::ColorMode::sdr;
-	state->compositor->reset(state->presentationEpoch);
+	const bool sameAttachment = preserveResources && state->layer != nil &&
+		nextHybrid == state->hybridSurface && nextLinear == state->linearOutput;
+	state->hybridSurface = nextHybrid;
+	state->linearOutput = nextLinear;
+	if (sameAttachment) {
+		state->compositor->invalidateForResize(state->presentationEpoch);
+	} else {
+		state->compositor->reset(state->presentationEpoch);
+	}
 	state->confirmedPacket.reset();
 	state->pendingPacket.reset();
 	state->preparingScene.reset();
@@ -178,7 +351,10 @@ void replaceGrid(const std::shared_ptr<WindowState> &state) {
 	advance(state->offscreenGeneration);
 	const double scale = view.window.backingScaleFactor;
 	const LogicalSize size{.width = view.bounds.size.width, .height = view.bounds.size.height};
+	const LogicalSize presentedSize = state->logicalSize;
+	const bool hadDisplayedRoot = state->contentPresented || state->fallbackLayer != nil;
 	// Release safe obsolete buffers before budgeting a replacement; GPU owners are independent.
+	// The fallback keeps the displayed CAMetalLayer tree, not these CPU buffers.
 	state->tiles.clear();
 	state->active.reset();
 	state->rasterBaseline.reset();
@@ -200,18 +376,17 @@ void replaceGrid(const std::shared_ptr<WindowState> &state) {
 	root.contentsScale = scale;
 	root.edgeAntialiasingMask = 0;
 	root.shouldRasterize = NO;
-	root.actions = @{
-		@"sublayers" : NSNull.null,
-		@"bounds" : NSNull.null,
-		@"position" : NSNull.null,
-		@"backgroundColor" : NSNull.null
-	};
+	root.actions = disabledLayerActions();
+	applySceneBackground(root, (*scene)->background);
 	state->tileLayers.clear();
 	const CoreOwner colorspace{CGColorSpaceCreateWithName(
 		state->linearOutput ? kCGColorSpaceExtendedLinearSRGB : kCGColorSpaceSRGB
 	)};
 	[CATransaction begin];
 	[CATransaction setDisableActions:YES];
+	ensureHost(state, view, scale);
+	applySceneBackground(state->hostLayer, (*scene)->background);
+	retireDisplayedRoot(state, presentedSize);
 	for (const auto &layout : state->grid.tiles) {
 		auto tile = state->hybridSurface
 			? std::shared_ptr<RasterTile>{}
@@ -257,10 +432,11 @@ void replaceGrid(const std::shared_ptr<WindowState> &state) {
 		}
 	}
 	view.wantsLayer = YES;
-	view.layer = root;
+	[state->hostLayer insertSublayer:root atIndex:0];
 	state->layer = root;
 	[CATransaction commit];
 	[CATransaction flush];
+	assertDisplayedContinuity(*state, hadDisplayedRoot);
 	state->work.tileCount = state->grid.tiles.size();
 	state->work.estimatedDrawableBytes = state->grid.viewport.width * state->grid.viewport.height *
 		(state->linearOutput ? gpu::pixelBytes(gpu::Format::rgba16) : bytesPerPixel) *
@@ -351,6 +527,11 @@ void issueScheduledPresent(
 ) {
 	[CATransaction begin];
 	[CATransaction setDisableActions:YES];
+	if (state->fallbackLayer != nil) {
+		[state->fallbackLayer removeFromSuperlayer];
+		state->fallbackLayer = nil;
+	}
+	state->contentPresented = true;
 	for (NSUInteger index = 0; index < drawables.count; ++index) {
 		[[drawables objectAtIndex:index] present];
 	}
@@ -397,6 +578,17 @@ void render(const std::shared_ptr<WindowState> &state) {
 			});
 		}
 		return;
+	}
+	if (state->view != nil && state->view.window != nil) {
+		const double scale = state->view.window.backingScaleFactor;
+		const LogicalSize size{
+			.width = state->view.bounds.size.width,
+			.height = state->view.bounds.size.height
+		};
+		if (state->logicalSize != size || std::is_neq(state->scale <=> scale)) {
+			noteLiveResize(state);
+			return;
+		}
 	}
 
 	if (state->grid.tiles.empty()) {
@@ -636,6 +828,7 @@ void render(const std::shared_ptr<WindowState> &state) {
 	const auto weak = std::weak_ptr{state};
 	const bool tracing = state->traceRendering;
 	const auto presentedCount = expected.size();
+	const auto scheduledDelay = state->presentDelay;
 	for (std::size_t index = 0; index < expected.size(); ++index) {
 		const auto tile = expected.at(index);
 		[[drawables objectAtIndex:index] addPresentedHandler:^(id<MTLDrawable> presented) {
@@ -676,10 +869,17 @@ void render(const std::shared_ptr<WindowState> &state) {
 			[drawables removeAllObjects];
 		}
 	  };
-	  if ([NSThread isMainThread]) {
-		  present();
+	  const auto deliver = [present]() -> void {
+		  if ([NSThread isMainThread]) {
+			  present();
+		  } else {
+			  dispatch_async(dispatch_get_main_queue(), present);
+		  }
+	  };
+	  if (scheduledDelay.count() > 0) {
+		  postAfter(scheduledDelay, deliver);
 	  } else {
-		  dispatch_async(dispatch_get_main_queue(), present);
+		  deliver();
 	  }
 	}];
 	[buffer addCompletedHandler:^(id<MTLCommandBuffer> completed) {
@@ -714,14 +914,8 @@ void render(const std::shared_ptr<WindowState> &state) {
 		}
 	  });
 	}];
-	const auto background = scene->background;
-	const CoreOwner color{CGColorCreateGenericRGB(
-		background.red,
-		background.green,
-		background.blue,
-		background.alpha >= 1.0 ? 1.0 : 0.0
-	)};
-	state->layer.backgroundColor = color.get();
+	applySceneBackground(state->layer, scene->background);
+	applySceneBackground(state->hostLayer, scene->background);
 	state->submittedRevision = target->source->revision;
 	state->work.copiedBytes += copiedBytes;
 	if (anchor) {
@@ -781,15 +975,30 @@ void installSurface(const std::shared_ptr<WindowState> &state) {
 	if (state->isClosed) {
 		return;
 	}
-	advance(state->surfaceEpoch);
+	advance(state->surfaceInstallGeneration);
+	state->preserveGridResources = false;
 	invalidateEvidence(state);
 	const auto action = state->scheduler.invalidateSurface(now());
 	if (action == FrameAction::replaceGrid) {
-		replaceGrid(state);
+		replaceGrid(state, false);
 		requestFrame(state);
 	} else if (state->scheduler.phase() == FramePhase::draining) {
 		armNextWake(state);
 	}
+}
+
+void noteLiveResize(const std::shared_ptr<WindowState> &state) {
+	noteLiveResizeBody(state);
+}
+
+void setPresentDelay(
+	const std::shared_ptr<WindowState> &state,
+	std::chrono::milliseconds delay
+) {
+	if (delay.count() < 0) {
+		throw std::invalid_argument("Presentation delay cannot be negative");
+	}
+	state->presentDelay = delay;
 }
 
 void closeRenderer(const std::shared_ptr<WindowState> &state) {
@@ -806,6 +1015,11 @@ void closeRenderer(const std::shared_ptr<WindowState> &state) {
 	state->rasterBaseline.reset();
 	state->confirmedComposite.reset();
 	state->latestRequested.reset();
+	advance(state->surfaceInstallGeneration);
+	state->preserveGridResources = false;
+	state->contentPresented = false;
+	state->fallbackLayer = nil;
+	state->hostLayer = nil;
 	state->view.layer = nil;
 	state->layer = nil;
 }

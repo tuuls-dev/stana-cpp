@@ -123,6 +123,13 @@ class Compositor : public std::enable_shared_from_this<Compositor> {
 		-> Result<bool>;
 	void desired(std::shared_ptr<const Scene>);
 	void reset(std::uint64_t epoch);
+	/// @brief Drops size-sensitive prepared output after a compatible resize.
+	/// Builtin pipelines and compatible program instances stay mounted.
+	void invalidateForResize(std::uint64_t epoch);
+	[[nodiscard]] auto resizeInvalidations() const noexcept -> std::uint64_t {
+		return resizeInvalidations_;
+	}
+	[[nodiscard]] auto fullResets() const noexcept -> std::uint64_t { return fullResets_; }
 	void close();
 	void display(
 		id<MTLCommandBuffer>,
@@ -155,6 +162,9 @@ class Compositor : public std::enable_shared_from_this<Compositor> {
 	std::uint64_t epoch_ = 0;
 	std::uint64_t generation_ = 0;
 	std::uint64_t window_ = 0;
+	std::uint64_t compilingEpoch_ = 0;
+	std::uint64_t resizeInvalidations_ = 0;
+	std::uint64_t fullResets_ = 0;
 	bool compilerActive_ = false;
 	bool closed_ = false;
 	std::uint32_t samples_ = 4;
