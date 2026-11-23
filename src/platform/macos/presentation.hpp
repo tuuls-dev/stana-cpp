@@ -101,6 +101,7 @@ void requestFrame(const std::shared_ptr<WindowState> &);
 void installSurface(const std::shared_ptr<WindowState> &);
 /// @brief Coalesces a size or scale change onto the newest target.
 /// Displayed pixels stay until that target presents. Document resize is the caller's job.
+/// A grid that already matches the view is not invalidated, so a settled frame can confirm.
 void noteLiveResize(const std::shared_ptr<WindowState> &);
 /// @brief Test hook: hold scheduled drawable presentation so continuity can be observed.
 void setPresentDelay(const std::shared_ptr<WindowState> &, std::chrono::milliseconds);

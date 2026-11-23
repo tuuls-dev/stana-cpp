@@ -150,6 +150,33 @@ auto activateToolbar(const std::string &title) -> bool {
 	return retained;
 }
 
+void clickContent(const std::string &title, double x, double y) {
+	STANAView *const view = requireView(title);
+	NSWindow *const window = view.window;
+	if (window == nil) {
+		throw std::runtime_error("Fixture view is not in a window: " + title);
+	}
+	const NSPoint location = [view convertPoint:NSMakePoint(x, y) toView:nil];
+	auto event = [&](NSEventType type) -> NSEvent * {
+		return [NSEvent mouseEventWithType:type
+								   location:location
+							  modifierFlags:0
+								  timestamp:NSProcessInfo.processInfo.systemUptime
+							   windowNumber:window.windowNumber
+									context:nil
+								eventNumber:0
+								 clickCount:1
+								   pressure:1];
+	};
+	NSEvent *const down = event(NSEventTypeLeftMouseDown);
+	NSEvent *const up = event(NSEventTypeLeftMouseUp);
+	if (down == nil || up == nil) {
+		throw std::runtime_error("Unable to create fixture click");
+	}
+	[view mouseDown:down];
+	[view mouseUp:up];
+}
+
 void pressWindow(const std::string &title) {
 	NSWindow *const window = findWindow(title);
 	const NSPoint location = [window.contentView convertPoint:NSMakePoint(1, 1) toView:nil];

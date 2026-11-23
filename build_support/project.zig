@@ -197,6 +197,7 @@ fn addNativeTests(project: *Project, tests: *Build.Step, version: []const u8, gu
         const windows = [_]struct { []const u8, []const u8, []const u8 }{
             .{ "window", "native-smoke", "window_smoke.cpp" },
             .{ "resize-continuity", "resize-continuity", "resize_continuity.cpp" },
+            .{ "pointer-activation", "pointer-activation", "pointer_activation.cpp" },
             .{ "window-configuration", "window-configuration", "window_configuration.mm" },
             .{ "window-requests", "window-requests", "window_requests.cpp" },
             .{ "threadSafeWrites", "native-thread-safe-writes", "thread_safe_writes.cpp" },

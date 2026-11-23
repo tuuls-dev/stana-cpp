@@ -28,6 +28,8 @@ void showWindow(const std::string &title, bool visible);
 void replaceAttachment(const std::string &title);
 [[nodiscard]] auto activateToolbar(const std::string &title) -> bool;
 void pressWindow(const std::string &title);
+/// @brief Left press and release at a content-view point (origin top-left).
+void clickContent(const std::string &title, double x, double y);
 void dismissWindowMenuAfter(std::chrono::milliseconds delay);
 void cancelPrintPanelAfter(std::chrono::milliseconds delay);
 void closeWindow(const std::string &title);

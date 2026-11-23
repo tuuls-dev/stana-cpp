@@ -309,8 +309,10 @@ namespace {
 
 - (void)viewDidChangeBackingProperties {
 	[super viewDidChangeBackingProperties];
-	if (state_ && !state_->isClosed && self.window != nil &&
-		std::is_neq(self.window.backingScaleFactor <=> state_->scale)) {
+	// Compare the installed root, not the unset scale. scale stays 0 until the first
+	// grid, and treating that as a live resize gates input before any present can confirm.
+	if (state_ && !state_->isClosed && self.window != nil && state_->layer != nil &&
+		std::is_neq(self.window.backingScaleFactor <=> state_->layer.contentsScale)) {
 		stana::platform::detail::noteLiveResize(state_);
 		stana::platform::detail::requestFrame(state_);
 	}

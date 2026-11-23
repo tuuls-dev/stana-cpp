@@ -189,8 +189,13 @@ void ensureHost(const std::shared_ptr<WindowState> &state, NSView *view, double 
 		state->hostLayer = host;
 	}
 	state->hostLayer.opaque = opaque;
-	state->hostLayer.frame = NSRectToCGRect(view.bounds);
-	state->hostLayer.contentsScale = scale;
+	const CGRect frame = NSRectToCGRect(view.bounds);
+	if (!CGRectEqualToRect(state->hostLayer.frame, frame)) {
+		state->hostLayer.frame = frame;
+	}
+	if (std::is_neq(state->hostLayer.contentsScale <=> scale)) {
+		state->hostLayer.contentsScale = scale;
+	}
 	state->hostLayer.actions = disabledLayerActions();
 }
 
@@ -260,6 +265,35 @@ void finishCoalescedInstall(const std::shared_ptr<WindowState> &state) {
 	requestFrame(state);
 }
 
+void syncHostGeometry(const std::shared_ptr<WindowState> &state, NSView *view, double scale) {
+	if (state->hostLayer == nil || view.layer != state->hostLayer) {
+		return;
+	}
+	const CGRect frame = NSRectToCGRect(view.bounds);
+	const bool frameChanged = !CGRectEqualToRect(state->hostLayer.frame, frame);
+	const bool scaleChanged = std::is_neq(state->hostLayer.contentsScale <=> scale);
+	if (!frameChanged && !scaleChanged) {
+		return;
+	}
+	[CATransaction begin];
+	[CATransaction setDisableActions:YES];
+	if (frameChanged) {
+		state->hostLayer.frame = frame;
+	}
+	if (scaleChanged) {
+		state->hostLayer.contentsScale = scale;
+	}
+	if (const auto scene = state->callbacks.scene()) {
+		applySceneBackground(state->hostLayer, (*scene)->background);
+	}
+	[CATransaction commit];
+}
+
+[[nodiscard]] auto gridMatchesView(const WindowState &state, LogicalSize size, double scale)
+	-> bool {
+	return state.layer != nil && state.logicalSize == size && std::is_eq(state.scale <=> scale);
+}
+
 void noteLiveResizeBody(const std::shared_ptr<WindowState> &state) {
 	if (state->isClosed || state->scheduler.phase() == FramePhase::failed ||
 		state->scheduler.phase() == FramePhase::closed) {
@@ -270,16 +304,24 @@ void noteLiveResizeBody(const std::shared_ptr<WindowState> &state) {
 		return;
 	}
 	const double scale = view.window.backingScaleFactor;
-	if (state->hostLayer != nil && view.layer == state->hostLayer) {
-		[CATransaction begin];
-		[CATransaction setDisableActions:YES];
-		state->hostLayer.frame = NSRectToCGRect(view.bounds);
-		state->hostLayer.contentsScale = scale;
-		if (const auto scene = state->callbacks.scene()) {
-			applySceneBackground(state->hostLayer, (*scene)->background);
-		}
-		[CATransaction commit];
+	const LogicalSize size{.width = view.bounds.size.width, .height = view.bounds.size.height};
+	// The synchronous install owns the first grid. Gating before it exists abandons the
+	// only present that can clear input.
+	if (state->layer == nil && state->hostLayer == nil) {
+		return;
 	}
+	const auto phase = state->scheduler.phase();
+	if (gridMatchesView(*state, size, scale) &&
+		(phase == FramePhase::idle || phase == FramePhase::occluded ||
+		 phase == FramePhase::awaitingEvidence || phase == FramePhase::building)) {
+		// A build already admitted for this grid must reach submission. Resizing the host
+		// here reenters setFrameSize and would drop that build.
+		if (phase != FramePhase::building) {
+			syncHostGeometry(state, view, scale);
+		}
+		return;
+	}
+	syncHostGeometry(state, view, scale);
 	invalidateEvidence(state);
 	static_cast<void>(state->scheduler.invalidateSurface(now()));
 	state->preserveGridResources = true;
@@ -564,6 +606,18 @@ void render(const std::shared_ptr<WindowState> &state) {
 		state->offscreenDeadlineArmed = false;
 		advance(state->offscreenGeneration);
 	}
+	if (state->view != nil && state->view.window != nil &&
+		(state->layer != nil || state->hostLayer != nil)) {
+		const double scale = state->view.window.backingScaleFactor;
+		const LogicalSize size{
+			.width = state->view.bounds.size.width,
+			.height = state->view.bounds.size.height
+		};
+		if (state->logicalSize != size || std::is_neq(state->scale <=> scale)) {
+			noteLiveResize(state);
+			return;
+		}
+	}
 	if (!state->scheduler.canBuild(visible(*state))) {
 		if (state->traceRendering) {
 			log(Level::trace, "macos.presentation", "Frame deferred", [&] -> auto {
@@ -578,17 +632,6 @@ void render(const std::shared_ptr<WindowState> &state) {
 			});
 		}
 		return;
-	}
-	if (state->view != nil && state->view.window != nil) {
-		const double scale = state->view.window.backingScaleFactor;
-		const LogicalSize size{
-			.width = state->view.bounds.size.width,
-			.height = state->view.bounds.size.height
-		};
-		if (state->logicalSize != size || std::is_neq(state->scale <=> scale)) {
-			noteLiveResize(state);
-			return;
-		}
 	}
 
 	if (state->grid.tiles.empty()) {
