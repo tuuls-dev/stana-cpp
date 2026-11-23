@@ -21,6 +21,7 @@ module;
 #include <vector>
 module stana;
 import :rendering;
+import :theming;
 
 namespace stana::rendering {
 namespace {
@@ -66,12 +67,32 @@ void rectangle(Rect rect) {
 	point({.x = rect.size.width, .y = rect.size.height});
 }
 
-void color(Color value) {
-	for (const double component :
-		{value.red.value(), value.green.value(), value.blue.value(), value.alpha.value()}) {
-		stana::detail::requireNonnegative(component);
-		if (component > 1) {
-			throw std::invalid_argument("GPU SDR color exceeds one");
+void color(const theming::ColorSource &value) {
+	if (const auto *paint = value.asColor()) {
+		if (const auto *rgba = paint->asRGBA()) {
+			for (const double component :
+				{rgba->red.value(), rgba->green.value(), rgba->blue.value(), rgba->alpha.value()}) {
+				stana::detail::requireNonnegative(component);
+				if (component > 1) {
+					throw std::invalid_argument("GPU SDR color exceeds one");
+				}
+			}
+		} else if (const auto *oklch = paint->asOKLCH()) {
+			const double lightness = oklch->lightness.value();
+			if (!std::isfinite(lightness) || lightness < 0 || lightness > 1) {
+				throw std::invalid_argument("GPU OKLCH lightness out of range");
+			}
+			const double chroma = oklch->chroma.value();
+			if (!std::isfinite(chroma) || chroma < 0) {
+				throw std::invalid_argument("GPU OKLCH chroma out of range");
+			}
+			if (!std::isfinite(oklch->hue.radians())) {
+				throw std::invalid_argument("GPU OKLCH hue must be finite");
+			}
+			const double alpha = oklch->alpha.value();
+			if (!std::isfinite(alpha) || alpha < 0 || alpha > 1) {
+				throw std::invalid_argument("GPU OKLCH opacity out of range");
+			}
 		}
 	}
 }
@@ -436,7 +457,7 @@ void GPUDrawing::append(stana::rendering::detail::GPUCommand command) {
 	}
 }
 
-void GPUDrawing::fillRect(Rect rect, Color value, Points radius) {
+void GPUDrawing::fillRect(Rect rect, theming::ColorSource value, Points radius) {
 	rectangle(rect);
 	color(value);
 	stana::detail::requireNonnegative(radius);
@@ -455,7 +476,7 @@ void GPUDrawing::fillRect(Rect rect, ExtendedColor value, Points radius) {
 	append(stana::rendering::detail::GPURect{.bounds = rect, .radius = clamped, .color = value});
 }
 
-void GPUDrawing::fillEllipse(Rect rect, Color value) {
+void GPUDrawing::fillEllipse(Rect rect, theming::ColorSource value) {
 	rectangle(rect);
 	color(value);
 	append(stana::rendering::detail::GPUEllipse{.bounds = rect, .color = value});
@@ -493,7 +514,7 @@ void GPUDrawing::drawMesh(GPUMesh mesh) {
 
 void GPUDrawing::strokePolyline(
 	std::span<const Point> points,
-	Color value,
+	theming::ColorSource value,
 	Points width,
 	bool closed
 ) {

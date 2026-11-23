@@ -230,11 +230,24 @@ void themeDefaultsFollowEnvironment() {
 	const auto light = host.scene();
 	require(static_cast<bool>(light), "light scene published");
 	require(light->background == stana::Color::white(), "light viewport");
-	require(findText(*light, "Count").color == stana::Color::black(), "light label");
-	require(findText(*light, "Marked").color == marked, "explicit foreground");
-	require(findText(*light, "Increment").color == stana::Color::white(), "button label");
 	require(
-		findFill(*light).color == stana::Color::accent().resolved(stana::Theme::light),
+		findText(*light, "Count").color == stana::theming::ColorSource{stana::Color::black()},
+		"light label"
+	);
+	require(
+		findText(*light, "Marked").color == stana::theming::ColorSource{marked},
+		"explicit foreground"
+	);
+	require(
+		findText(*light, "Increment").color == stana::theming::ColorSource{stana::Color::white()},
+		"button label"
+	);
+	require(
+		findFill(*light).color ==
+			stana::theming::ColorSource{stana::theming::resolveColor(
+				stana::theming::ColorToken::accent(),
+				stana::Environment{}
+			)},
 		"button fill"
 	);
 
@@ -244,16 +257,73 @@ void themeDefaultsFollowEnvironment() {
 	const auto dark = host.scene();
 	require(static_cast<bool>(dark) && host.metrics().mounts == mounts, "theme does not remount");
 	require(dark->background == stana::Color::black(), "dark viewport");
-	require(findText(*dark, "Count").color == stana::Color::white(), "dark label");
-	require(findText(*dark, "Marked").color == marked, "explicit foreground survives theme");
 	require(
-		findText(*dark, "Increment").color == stana::Color::white(),
+		findText(*dark, "Count").color == stana::theming::ColorSource{stana::Color::white()},
+		"dark label"
+	);
+	require(
+		findText(*dark, "Marked").color == stana::theming::ColorSource{marked},
+		"explicit foreground survives theme"
+	);
+	require(
+		findText(*dark, "Increment").color == stana::theming::ColorSource{stana::Color::white()},
 		"button label survives theme"
 	);
 	require(
-		findFill(*dark).color == stana::Color::accent().resolved(stana::Theme::dark),
+		findFill(*dark).color ==
+			stana::theming::ColorSource{
+				stana::theming::resolveColor(stana::theming::ColorToken::accent(), environment)
+			},
 		"button fill survives theme"
 	);
+}
+
+/// @brief Explicit RGB text and OKLCH background stay in their authored representations.
+void mixedRgbAndOklchButtonRetainsRepresentations() {
+	using namespace stana::literals;
+	const auto background = stana::Color::oklch(0.55_okl, 0.15_okc, 250_deg);
+	stana::testing::TestHost host;
+	host.mount(
+		stana::ui::Button{
+			.text = "Save changes",
+			.textStyle = {.foreground = stana::Color::rgb(1, 1, 1)},
+			.appearance = {.background = background}
+		}
+	);
+	const auto scene = host.scene();
+	require(static_cast<bool>(scene), "mixed button scene published");
+	require(
+		findText(*scene, "Save changes").color ==
+			stana::theming::ColorSource{stana::Color::rgb(1, 1, 1)},
+		"RGB text is retained"
+	);
+	const auto fill = findFill(*scene).color;
+	const auto *color = fill.asColor();
+	require(color != nullptr && color->asOKLCH() != nullptr, "OKLCH background is not converted");
+	require(*color == background, "authored OKLCH coordinates survive styling");
+	host.setEnvironment({.theme = stana::Theme::dark});
+	const auto dark = host.scene();
+	require(
+		findFill(*dark).color == stana::theming::ColorSource{background},
+		"explicit OKLCH is not replaced by theme"
+	);
+}
+
+/// @brief Signal<Color> stays live on Property<ColorSource>; it is not snapshotted.
+void liveColorSignalStaysReactive() {
+	using namespace stana::literals;
+	const stana::reactive::Signal color{stana::Color::rgb(1, 0, 0)};
+	stana::testing::TestHost host;
+	host.mount(stana::ui::TextLabel{.text = "Live", .textStyle = {.foreground = color}});
+	require(
+		findText(*host.scene(), "Live").color ==
+			stana::theming::ColorSource{stana::Color::rgb(1, 0, 0)},
+		"initial Signal<Color> paints"
+	);
+	const auto next = stana::Color::oklch(0.6_okl, 0.12_okc, 40_deg);
+	color.set(next);
+	const auto *painted = findText(*host.scene(), "Live").color.asColor();
+	require(painted != nullptr && *painted == next, "Signal<Color> updates stay live");
 }
 
 /// @brief Removal marks handles dead before cleanup can reenter document closure.
@@ -295,6 +365,8 @@ auto main() -> int {
 		keyedRowsAreAtomic();
 		themeDefaultsFollowEnvironment();
 		disposalMayCloseTheDocument();
+		mixedRgbAndOklchButtonRetainsRepresentations();
+		liveColorSignalStaysReactive();
 		return 0;
 	} catch (const std::exception &error) {
 		std::cerr << error.what() << '\n';

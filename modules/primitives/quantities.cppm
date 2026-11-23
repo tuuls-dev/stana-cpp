@@ -339,6 +339,44 @@ struct SdrChannel {
 	}
 };
 
+/// @brief OKLCH lightness in [0, 1]. Construction does not clamp.
+/// Literals diagnose invalid constant-evaluated input; Color wrap/factories
+/// diagnose invalid runtime values. Not interchangeable with chroma or opacity.
+struct OklchLightness {
+	double value_ = 0;
+
+	constexpr OklchLightness() noexcept = default;
+
+	explicit constexpr OklchLightness(double value) noexcept : value_(value) {}
+
+	[[nodiscard]] constexpr auto value() const noexcept -> double { return value_; }
+
+	auto operator<=>(const OklchLightness &) const = default;
+
+	[[nodiscard]] constexpr auto operator==(const OklchLightness &other) const -> bool {
+		return std::is_eq(*this <=> other);
+	}
+};
+
+/// @brief OKLCH chroma; finite and nonnegative, not normalized to [0, 1].
+/// Construction does not clamp. High chroma may be outside an SDR destination
+/// gamut; conversion clips destination channels, not this authored value.
+struct OklchChroma {
+	double value_ = 0;
+
+	constexpr OklchChroma() noexcept = default;
+
+	explicit constexpr OklchChroma(double value) noexcept : value_(value) {}
+
+	[[nodiscard]] constexpr auto value() const noexcept -> double { return value_; }
+
+	auto operator<=>(const OklchChroma &) const = default;
+
+	[[nodiscard]] constexpr auto operator==(const OklchChroma &other) const -> bool {
+		return std::is_eq(*this <=> other);
+	}
+};
+
 /// @brief Extended scene-linear color channel; may exceed [0, 1].
 struct LinearChannel {
 	double value_ = 0;
@@ -503,6 +541,30 @@ inline namespace literals {
 
 [[nodiscard]] constexpr auto operator""_deg(unsigned long long value) noexcept -> Angle {
 	return Angle::fromDegrees(static_cast<double>(value));
+}
+
+[[nodiscard]] consteval auto operator""_okl(long double value) -> OklchLightness {
+	const double lightness = static_cast<double>(value);
+	if (!std::isfinite(lightness) || lightness < 0 || lightness > 1) {
+		throw std::invalid_argument("OklchLightness out of range");
+	}
+	return OklchLightness{lightness};
+}
+
+[[nodiscard]] consteval auto operator""_okl(unsigned long long value) -> OklchLightness {
+	return operator""_okl(static_cast<long double>(value));
+}
+
+[[nodiscard]] consteval auto operator""_okc(long double value) -> OklchChroma {
+	const double chroma = static_cast<double>(value);
+	if (!std::isfinite(chroma) || chroma < 0) {
+		throw std::invalid_argument("OklchChroma out of range");
+	}
+	return OklchChroma{chroma};
+}
+
+[[nodiscard]] consteval auto operator""_okc(unsigned long long value) -> OklchChroma {
+	return operator""_okc(static_cast<long double>(value));
 }
 
 } // namespace literals

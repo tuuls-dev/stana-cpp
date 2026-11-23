@@ -13,18 +13,47 @@ module stana;
 import :ui;
 import :document;
 import :primitives;
+import :theming;
 import :reactive;
 
 namespace stana::ui {
 namespace detail {
 namespace {
-void validateColor(Color color) {
-	for (const double component :
-		{color.red.value(), color.green.value(), color.blue.value(), color.alpha.value()}) {
-		stana::detail::requireNonnegative(component);
-		if (component > 1) {
-			throw std::invalid_argument("Color exceeds one");
+void validateColor(const Color &color) {
+	if (const auto *rgba = color.asRGBA()) {
+		for (const double component :
+			{rgba->red.value(), rgba->green.value(), rgba->blue.value(), rgba->alpha.value()}) {
+			stana::detail::requireNonnegative(component);
+			if (component > 1) {
+				throw std::invalid_argument("Color exceeds one");
+			}
 		}
+		return;
+	}
+	const auto *oklch = color.asOKLCH();
+	if (oklch == nullptr) {
+		throw std::invalid_argument("Color has no retained representation");
+	}
+	const double lightness = oklch->lightness.value();
+	if (!std::isfinite(lightness) || lightness < 0 || lightness > 1) {
+		throw std::invalid_argument("OklchLightness out of range");
+	}
+	const double chroma = oklch->chroma.value();
+	if (!std::isfinite(chroma) || chroma < 0) {
+		throw std::invalid_argument("OklchChroma out of range");
+	}
+	if (!std::isfinite(oklch->hue.radians())) {
+		throw std::invalid_argument("OKLCH hue must be finite");
+	}
+	const double alpha = oklch->alpha.value();
+	if (!std::isfinite(alpha) || alpha < 0 || alpha > 1) {
+		throw std::invalid_argument("Opacity out of range");
+	}
+}
+
+void validateColorSource(const theming::ColorSource &source) {
+	if (const auto *color = source.asColor()) {
+		validateColor(*color);
 	}
 }
 
@@ -222,7 +251,7 @@ void applyTypography(
 			identity,
 			context,
 			true,
-			validateColor
+			validateColorSource
 		);
 	}
 }
@@ -310,8 +339,9 @@ void applyTextStyle(const TextProperties &properties, NodeId identity, MountCont
 		context.document->bind(
 			identity,
 			*properties.foreground,
-			[](stana::document::detail::Node &node, Color value) -> stana::document::detail::Dirty {
-				validateColor(value);
+			[](stana::document::detail::Node &node,
+				theming::ColorSource value) -> stana::document::detail::Dirty {
+				validateColorSource(value);
 				const bool wasExplicit = node.isForegroundExplicit;
 				const auto changed = stana::ui::detail::assignRetained(
 					node.foreground,
@@ -334,8 +364,9 @@ void applyAppearance(
 		context.document->bind(
 			identity,
 			*properties.background,
-			[](stana::document::detail::Node &node, Color value) -> stana::document::detail::Dirty {
-				validateColor(value);
+			[](stana::document::detail::Node &node,
+				theming::ColorSource value) -> stana::document::detail::Dirty {
+				validateColorSource(value);
 				return stana::ui::detail::assignRetained(
 					node.background,
 					value,
@@ -366,8 +397,9 @@ void applyAppearance(
 		context.document->bind(
 			identity,
 			*properties.borderColor,
-			[](stana::document::detail::Node &node, Color value) -> stana::document::detail::Dirty {
-				validateColor(value);
+			[](stana::document::detail::Node &node,
+				theming::ColorSource value) -> stana::document::detail::Dirty {
+				validateColorSource(value);
 				return stana::ui::detail::assignRetained(
 					node.borderColor,
 					value,
@@ -802,7 +834,12 @@ auto mount(const Symbol &description, stana::ui::MountContext &context)
 		identity,
 		description.color,
 		[](stana::document::detail::Node &record,
-			const Color &value) -> stana::document::detail::Dirty {
+			const theming::ColorSource &value) -> stana::document::detail::Dirty {
+			if (const auto *color = value.asColor()) {
+				if (color->asRGBA() == nullptr && color->asOKLCH() == nullptr) {
+					throw std::invalid_argument("Color has no retained representation");
+				}
+			}
 			if (!record.symbol || record.symbol->color == value) {
 				return stana::document::detail::Dirty::none;
 			}

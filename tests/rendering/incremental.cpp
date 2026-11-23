@@ -66,7 +66,7 @@ void sameNodes(
 void sparseWork() {
 
 	const stana::reactive::Signal text{std::string{"11"}};
-	const stana::reactive::Signal color{stana::Color::black()};
+	const stana::reactive::Signal color{stana::theming::ColorSource{stana::Color::black()}};
 	stana::testing::TestHost host;
 	host.mount(
 		stana::ui::VStack{
@@ -78,7 +78,7 @@ void sparseWork() {
 		}
 	);
 	auto before = host.metrics();
-	color.set(stana::Color::accent());
+	color.set(stana::theming::ColorToken::accent());
 	auto after = host.metrics();
 	require(
 		after.measurements == before.measurements && after.arrangements == before.arrangements &&
@@ -90,7 +90,7 @@ void sparseWork() {
 		"C20 production commit never flattens"
 	);
 	before = after;
-	color.set(stana::Color::accent());
+	color.set(stana::theming::ColorToken::accent());
 	text.set("11");
 	require(
 		host.metrics().sceneRevisions == before.sceneRevisions,
@@ -457,7 +457,7 @@ void owningCore() {
 		"C13 inert does not invent paint"
 	);
 	const auto geometry = document->renderSnapshot()->geometry;
-	document->find(text)->foreground = stana::Color::accent();
+	document->find(text)->foreground = stana::theming::ColorToken::accent();
 	document->find(text)->isForegroundExplicit = true;
 	document->invalidate(text, stana::document::detail::Dirty::paint);
 	document->commit();

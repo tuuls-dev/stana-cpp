@@ -6,6 +6,7 @@ module;
 #include <vector>
 export module stana:rendering_shadow;
 import :primitives;
+import :theming;
 
 export namespace stana::rendering {
 /// @brief One CSS-style box silhouette shadow in logical points; first list entry is frontmost.
@@ -13,10 +14,11 @@ export namespace stana::rendering {
 /// Shadows do not change layout or hit areas. Consuming APIs throw invalid_argument on invalid
 /// input.
 struct BoxShadow {
-	Point offset{};				  ///< Signed horizontal/vertical displacement.
-	Points blurRadius{};		  ///< Gaussian sigma is half this radius; zero has a sharp edge.
-	Points spreadRadius{};		  ///< Expands outer casters; contracts inset openings.
-	std::optional<Color> color{}; ///< Explicit/themed color, or effective foreground when absent.
+	Point offset{};		   ///< Signed horizontal/vertical displacement.
+	Points blurRadius{};   ///< Gaussian sigma is half this radius; zero has a sharp edge.
+	Points spreadRadius{}; ///< Expands outer casters; contracts inset openings.
+	std::optional<::stana::theming::ColorSource>
+		color{};		  ///< Explicit/themed color, or effective foreground when absent.
 	bool isInset = false; ///< Clips the complement of the padding opening inside that contour.
 	auto operator<=>(const BoxShadow &) const = default;
 
@@ -39,7 +41,7 @@ struct BoxShadow {
 	std::span<const BoxShadow> from,
 	std::span<const BoxShadow> to,
 	Progress progress,
-	Color foreground = Color::text(),
+	::stana::theming::ColorSource foreground = ::stana::theming::ColorToken::text(),
 	Environment environment = {}
 ) -> std::vector<BoxShadow>;
 
@@ -89,7 +91,7 @@ void validateBorderWidths(BorderWidths);
 	std::span<const BoxShadow>,
 	CornerRadii = {},
 	BorderWidths = {},
-	Color foreground = Color::text(),
+	::stana::theming::ColorSource foreground = ::stana::theming::ColorToken::text(),
 	Environment = {}
 ) -> std::vector<ShadowPaint>;
 } // namespace detail

@@ -11,6 +11,7 @@ export import :rendering_presentation;
 export import :rendering_gpu;
 export import :rendering_shadow;
 export import :primitives;
+export import :theming;
 import :text;
 export import :rendering_diagnostics;
 
@@ -42,7 +43,8 @@ enum class PaintKind : std::uint8_t {
 struct PaintCommand {
 	PaintKind kind = PaintKind::fillRect; ///< Operation the scene renderer must execute.
 	Rect bounds{}; ///< Local bounds in Drawing; document-relative bounds in a published scene.
-	Color color{}; ///< Fill, outline, line or text color, including opacity.
+	::stana::theming::ColorSource
+		color{};		   ///< Fill, outline, line or text color, including opacity.
 	Points cornerRadius{}; ///< Rectangle/clip rounding radius in logical points.
 	Points lineWidth{1};   ///< Outline or segment thickness in logical points.
 	std::string text{};	   ///< Owned display text; used only for PaintKind::text.
@@ -69,16 +71,24 @@ struct Drawing {
 	/// @brief Validates the complete authored stream, including direct command edits.
 	void validate() const;
 	[[nodiscard]] auto operator==(const Drawing &) const -> bool = default;
-	void fillRect(Rect bounds, Color color, Points cornerRadius = Points{});
-	void
-	strokeRect(Rect bounds, Color color, Points width = Points{1}, Points cornerRadius = Points{});
+	void fillRect(Rect bounds, ::stana::theming::ColorSource color, Points cornerRadius = Points{});
+	void strokeRect(
+		Rect bounds,
+		::stana::theming::ColorSource color,
+		Points width = Points{1},
+		Points cornerRadius = Points{}
+	);
 
-	void fill(Rect bounds, Color color, Points cornerRadius = Points{}) {
+	void fill(Rect bounds, ::stana::theming::ColorSource color, Points cornerRadius = Points{}) {
 		fillRect(bounds, color, cornerRadius);
 	}
 
-	void
-	stroke(Rect bounds, Color color, Points width = Points{1}, Points cornerRadius = Points{}) {
+	void stroke(
+		Rect bounds,
+		::stana::theming::ColorSource color,
+		Points width = Points{1},
+		Points cornerRadius = Points{}
+	) {
 		strokeRect(bounds, color, width, cornerRadius);
 	}
 };

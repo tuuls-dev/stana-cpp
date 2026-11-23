@@ -53,6 +53,8 @@ void literalsAndArithmetic() {
 	using stana::literals::operator""_rad;
 	using stana::literals::operator""_px;
 	using stana::literals::operator""_color;
+	using stana::literals::operator""_okl;
+	using stana::literals::operator""_okc;
 	const auto gap = operator""_pt(static_cast<long double>(twelve));
 	const auto halfPercent = operator""_pct(static_cast<long double>(fifty));
 	const auto turn = operator""_deg(static_cast<long double>(oneEighty));
@@ -74,18 +76,56 @@ void literalsAndArithmetic() {
 		"_px remains Length::points"
 	);
 	constexpr auto opaque = operator""_color("#112233", 7);
+	const auto *opaqueRgb = opaque.asRGBA();
 	require(
-		near(opaque.red.value(), redByte / channelMax) &&
-			near(opaque.green.value(), greenByte / channelMax) &&
-			near(opaque.blue.value(), blueByte / channelMax) &&
-			std::is_eq(opaque.alpha <=> stana::Opacity{1}),
+		opaqueRgb != nullptr && near(opaqueRgb->red.value(), redByte / channelMax) &&
+			near(opaqueRgb->green.value(), greenByte / channelMax) &&
+			near(opaqueRgb->blue.value(), blueByte / channelMax) &&
+			std::is_eq(opaqueRgb->alpha <=> stana::Opacity{1}),
 		"RRGGBB color literal"
 	);
 	constexpr auto translucent = operator""_color("#1122337F", 9);
 	require(
-		near(translucent.alpha.value(), alphaByte / channelMax),
+		translucent.asRGBA() != nullptr &&
+			near(translucent.asRGBA()->alpha.value(), alphaByte / channelMax),
 		"RRGGBBAA color literal uses trailing alpha"
 	);
+	constexpr auto authored = stana::Color::oklch(
+		operator""_okl(static_cast<long double>(fourFifths)),
+		operator""_okc(static_cast<long double>(quarter)),
+		operator""_deg(static_cast<long double>(oneEighty))
+	);
+	require(authored.asOKLCH() != nullptr && authored.asRGBA() == nullptr, "oklch retains OKLCH");
+	require(authored.asOKLCH()->chroma == stana::OklchChroma{quarter}, "oklch stores chroma");
+	const auto faded = authored.withAlpha(stana::Opacity{half});
+	require(
+		faded.asOKLCH() != nullptr && std::is_eq(faded.alpha() <=> stana::Opacity{half}) &&
+			faded.asOKLCH()->lightness == authored.asOKLCH()->lightness,
+		"withAlpha keeps OKLCH coordinates"
+	);
+	require(!(authored == stana::Color::rgb(0, 0, 0)), "RGB and OKLCH compare unequal");
+	require(
+		stana::Color{}.asRGBA() != nullptr && stana::Color{}.asOKLCH() == nullptr,
+		"default RGBA"
+	);
+	bool rejected = false;
+	try {
+		static_cast<void>(stana::Color::oklch(
+			stana::OklchLightness{two},
+			stana::OklchChroma{quarter},
+			stana::Angle{}
+		));
+	} catch (const std::invalid_argument &) {
+		rejected = true;
+	}
+	require(rejected, "oklch rejects lightness above one");
+	rejected = false;
+	try {
+		static_cast<void>(stana::Color::rgb(negativeOne, 0, 0));
+	} catch (const std::invalid_argument &) {
+		rejected = true;
+	}
+	require(rejected, "rgb rejects channels below zero");
 }
 
 void opacityAndLengthFactories() {
@@ -139,6 +179,14 @@ void namedQuantities() {
 	require(
 		std::is_eq(stana::SdrChannel{quarter} <=> stana::SdrChannel{quarter}),
 		"SdrChannel equality"
+	);
+	require(
+		std::is_eq(stana::OklchLightness{fourFifths} <=> stana::OklchLightness{fourFifths}),
+		"OklchLightness equality"
+	);
+	require(
+		std::is_eq(stana::OklchChroma{quarter} <=> stana::OklchChroma{quarter}),
+		"OklchChroma equality"
 	);
 	require(
 		std::is_eq(stana::LinearChannel{oneAndHalf} <=> stana::LinearChannel{oneAndHalf}),

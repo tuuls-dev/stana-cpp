@@ -1,9 +1,29 @@
 #ifndef STANA_SCENE_CONVERSION_HPP
 #define STANA_SCENE_CONVERSION_HPP
 
+#include "../rendering/color_space.hpp"
+
 // Included after imports; shared by the production bridge and private native fixtures.
 // Standard headers belong in the includer, before its module declaration.
 namespace stana::application::detail {
+[[nodiscard]] inline auto packSceneColor(const Color &color)
+	-> stana::platform::detail::SceneColor {
+	const auto prepared = stana::rendering::detail::prepareEncoded(color);
+	return {
+		.red = prepared.red,
+		.green = prepared.green,
+		.blue = prepared.blue,
+		.alpha = prepared.alpha
+	};
+}
+
+[[nodiscard]] inline auto concretePaint(const theming::ColorSource &source) -> Color {
+	if (const auto *color = source.asColor()) {
+		return *color;
+	}
+	return theming::resolveColor(source, {});
+}
+
 [[nodiscard]] inline auto convertCommand(const stana::rendering::PaintCommand &command)
 	-> stana::platform::detail::Command {
 
@@ -31,16 +51,17 @@ namespace stana::application::detail {
 		operation = stana::platform::detail::PaintOperation::popClip;
 		break;
 	}
+	const auto packed = packSceneColor(concretePaint(command.color));
 	stana::platform::detail::Command result{
 		.operation = operation,
 		.x = command.bounds.origin.x.value(),
 		.y = command.bounds.origin.y.value(),
 		.width = command.bounds.size.width.value(),
 		.height = command.bounds.size.height.value(),
-		.red = command.color.red.value(),
-		.green = command.color.green.value(),
-		.blue = command.color.blue.value(),
-		.alpha = command.color.alpha.value(),
+		.red = packed.red,
+		.green = packed.green,
+		.blue = packed.blue,
+		.alpha = packed.alpha,
 		.radius = command.cornerRadius.value(),
 		.lineWidth = command.lineWidth.value(),
 		.text = command.text,
@@ -177,12 +198,9 @@ resolvePaint(const stana::symbol::Paint &paint, stana::Color tint, double opacit
 			if constexpr (std::is_same_v<Paint, stana::symbol::NoPaint>) {
 				return std::nullopt;
 			} else if constexpr (std::is_same_v<Paint, stana::symbol::CurrentColor>) {
-				return stana::platform::detail::SceneColor{
-					.red = tint.red.value(),
-					.green = tint.green.value(),
-					.blue = tint.blue.value(),
-					.alpha = tint.alpha.value() * opacity
-				};
+				auto packed = packSceneColor(tint);
+				packed.alpha *= opacity;
+				return packed;
 			} else {
 				static_assert(std::is_same_v<Paint, stana::symbol::RgbaColor>);
 				return stana::platform::detail::SceneColor{
@@ -523,12 +541,7 @@ struct SceneConversion {
 		auto scene = std::make_shared<stana::platform::detail::Scene>();
 		scene->revision = next->revision;
 		scene->size = {.width = next->size.width.value(), .height = next->size.height.value()};
-		scene->background = {
-			.red = next->background.red.value(),
-			.green = next->background.green.value(),
-			.blue = next->background.blue.value(),
-			.alpha = next->background.alpha.value()
-		};
+		scene->background = packSceneColor(next->background);
 		scene->textEnvironment = next->textEnvironment;
 		scene->symbolError = symbolError;
 		scene->root = branch(

@@ -685,6 +685,22 @@ template <typename T> class Property {
 
 	Property(Computed<T> value) : source_(std::move(value)) {}
 
+	/// @brief Adapts a live Signal<U> without snapshotting. Each read constructs T from U.
+	template <typename U>
+		requires std::constructible_from<T, U> && (!std::same_as<std::remove_cvref_t<U>, T>)
+	Property(Signal<U> signal)
+		: source_(computed([source = std::move(signal)]() -> T {
+			  return T{source.get()};
+		  })) {}
+
+	/// @brief Adapts a live Computed<U> without snapshotting. Each read constructs T from U.
+	template <typename U>
+		requires std::constructible_from<T, U> && (!std::same_as<std::remove_cvref_t<U>, T>)
+	Property(Computed<U> value)
+		: source_(computed([source = std::move(value)]() -> T {
+			  return T{source.get()};
+		  })) {}
+
 	[[nodiscard]] auto get() const -> T {
 		return std::visit(
 			[](const auto &value) -> T {

@@ -1,6 +1,8 @@
 #ifndef STANA_GPU_CONVERSION_HPP
 #define STANA_GPU_CONVERSION_HPP
 
+#include "../rendering/color_space.hpp"
+
 // Included after the application module declaration/imports. No native types escape modules.
 namespace stana::application::detail {
 [[nodiscard]] inline auto convertFormat(stana::rendering::GPUTextureFormat value)
@@ -90,15 +92,12 @@ namespace stana::application::detail {
 
 [[nodiscard]] inline auto convertShadow(const stana::rendering::detail::ShadowPaint &value)
 	-> stana::gpu::detail::Shadow {
+	const auto prepared = stana::rendering::detail::prepareEncoded(value.color);
 	return {
 		.clip = convertContour(value.clip),
 		.caster = convertContour(value.caster),
 		.offset = {value.offset.x.value(), value.offset.y.value()},
-		.color =
-			{value.color.red.value(),
-				value.color.green.value(),
-				value.color.blue.value(),
-				value.color.alpha.value()},
+		.color = {prepared.red, prepared.green, prepared.blue, prepared.alpha},
 		.blurRadius = value.blurRadius.value(),
 		.isInset = value.isInset,
 		.ink = {
@@ -267,15 +266,18 @@ struct GPUConversion {
 		return std::visit(
 			[&](const auto &input) -> stana::gpu::detail::Color {
 				using T = std::decay_t<decltype(input)>;
-				if constexpr (std::is_same_v<T, Color>) {
-					const auto resolved =
-						input.resolved(environment.theme, environment.highContrast);
+				if constexpr (std::is_same_v<T, theming::ColorSource>) {
+					const auto resolved = theming::resolveColor(input, environment);
+					if (resolved.asOKLCH() != nullptr) {
+						const auto prepared = stana::rendering::detail::prepareLinear(resolved);
+						return {
+							.rgba = {prepared.red, prepared.green, prepared.blue, prepared.alpha},
+							.linear = true
+						};
+					}
+					const auto prepared = stana::rendering::detail::prepareEncoded(resolved);
 					return {
-						.rgba =
-							{resolved.red.value(),
-								resolved.green.value(),
-								resolved.blue.value(),
-								resolved.alpha.value()},
+						.rgba = {prepared.red, prepared.green, prepared.blue, prepared.alpha},
 						.linear = false
 					};
 				} else {
@@ -345,7 +347,7 @@ struct GPUConversion {
 									 input.shadows,
 									 input.cornerRadii,
 									 input.borderWidths,
-									 Color::text(),
+									 theming::ColorToken::text(),
 									 environment
 								 )) {
 								shadowList.shadows.push_back(convertShadow(shadow));

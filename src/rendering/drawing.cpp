@@ -10,6 +10,7 @@ module;
 #include <vector>
 module stana;
 import :rendering;
+import :theming;
 
 namespace stana::rendering {
 namespace {
@@ -70,14 +71,34 @@ void validateCommand(const PaintCommand &command) {
 		stana::detail::requireFinite(command.font.weight.value());
 	}
 	if (command.kind != pushClip) {
-		for (const double component :
-			{command.color.red.value(),
-				command.color.green.value(),
-				command.color.blue.value(),
-				command.color.alpha.value()}) {
-			stana::detail::requireNonnegative(component);
-			if (component > 1) {
-				throw std::invalid_argument("Drawing SDR color exceeds one");
+		if (const auto *color = command.color.asColor()) {
+			if (const auto *rgba = color->asRGBA()) {
+				for (const double component :
+					{rgba->red.value(),
+						rgba->green.value(),
+						rgba->blue.value(),
+						rgba->alpha.value()}) {
+					stana::detail::requireNonnegative(component);
+					if (component > 1) {
+						throw std::invalid_argument("Drawing SDR color exceeds one");
+					}
+				}
+			} else if (const auto *oklch = color->asOKLCH()) {
+				const double lightness = oklch->lightness.value();
+				if (!std::isfinite(lightness) || lightness < 0 || lightness > 1) {
+					throw std::invalid_argument("Drawing OKLCH lightness out of range");
+				}
+				const double chroma = oklch->chroma.value();
+				if (!std::isfinite(chroma) || chroma < 0) {
+					throw std::invalid_argument("Drawing OKLCH chroma out of range");
+				}
+				if (!std::isfinite(oklch->hue.radians())) {
+					throw std::invalid_argument("Drawing OKLCH hue must be finite");
+				}
+				const double alpha = oklch->alpha.value();
+				if (!std::isfinite(alpha) || alpha < 0 || alpha > 1) {
+					throw std::invalid_argument("Drawing OKLCH opacity out of range");
+				}
 			}
 		}
 	}
@@ -138,7 +159,7 @@ void Drawing::validate() const {
 	}
 }
 
-void Drawing::fillRect(Rect bounds, Color color, Points radius) {
+void Drawing::fillRect(Rect bounds, theming::ColorSource color, Points radius) {
 	PaintCommand command{
 		.kind = PaintKind::fillRect,
 		.bounds = bounds,
@@ -150,7 +171,7 @@ void Drawing::fillRect(Rect bounds, Color color, Points radius) {
 	commands.push_back(std::move(command));
 }
 
-void Drawing::strokeRect(Rect bounds, Color color, Points width, Points radius) {
+void Drawing::strokeRect(Rect bounds, theming::ColorSource color, Points width, Points radius) {
 	PaintCommand command{
 		.kind = PaintKind::strokeRect,
 		.bounds = bounds,

@@ -38,7 +38,7 @@ void values() {
 	const stana::Rect rect{
 		.size = {.width = stana::Points{doubleExtent}, .height = stana::Points{extent}}
 	};
-	drawing.fillRect(rect, stana::Color::accent(), stana::Points{doubleExtent});
+	drawing.fillRect(rect, stana::theming::ColorToken::accent(), stana::Points{doubleExtent});
 	require(
 		std::is_eq(drawing.commands.front().cornerRadius <=> stana::Points{doubleExtent}),
 		"authored radius preserved for structural value equality"
@@ -82,7 +82,7 @@ void retained() {
 	stana::rendering::Drawing initial;
 	initial.fillRect(
 		{.size = {.width = stana::Points{smallExtent}, .height = stana::Points{smallExtent}}},
-		stana::Color::border()
+		stana::theming::ColorToken::border()
 	);
 	const stana::reactive::Signal drawing{initial};
 	const stana::reactive::Signal present{true};
@@ -141,7 +141,7 @@ void retained() {
 	stana::rendering::Drawing next;
 	next.fillRect(
 		{.size = {.width = stana::Points{extent}, .height = stana::Points{extent}}},
-		stana::Color::text()
+		stana::theming::ColorToken::text()
 	);
 	drawing.set(next);
 	require(
@@ -169,7 +169,7 @@ void retained() {
 		"RTL padded origin"
 	);
 	require(
-		host.scene()->commands.at(1).color == stana::Color::white(),
+		host.scene()->commands.at(1).color == stana::theming::ColorSource{stana::Color::white()},
 		"semantic theme resolution"
 	);
 	host.click(
