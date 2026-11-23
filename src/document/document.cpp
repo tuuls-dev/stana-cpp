@@ -200,9 +200,16 @@ void Document::remove(NodeId identity) {
 		}
 		if (pressed_ == id) {
 			pressed_.reset();
+			pointerPressInside_ = false;
 		}
-		if (hovered_ == id) {
-			hovered_.reset();
+		if (spaceTarget_ == id) {
+			spaceTarget_.reset();
+		}
+		if (enterTarget_ == id) {
+			enterTarget_.reset();
+		}
+		if (std::ranges::find(hoverRoute_, id) != hoverRoute_.end() || hovered_ == id) {
+			notePointerReconcile();
 		}
 	}
 	for (const auto &[serial, record] : nodes_) {
@@ -243,6 +250,7 @@ auto Document::reorder(NodeId parent, const std::vector<NodeId> &children)
 	}
 	node->children = children;
 	invalidate(parent, Dirty::measure | Dirty::arrange | Dirty::structure);
+	notePointerReconcile();
 	return {};
 }
 
@@ -361,8 +369,25 @@ void Document::setEnvironment(Environment environment) {
 			const auto semantic = [](const theming::ColorSource &source) -> bool {
 				return source.asToken() != nullptr;
 			};
+			const auto semanticSlot = [&](const VisualStateSlot &slot) -> bool {
+				const auto optionalColor =
+					[&](const std::optional<theming::ColorSource> &source) -> bool {
+					return source && semantic(*source);
+				};
+				return optionalColor(slot.background) || optionalColor(slot.borderColor) ||
+					optionalColor(slot.foreground) ||
+					(slot.boxShadows &&
+						std::ranges::any_of(
+							*slot.boxShadows,
+							[&](const stana::rendering::BoxShadow &shadow) -> bool {
+								return shadow.color && semantic(*shadow.color);
+							}
+						));
+			};
 			if (semantic(node->background) || semantic(node->foreground) ||
-				semantic(node->borderColor) ||
+				semantic(node->borderColor) || semanticSlot(node->hoveredStyle) ||
+				semanticSlot(node->pressedStyle) || semanticSlot(node->focusedStyle) ||
+				semanticSlot(node->disabledStyle) ||
 				std::ranges::any_of(
 					node->drawing.commands,
 					[&](const stana::rendering::PaintCommand &command) -> bool {
@@ -595,6 +620,13 @@ void Document::setHostVisible(bool visible) {
 		return;
 	}
 	hostVisible_ = visible;
+	if (!visible) {
+		pointerInside_ = false;
+		clearPointerPress();
+		clearKeyLatch(spaceTarget_, std::nullopt);
+		clearKeyLatch(enterTarget_, std::nullopt);
+		notePointerReconcile();
+	}
 	for (const auto &[serial, node] : nodes_) {
 		static_cast<void>(serial);
 		if (node->kind == NodeKind::symbol) {

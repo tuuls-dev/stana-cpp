@@ -273,17 +273,21 @@ pub const Project = struct {
     }
 
     pub fn compileFail(project: *Project, source: Path) *Run {
+        return compileFailMatching(project, source, "constant expression");
+    }
+
+    pub fn compileFailMatching(project: *Project, source: Path, marker: []const u8) *Run {
         const b = project.b;
         var imports: std.ArrayList(Module) = .empty;
         project.addImport(&imports, "stana");
-        const run = Run.create(b, b.fmt("stana.symbols.compiler-fail {f}", .{source}));
+        const run = Run.create(b, b.fmt("stana.compiler-fail {f}", .{source}));
         addFile(run, project.sdk.tools.compiler);
         project.sdk.tools.info.addStepDependencies(&run.step);
         (CompileOptions{ .imports = imports.items }).addArguments(b, project.sdk.tools, source, run);
         run.addArg("-fsyntax-only");
         addFile(run, source);
         run.expectExitCode(1);
-        run.expectStdErrMatch("constant expression");
+        run.expectStdErrMatch(marker);
         return run;
     }
 

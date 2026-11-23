@@ -379,6 +379,9 @@ class TestHost {
 	/// @brief Cancels pending default activation without invoking the pressed control.
 	void cancelPointer() { document_->cancelPointer(); }
 
+	/// @brief Drops hover and latched press visuals without activating, as a lost window does.
+	void releaseInput() { document_->releaseTransientInput(); }
+
 	/// @brief Moves keyboard focus through eligible controls in published tree order.
 	void tab(bool backwards = false) { document_->tab(backwards); }
 

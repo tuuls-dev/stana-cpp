@@ -106,6 +106,7 @@ fn addContracts(project: *Project, tests: *Build.Step) void {
         .{ "shadows", "rendering/shadows.cpp" },
         .{ "color-space", "rendering/color_space.cpp" },
         .{ "ui.shadows", "ui/shadows.cpp" },
+        .{ "ui.states", "ui/states.cpp" },
     };
     for (contracts) |entry| {
         _ = contract(project, tests, entry[0], &.{b.fmt("tests/{s}", .{entry[1]})});
@@ -123,6 +124,18 @@ fn addContracts(project: *Project, tests: *Build.Step) void {
         count += 1;
     }
     if (count == 0) @panic("No symbol compile-fail fixtures");
+    var state_failures = std.Io.Dir.cwd().openDir(b.graph.io, cpp.toolchain.absolute(b, b.path("tests/ui/fail")), .{ .iterate = true }) catch @panic("Cannot open state fixtures");
+    defer state_failures.close(b.graph.io);
+    b.dependOnDirectoryContents(b.path("tests/ui/fail"));
+    var state_entries = state_failures.iterate();
+    var state_count: usize = 0;
+    while (state_entries.next(b.graph.io) catch @panic("Cannot read state fixtures")) |entry| {
+        if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".cpp")) continue;
+        const reject = project.compileFailMatching(b.path(b.fmt("tests/ui/fail/{s}", .{entry.name})), "does not refer to any field");
+        tests.dependOn(&reject.step);
+        state_count += 1;
+    }
+    if (state_count == 0) @panic("No state compile-fail fixtures");
 
     const diagnostics = command(project, "stana.diagnostics", 30);
     cpp.addFile(diagnostics, project.executable("stana-diagnostics", &.{"tests/diagnostics/contracts.cpp"}, null));

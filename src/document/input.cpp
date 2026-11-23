@@ -111,8 +111,258 @@ auto Document::dispatch(NodeId target, EventKind kind, Payload event, bool inclu
 	return event;
 }
 
+namespace {
+[[nodiscard]] auto listed(const std::vector<NodeId> &route, NodeId identity) -> bool {
+	return std::ranges::find(route, identity) != route.end();
+}
+
+[[nodiscard]] auto slotHas(const VisualStateSlot &slot, VisualField field) -> bool {
+	switch (field) {
+	case VisualField::background:
+		return slot.background.has_value();
+	case VisualField::opacity:
+		return slot.opacity.has_value();
+	case VisualField::borderColor:
+		return slot.borderColor.has_value();
+	case VisualField::borderWidth:
+		return slot.borderWidth.has_value();
+	case VisualField::cornerRadius:
+		return slot.cornerRadius.has_value();
+	case VisualField::cornerRadii:
+		return slot.cornerRadii.has_value();
+	case VisualField::borderWidths:
+		return slot.borderWidths.has_value();
+	case VisualField::boxShadows:
+		return slot.boxShadows.has_value();
+	case VisualField::foreground:
+		return slot.foreground.has_value();
+	}
+	return false;
+}
+
+[[nodiscard]] auto slotFor(const Node &node, VisualLayer layer) -> const VisualStateSlot & {
+	switch (layer) {
+	case VisualLayer::hovered:
+		return node.hoveredStyle;
+	case VisualLayer::pressed:
+		return node.pressedStyle;
+	case VisualLayer::focused:
+		return node.focusedStyle;
+	case VisualLayer::disabled:
+		return node.disabledStyle;
+	}
+	throw std::logic_error("Unknown visual state");
+}
+} // namespace
+
+auto Document::effectivelyDisabled(NodeId identity) const -> bool {
+	for (const auto *node = find(identity); node != nullptr; node = find(node->parent)) {
+		if (!node->isEnabled) {
+			return true;
+		}
+		if (node->parent.serial == 0) {
+			return false;
+		}
+	}
+	return false;
+}
+
+auto Document::feedbackBlocked(const Node &node) const -> bool {
+	for (const auto *current = &node; current != nullptr; current = find(current->parent)) {
+		if (!current->isEnabled || current->inert || current->visibility != Visibility::visible) {
+			return true;
+		}
+		if (current->parent.serial == 0) {
+			return false;
+		}
+	}
+	return true;
+}
+
+auto Document::layerActive(const Node &node, VisualLayer layer) const -> bool {
+	switch (layer) {
+	case VisualLayer::disabled:
+		return effectivelyDisabled(node.id);
+	case VisualLayer::hovered:
+		return !feedbackBlocked(node) && listed(hoverRoute_, node.id);
+	case VisualLayer::pressed:
+		return !feedbackBlocked(node) &&
+			((pressed_ == node.id && pointerPressInside_) || spaceTarget_ == node.id ||
+				enterTarget_ == node.id);
+	case VisualLayer::focused:
+		return !feedbackBlocked(node) && focused_ == node.id;
+	}
+	return false;
+}
+
+auto Document::paintDomainsForBase(const Node &node, VisualField field) const -> Dirty {
+	using enum VisualLayer;
+	for (const auto layer : {hovered, pressed, focused, disabled}) {
+		if (layerActive(node, layer) && slotHas(slotFor(node, layer), field)) {
+			return Dirty::none;
+		}
+	}
+	return Dirty::paint;
+}
+
+auto Document::paintDomainsForOverride(const Node &node, VisualLayer layer, VisualField field) const
+	-> Dirty {
+	if (!layerActive(node, layer)) {
+		return Dirty::none;
+	}
+	const auto maskedBy = [&](VisualLayer candidate) -> bool {
+		return layerActive(node, candidate) && slotHas(slotFor(node, candidate), field);
+	};
+	switch (layer) {
+	case VisualLayer::hovered:
+		if (maskedBy(VisualLayer::pressed) || maskedBy(VisualLayer::focused) ||
+			maskedBy(VisualLayer::disabled)) {
+			return Dirty::none;
+		}
+		break;
+	case VisualLayer::pressed:
+		if (maskedBy(VisualLayer::focused) || maskedBy(VisualLayer::disabled)) {
+			return Dirty::none;
+		}
+		break;
+	case VisualLayer::focused:
+		if (maskedBy(VisualLayer::disabled)) {
+			return Dirty::none;
+		}
+		break;
+	case VisualLayer::disabled:
+		break;
+	}
+	return Dirty::paint;
+}
+
+void Document::notePointerReconcile() {
+	pointerReconcileNeeded_ = true;
+	// Commit returns before hit testing when nothing else is dirty.
+	isDirty_ = true;
+	if (updatingHover_) {
+		hoverFollowUp_ = true;
+	}
+}
+
+void Document::invalidateDescendants(NodeId identity, Dirty domains) {
+	const auto *node = find(identity);
+	if (node == nullptr) {
+		return;
+	}
+	const auto children = node->children;
+	for (const auto child : children) {
+		invalidate(child, domains);
+		invalidateDescendants(child, domains);
+	}
+}
+
+void Document::refreshPressedVisual() {
+	bool inside = false;
+	if (pressed_ && pointerInside_) {
+		if (const auto hit = hitTest(pointerPosition_)) {
+			inside = listed(ancestorRoute(*hit), *pressed_);
+		}
+	}
+	if (inside == pointerPressInside_) {
+		return;
+	}
+	pointerPressInside_ = inside;
+	if (pressed_) {
+		invalidate(*pressed_, Dirty::paint | Dirty::snapshot);
+	}
+}
+
+void Document::clearPointerPress() {
+	pointerPressInside_ = false;
+	if (!pressed_) {
+		return;
+	}
+	const auto identity = *pressed_;
+	pressed_.reset();
+	if (find(identity) != nullptr) {
+		invalidate(identity, Dirty::paint | Dirty::snapshot);
+	}
+}
+
+void Document::clearKeyLatch(std::optional<NodeId> &slot, std::optional<NodeId> retain) {
+	if (!slot || slot == retain) {
+		return;
+	}
+	const auto identity = *slot;
+	slot.reset();
+	if (find(identity) != nullptr) {
+		invalidate(identity, Dirty::paint | Dirty::snapshot);
+	}
+}
+
+void Document::clearIneligiblePress() {
+	if (pressed_ && (find(*pressed_) == nullptr || !isEligible(*pressed_))) {
+		clearPointerPress();
+	}
+	const auto clear = [&](std::optional<NodeId> &slot) -> void {
+		if (slot && (find(*slot) == nullptr || !isEligible(*slot) || focused_ != slot)) {
+			clearKeyLatch(slot, std::nullopt);
+		}
+	};
+	clear(spaceTarget_);
+	clear(enterTarget_);
+}
+
+void Document::latchKey(Key key) {
+	if (key != Key::space && key != Key::enter) {
+		return;
+	}
+	if (!focused_) {
+		return;
+	}
+	const auto *node = find(*focused_);
+	if (node == nullptr || (node->kind != NodeKind::button && node->kind != NodeKind::toggle) ||
+		!isEligible(*focused_)) {
+		return;
+	}
+	auto &slot = key == Key::space ? spaceTarget_ : enterTarget_;
+	if (slot == focused_) {
+		return;
+	}
+	clearKeyLatch(slot, std::nullopt);
+	slot = focused_;
+	invalidate(*focused_, Dirty::paint | Dirty::snapshot);
+}
+
+void Document::releaseTransientInput() {
+	pointerInside_ = false;
+	clearPointerPress();
+	clearKeyLatch(spaceTarget_, std::nullopt);
+	clearKeyLatch(enterTarget_, std::nullopt);
+	updateHover(std::nullopt, pointerPosition_);
+	if (!isCommitting_) {
+		commit();
+	}
+}
+
+void Document::syncPointerDuringCommit() {
+	pointerReconcileNeeded_ = false;
+	const auto next = pointerInside_ ? hitTest(pointerPosition_) : std::optional<NodeId>{};
+	updateHover(next, pointerPosition_);
+	refreshPressedVisual();
+	clearIneligiblePress();
+}
+
+namespace {
+void invalidateHover(Document &document, NodeId identity) {
+	const auto *node = document.find(identity);
+	auto domains = Dirty::snapshot;
+	if (node != nullptr && node->hoveredStyle.any()) {
+		domains = domains | Dirty::paint;
+	}
+	document.invalidate(identity, domains);
+}
+} // namespace
+
 void Document::updateHover(std::optional<NodeId> next, Point point) {
-	if (next == hovered_ || updatingHover_) {
+	if (updatingHover_) {
+		hoverFollowUp_ = true;
 		return;
 	}
 	updatingHover_ = true;
@@ -131,32 +381,47 @@ void Document::updateHover(std::optional<NodeId> next, Point point) {
 	};
 
 	const HoverGuard guard{&updatingHover_};
-
-	const auto previous = std::exchange(hovered_, next);
-	const auto previousRoute = previous ? ancestorRoute(*previous) : std::vector<NodeId>{};
-	const auto nextRoute = next ? ancestorRoute(*next) : std::vector<NodeId>{};
-	const auto listed = [](const std::vector<NodeId> &route, NodeId identity) -> bool {
-		return std::ranges::find(route, identity) != route.end();
-	};
-	for (const auto identity : previousRoute) {
-		if (!listed(nextRoute, identity)) {
-			static_cast<void>(dispatch<PointerEvent>(
-				identity,
-				EventKind::pointerLeave,
-				PointerEvent{.position = point},
-				false
-			));
+	constexpr std::size_t passLimit = 8;
+	for (std::size_t pass = 0; pass < passLimit; ++pass) {
+		hoverFollowUp_ = false;
+		if (next && find(*next) == nullptr) {
+			next.reset();
 		}
-	}
-	for (const auto identity : std::views::reverse(nextRoute)) {
-		if (!listed(previousRoute, identity)) {
-			static_cast<void>(dispatch<PointerEvent>(
-				identity,
-				EventKind::pointerEnter,
-				PointerEvent{.position = point},
-				false
-			));
+		const auto nextRoute = next ? ancestorRoute(*next) : std::vector<NodeId>{};
+		if (next != hovered_ || nextRoute != hoverRoute_) {
+			const auto previousRoute = hoverRoute_;
+			hovered_ = next;
+			hoverRoute_ = nextRoute;
+			for (const auto identity : previousRoute) {
+				if (!listed(nextRoute, identity)) {
+					invalidateHover(*this, identity);
+					static_cast<void>(dispatch<PointerEvent>(
+						identity,
+						EventKind::pointerLeave,
+						PointerEvent{.position = point},
+						false
+					));
+				}
+			}
+			for (const auto identity : std::views::reverse(nextRoute)) {
+				if (!listed(previousRoute, identity)) {
+					invalidateHover(*this, identity);
+					static_cast<void>(dispatch<PointerEvent>(
+						identity,
+						EventKind::pointerEnter,
+						PointerEvent{.position = point},
+						false
+					));
+				}
+			}
 		}
+		if (!hoverFollowUp_ && !pointerReconcileNeeded_) {
+			break;
+		}
+		pointerReconcileNeeded_ = false;
+		hoverFollowUp_ = false;
+		point = pointerPosition_;
+		next = pointerInside_ ? hitTest(pointerPosition_) : std::optional<NodeId>{};
 	}
 }
 
@@ -248,6 +513,8 @@ auto Document::focus(NodeId identity, FocusReason reason) -> std::expected<void,
 		focused_.reset();
 		focusSession_ = stana::detail::nextIdentity();
 		capturedEditor_.reset();
+		clearKeyLatch(spaceTarget_, std::nullopt);
+		clearKeyLatch(enterTarget_, std::nullopt);
 		if (previous) {
 			invalidate(*previous, Dirty::paint | Dirty::snapshot);
 			static_cast<void>(dispatch<FocusEvent>(
@@ -265,6 +532,8 @@ auto Document::focus(NodeId identity, FocusReason reason) -> std::expected<void,
 			focused_ = next;
 			focusBookmark_.clear();
 			focusBookmarkTarget_.reset();
+			clearKeyLatch(spaceTarget_, focused_);
+			clearKeyLatch(enterTarget_, focused_);
 			invalidate(*next, Dirty::paint | Dirty::snapshot);
 			restartCaret(*next);
 			commit();
@@ -438,10 +707,14 @@ void Document::pointerDown(PointerInput input) {
 		throw std::invalid_argument("Pointer click count must be positive");
 	}
 	commit();
+	pointerInside_ = true;
 	pointerPosition_ = point;
 	const auto target = hitTest(point);
 	updateHover(target, point);
 	if (!target) {
+		if (!isCommitting_) {
+			commit();
+		}
 		return;
 	}
 	const auto event = dispatch<PointerEvent>(
@@ -456,9 +729,15 @@ void Document::pointerDown(PointerInput input) {
 		true
 	);
 	if (event.defaultPrevented) {
+		if (!isCommitting_) {
+			commit();
+		}
 		return;
 	}
 	if (input.button != PointerButton::primary) {
+		if (!isCommitting_) {
+			commit();
+		}
 		return;
 	}
 	bool acquired = false;
@@ -469,6 +748,8 @@ void Document::pointerDown(PointerInput input) {
 			acquired = true;
 			if (!node->editor) {
 				pressed_ = identity;
+				pointerPressInside_ = true;
+				invalidate(identity, Dirty::paint | Dirty::snapshot);
 			}
 			if (const auto result = focus(identity, FocusReason::pointer); !result) {
 				report(result.error());
@@ -505,8 +786,13 @@ void Document::pointerUp(PointerInput input) {
 		}
 		capturedEditor_.reset();
 	}
+	pointerInside_ = true;
 	pointerPosition_ = point;
 	const auto pressed = std::exchange(pressed_, std::nullopt);
+	pointerPressInside_ = false;
+	if (pressed && find(*pressed) != nullptr) {
+		invalidate(*pressed, Dirty::paint | Dirty::snapshot);
+	}
 	const auto bounds = pressed ? interactionBounds(*pressed) : std::nullopt;
 	const bool releasedInside =
 		bounds.has_value() && bounds->contains(point) && hitTest(point).has_value();
@@ -530,6 +816,9 @@ void Document::pointerUp(PointerInput input) {
 			report(result.error());
 		}
 	}
+	if (!isCommitting_) {
+		commit();
+	}
 }
 
 void Document::pointerMove(Point point) {
@@ -551,9 +840,14 @@ void Document::pointerMove(PointerInput input) {
 			autoscrollEditor(identity, node->editor->dragGeneration);
 		}
 	}
+	pointerInside_ = true;
 	pointerPosition_ = point;
 	const auto target = hitTest(point);
 	updateHover(target, point);
+	refreshPressedVisual();
+	if (!isCommitting_) {
+		commit();
+	}
 	if (!target) {
 		return;
 	}
@@ -571,7 +865,12 @@ void Document::pointerMove(PointerInput input) {
 }
 
 void Document::pointerLeave() {
+	pointerInside_ = false;
 	updateHover(std::nullopt, pointerPosition_);
+	clearPointerPress();
+	if (!isCommitting_) {
+		commit();
+	}
 }
 
 void Document::cancelPointer() {
@@ -582,14 +881,24 @@ void Document::cancelPointer() {
 		}
 		capturedEditor_.reset();
 	}
-	pressed_.reset();
+	clearPointerPress();
+	if (!isCommitting_) {
+		commit();
+	}
 }
 
 void Document::scroll(Point point, Points delta) {
 	stana::detail::requireFinite(delta.value());
+	pointerInside_ = true;
 	pointerPosition_ = point;
+	notePointerReconcile();
 	const auto target = hitTest(point);
+	updateHover(target, point);
+	refreshPressedVisual();
 	if (!target) {
+		if (!isCommitting_) {
+			commit();
+		}
 		return;
 	}
 	const auto event = dispatch<ScrollEvent>(
@@ -599,6 +908,9 @@ void Document::scroll(Point point, Points delta) {
 		true
 	);
 	if (event.defaultPrevented) {
+		if (!isCommitting_) {
+			commit();
+		}
 		return;
 	}
 	for (auto current = target; current;) {
@@ -616,6 +928,9 @@ void Document::scroll(Point point, Points delta) {
 			return;
 		}
 		current = node->parent.serial == 0 ? std::nullopt : std::optional{node->parent};
+	}
+	if (!isCommitting_) {
+		commit();
 	}
 }
 
@@ -682,6 +997,12 @@ void Document::acceptPresentation(stana::rendering::PresentationAttempt attempt)
 		const auto notify = textServices_.invalidateGeometry;
 		notify();
 	}
+	if (pointerInside_) {
+		notePointerReconcile();
+		if (!isCommitting_) {
+			commit();
+		}
+	}
 }
 
 auto Document::reportGPUCompletion(stana::rendering::PresentationAttempt attempt, bool success)
@@ -745,6 +1066,12 @@ void Document::gateSurface() {
 	}
 	surfaceGated_ = true;
 	ambiguousRegions_ = {Rect{.size = viewport_}};
+	if (pointerInside_) {
+		notePointerReconcile();
+		if (!isCommitting_) {
+			commit();
+		}
+	}
 }
 
 void Document::abandonPresentation(stana::rendering::PresentationAttempt attempt) {
@@ -807,6 +1134,12 @@ void Document::gateGeometry(
 	constexpr std::size_t maximumGateRegions = 64;
 	if (ambiguousRegions_.size() > maximumGateRegions) {
 		ambiguousRegions_ = {Rect{.size = viewport_}};
+	}
+	if (pointerInside_) {
+		notePointerReconcile();
+		if (!isCommitting_) {
+			commit();
+		}
 	}
 }
 
@@ -883,12 +1216,21 @@ void Document::keyDown(Key key, bool backwards) {
 		tab(backwards);
 		break;
 	case Key::space:
-	case Key::enter:
-		keyActivate();
+	case Key::enter: {
+		// A repeat arrives as another key-down while the latch is already held.
+		const auto held = (key == Key::space ? spaceTarget_ : enterTarget_) == focused_;
+		latchKey(key);
+		if (!held) {
+			keyActivate();
+		}
 		break;
+	}
 	case Key::escape:
 	case Key::text:
 		break;
+	}
+	if (!isCommitting_) {
+		commit();
 	}
 }
 
@@ -899,5 +1241,13 @@ void Document::keyUp(Key key, bool backwards) {
 		KeyEvent{.key = key, .backwards = backwards},
 		true
 	));
+	if (key == Key::space) {
+		clearKeyLatch(spaceTarget_, std::nullopt);
+	} else if (key == Key::enter) {
+		clearKeyLatch(enterTarget_, std::nullopt);
+	}
+	if (!isCommitting_) {
+		commit();
+	}
 }
 } // namespace stana::document::detail

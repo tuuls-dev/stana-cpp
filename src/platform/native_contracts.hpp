@@ -582,6 +582,8 @@ struct Window {
 		stateChanged{}; ///< Actual state observation from the host.
 	std::shared_ptr<AnimationGate>
 		animation{}; ///< Document demand writes it; the host wakes the link.
+	std::function<void()>
+		releaseInput{}; ///< Drops latched hover and press when the window loses input.
 };
 
 /// @brief Portable screen description at the module-free boundary.
