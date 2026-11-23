@@ -632,6 +632,7 @@ void Document::setInputActive(bool active) {
 }
 
 void Document::reconcileEditors() {
+	clearIneligiblePress();
 	if (focused_ && !isEligible(*focused_)) {
 		const auto identity = *focused_;
 		queueFocusLoss(identity, FocusReason::eligibility);

@@ -326,6 +326,12 @@ struct NodeSnapshot {
 	bool isEnabled = true;
 	/// @brief Whether this occurrence owns keyboard focus in the published document.
 	bool isFocused = false;
+	/// @brief Whether this occurrence is on the current hover route. Not an application input.
+	bool isHovered = false;
+	/// @brief Whether pressed feedback is showing on this occurrence. Not an application input.
+	bool isPressed = false;
+	/// @brief Whether this occurrence or an ancestor is locally disabled. Not eligibility.
+	bool isDisabled = false;
 	/// @brief Explicit accessible name; no value differs from an explicitly empty label.
 	std::optional<std::string> accessibilityLabel{};
 	std::optional<EditorSnapshot> editor{}; ///< Present only for TextInput.
@@ -582,6 +588,42 @@ struct TextServices {
 	std::function<void()> invalidateGeometry{};
 };
 
+/// @brief Paint field addressed by base and state bindings.
+enum class VisualField : std::uint8_t {
+	background,
+	opacity,
+	borderColor,
+	borderWidth,
+	cornerRadius,
+	cornerRadii,
+	borderWidths,
+	boxShadows,
+	foreground
+};
+
+/// @brief Which authored state slot a binding writes.
+enum class VisualLayer : std::uint8_t { hovered, pressed, focused, disabled };
+
+/// @brief Latest values for one visual state. Empty optionals are omissions.
+struct VisualStateSlot {
+	std::optional<::stana::theming::ColorSource> background{};
+	std::optional<Opacity> opacity{};
+	std::optional<::stana::theming::ColorSource> borderColor{};
+	std::optional<Points> borderWidth{};
+	std::optional<Points> cornerRadius{};
+	std::optional<CornerRadii> cornerRadii{};
+	std::optional<BorderWidths> borderWidths{};
+	std::optional<std::vector<::stana::rendering::BoxShadow>> boxShadows{};
+	std::optional<::stana::theming::ColorSource> foreground{};
+
+	/// @brief True when this slot stores any authored field.
+	[[nodiscard]] auto any() const -> bool {
+		return background.has_value() || opacity.has_value() || borderColor.has_value() ||
+			borderWidth.has_value() || cornerRadius.has_value() || cornerRadii.has_value() ||
+			borderWidths.has_value() || boxShadows.has_value() || foreground.has_value();
+	}
+};
+
 struct Node {
 	NodeWork work{}; ///< Classified local work and persistent projection cache.
 	NodeId id{};	 ///< Identity used by document lookup and non-owning handles.
@@ -647,6 +689,14 @@ struct Node {
 	std::vector<EventRegistration> events{};
 	/// @brief Built-in click action. Runs after click dispatch when default is not prevented.
 	std::function<void()> defaultActivate{};
+	/// @brief Latest hovered paint overrides. Inactive values stay stored.
+	VisualStateSlot hoveredStyle{};
+	/// @brief Latest pressed paint overrides.
+	VisualStateSlot pressedStyle{};
+	/// @brief Latest focused paint overrides. Omitted border fields keep the accent outline.
+	VisualStateSlot focusedStyle{};
+	/// @brief Latest disabled paint overrides. An opacity value replaces the automatic dim.
+	VisualStateSlot disabledStyle{};
 };
 
 /// @brief Owns one window's retained nodes, layout state and published projections.
@@ -715,6 +765,17 @@ class Document : public std::enable_shared_from_this<Document> {
 	void pointerMove(Point point);
 	void pointerLeave();
 	void cancelPointer();
+	/// @brief Drops hover and latched pointer or key press visuals without activating.
+	void releaseTransientInput();
+	/// @brief Paint dirty bit for a base field, or none when an active state masks it.
+	[[nodiscard]] auto paintDomainsForBase(const Node &node, VisualField field) const -> Dirty;
+	/// @brief Paint dirty bit for one state field, or none when that state is inactive or masked.
+	[[nodiscard]] auto
+	paintDomainsForOverride(const Node &node, VisualLayer layer, VisualField field) const -> Dirty;
+	/// @brief Marks descendant paint after a local policy change. Does not include identity.
+	void invalidateDescendants(NodeId identity, Dirty domains);
+	/// @brief Asks the next commit to re-hit-test a known stationary pointer.
+	void notePointerReconcile();
 	void scroll(Point point, Points delta);
 	void keyActivate();
 	/// @brief Routes a key press, then runs Tab, Space, or Return defaults unless prevented.
@@ -885,9 +946,27 @@ class Document : public std::enable_shared_from_this<Document> {
 	std::optional<NodeId> focusBookmarkTarget_{};
 	std::optional<NodeId> focused_;
 	std::optional<NodeId> pressed_;
-	std::optional<NodeId> hovered_; ///< Deepest occurrence under the pointer, if any.
-	Point pointerPosition_{};		///< Last routed pointer position, used when the pointer leaves.
-	bool updatingHover_ = false;	///< Prevents re-entrant enter/leave routing.
+	std::optional<NodeId> hovered_;	   ///< Deepest occurrence under the pointer, if any.
+	std::vector<NodeId> hoverRoute_{}; ///< Deepest hover target and its ancestors, child first.
+	Point pointerPosition_{}; ///< Last routed pointer position, used when the pointer leaves.
+	bool pointerInside_ =
+		false; ///< False until a pointer event proves the pointer is in the window.
+	bool pointerPressInside_ = false;	  ///< Pointer press owner is showing pressed feedback.
+	std::optional<NodeId> spaceTarget_{}; ///< Button or Toggle that accepted a held Space press.
+	std::optional<NodeId> enterTarget_{}; ///< Button or Toggle that accepted a held Enter press.
+	bool updatingHover_ = false;		  ///< Prevents re-entrant enter/leave routing.
+	bool hoverFollowUp_ = false; ///< A nested hover or tree change needs another route pass.
+	bool pointerReconcileNeeded_ = false; ///< Stationary pointer must be hit-tested again.
+	void updateHover(std::optional<NodeId> next, Point point);
+	void refreshPressedVisual();
+	void clearPointerPress();
+	void clearIneligiblePress();
+	void clearKeyLatch(std::optional<NodeId> &slot, std::optional<NodeId> retain);
+	void latchKey(Key key);
+	void syncPointerDuringCommit();
+	[[nodiscard]] auto layerActive(const Node &node, VisualLayer layer) const -> bool;
+	[[nodiscard]] auto effectivelyDisabled(NodeId identity) const -> bool;
+	[[nodiscard]] auto feedbackBlocked(const Node &node) const -> bool;
 	TextServices textServices_{};
 	bool inputActive_ = true;
 	std::uint64_t focusSession_ = 0;
@@ -980,8 +1059,6 @@ class Document : public std::enable_shared_from_this<Document> {
 	template <typename Payload>
 	[[nodiscard]] auto dispatch(NodeId target, EventKind kind, Payload event, bool includeAncestors)
 		-> Payload;
-
-	void updateHover(std::optional<NodeId> next, Point point);
 };
 } // namespace detail
 } // namespace stana::document

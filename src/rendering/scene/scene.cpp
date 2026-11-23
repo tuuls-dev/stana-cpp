@@ -10,6 +10,7 @@ module;
 #include <limits>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <set>
 #include <span>
 #include <stdexcept>
@@ -177,6 +178,87 @@ namespace {
 }
 } // namespace
 
+namespace {
+struct ResolvedVisual {
+	theming::ColorSource background = Color::clear();
+	Opacity opacity{1};
+	theming::ColorSource borderColor = Color::clear();
+	Points borderWidth{};
+	Points cornerRadius{};
+	std::optional<CornerRadii> cornerRadii{};
+	std::optional<BorderWidths> borderWidths{};
+	const std::vector<::stana::rendering::BoxShadow> *shadows = nullptr;
+	theming::ColorSource foreground = Color::black();
+	bool foregroundExplicit = false;
+	bool focusDefaultsColor = false;
+	bool focusDefaultsWidth = false;
+};
+
+void applySlot(ResolvedVisual &resolved, const VisualStateSlot &slot) {
+	if (slot.background) {
+		resolved.background = *slot.background;
+	}
+	if (slot.opacity) {
+		resolved.opacity = *slot.opacity;
+	}
+	if (slot.borderColor) {
+		resolved.borderColor = *slot.borderColor;
+	}
+	if (slot.borderWidth) {
+		resolved.borderWidth = *slot.borderWidth;
+	}
+	if (slot.cornerRadius) {
+		resolved.cornerRadius = *slot.cornerRadius;
+	}
+	if (slot.cornerRadii) {
+		resolved.cornerRadii = slot.cornerRadii;
+	}
+	if (slot.borderWidths) {
+		resolved.borderWidths = slot.borderWidths;
+	}
+	if (slot.boxShadows) {
+		resolved.shadows = &(*slot.boxShadows);
+	}
+	if (slot.foreground) {
+		resolved.foreground = *slot.foreground;
+		resolved.foregroundExplicit = true;
+	}
+}
+
+[[nodiscard]] auto
+resolveVisual(const Node &node, bool hovered, bool pressed, bool focused, bool disabled)
+	-> ResolvedVisual {
+	ResolvedVisual resolved{
+		.background = node.background,
+		.opacity = node.opacity,
+		.borderColor = node.borderColor,
+		.borderWidth = node.borderWidth,
+		.cornerRadius = node.cornerRadius,
+		.cornerRadii = node.cornerRadii,
+		.borderWidths = node.borderWidths,
+		.shadows = &node.boxShadows,
+		.foreground = node.foreground,
+		.foregroundExplicit = node.isForegroundExplicit
+	};
+	if (hovered) {
+		applySlot(resolved, node.hoveredStyle);
+	}
+	if (pressed) {
+		applySlot(resolved, node.pressedStyle);
+	}
+	if (focused) {
+		resolved.focusDefaultsColor = !node.focusedStyle.borderColor.has_value();
+		resolved.focusDefaultsWidth = !node.focusedStyle.borderWidth.has_value() &&
+			!node.focusedStyle.borderWidths.has_value();
+		applySlot(resolved, node.focusedStyle);
+	}
+	if (disabled) {
+		applySlot(resolved, node.disabledStyle);
+	}
+	return resolved;
+}
+} // namespace
+
 auto Document::project(
 	NodeId identity,
 	stana::rendering::detail::ProjectionContext incoming,
@@ -190,9 +272,18 @@ auto Document::project(
 	}
 	auto previous = node->work.projection;
 	auto context = incoming;
+	const bool visuallyDisabled = effectivelyDisabled(identity);
+	const bool feedback = !feedbackBlocked(*node);
+	const bool hovered = feedback && std::ranges::find(hoverRoute_, identity) != hoverRoute_.end();
+	const bool pressed = feedback &&
+		((pressed_ == identity && pointerPressInside_) || spaceTarget_ == identity ||
+			enterTarget_ == identity);
+	const bool focused = feedback && focused_ == identity;
+	const auto resolved = resolveVisual(*node, hovered, pressed, focused, visuallyDisabled);
+	const bool dimDisabled = !node->isEnabled && !node->disabledStyle.opacity.has_value();
 	context.opacity = Opacity{
-		context.opacity.value() * node->opacity.value() *
-		(node->isEnabled ? 1 : stana::rendering::detail::disabledOpacity.value())
+		context.opacity.value() * resolved.opacity.value() *
+		(dimDisabled ? stana::rendering::detail::disabledOpacity.value() : 1)
 	};
 	context.visible = incoming.visible && node->visibility == Visibility::visible;
 	context.eligible = incoming.eligible && context.visible && node->isEnabled && !node->inert;
@@ -221,21 +312,21 @@ auto Document::project(
 		stana::rendering::SceneSnapshot scene;
 		const Opacity opacity = context.opacity;
 
-		const auto radii = node->cornerRadii.value_or(CornerRadii::all(node->cornerRadius));
-		const auto widths = node->borderWidths.value_or(BorderWidths::all(node->borderWidth));
+		const auto radii = resolved.cornerRadii.value_or(CornerRadii::all(resolved.cornerRadius));
+		const auto widths = resolved.borderWidths.value_or(BorderWidths::all(resolved.borderWidth));
 		const auto contours = stana::rendering::detail::boxGeometry(
 			node->bounds,
 			radii,
 			widths,
 			environment_.direction
 		);
-		const bool rich = node->cornerRadii.has_value() || node->borderWidths.has_value();
+		const bool rich = resolved.cornerRadii.has_value() || resolved.borderWidths.has_value();
 		const auto shadows = stana::rendering::detail::prepareBoxShadows(
 			node->bounds,
-			node->boxShadows,
+			*resolved.shadows,
 			radii,
 			widths,
-			node->isForegroundExplicit ? node->foreground : theming::ColorToken::text(),
+			resolved.foregroundExplicit ? resolved.foreground : theming::ColorToken::text(),
 			environment_
 		);
 		const auto appendShadows = [&](bool inset) -> void {
@@ -253,18 +344,18 @@ auto Document::project(
 			}
 		};
 		appendShadows(false);
-		if (stana::rendering::detail::resolvePaint(node->background, environment_, opacity)
+		if (stana::rendering::detail::resolvePaint(resolved.background, environment_, opacity)
 				.alpha()
 				.value() > 0) {
 			scene.commands.push_back(
 				{.kind = stana::rendering::PaintKind::fillRect,
 					.bounds = node->bounds,
 					.color = stana::rendering::detail::resolvePaint(
-						node->background,
+						resolved.background,
 						environment_,
 						opacity
 					),
-					.cornerRadius = node->cornerRadius,
+					.cornerRadius = resolved.cornerRadius,
 					.boxGeometry = rich ? std::optional{contours} : std::nullopt}
 			);
 		}
@@ -273,7 +364,7 @@ auto Document::project(
 			scene.commands.push_back(
 				{.kind = stana::rendering::PaintKind::pushClip,
 					.bounds = node->bounds,
-					.cornerRadius = node->cornerRadius,
+					.cornerRadius = resolved.cornerRadius,
 					.boxGeometry = rich ? std::optional{contours} : std::nullopt}
 			);
 		}
@@ -289,7 +380,7 @@ auto Document::project(
 			);
 			const auto scroll = node->editor ? node->editor->scroll : Points{};
 			theming::ColorSource foreground =
-				node->isForegroundExplicit ? node->foreground : theming::ColorToken::text();
+				resolved.foregroundExplicit ? resolved.foreground : theming::ColorToken::text();
 			if (placeholder) {
 				foreground = node->editor->placeholderStyle.foreground.value_or(
 					theming::ColorToken::secondaryText()
@@ -483,35 +574,48 @@ auto Document::project(
 		if (node->clip) {
 			paint->suffix.push_back({.kind = stana::rendering::PaintKind::popClip});
 		}
-		if (node->borderWidth.value() > 0 || node->borderWidths || focused_ == identity) {
-			const auto borderContours = rich && focused_ == identity
-				? stana::rendering::detail::boxGeometry(
-					  node->bounds,
-					  radii,
-					  BorderWidths::all(stana::rendering::detail::focusBorderWidth),
-					  environment_.direction
-				  )
-				: contours;
+		auto strokeColor = resolved.borderColor;
+		auto strokeWidth = resolved.borderWidth;
+		auto strokeWidths = widths;
+		auto strokeContours = contours;
+		if (focused) {
+			if (resolved.focusDefaultsColor) {
+				strokeColor = theming::ColorToken::accent();
+			}
+			if (resolved.focusDefaultsWidth) {
+				strokeWidth = stana::rendering::detail::focusBorderWidth;
+				strokeWidths = BorderWidths::all(stana::rendering::detail::focusBorderWidth);
+				strokeContours = stana::rendering::detail::boxGeometry(
+					node->bounds,
+					radii,
+					strokeWidths,
+					environment_.direction
+				);
+			}
+		}
+		const bool drawStroke = strokeWidth.value() > 0 ||
+			(resolved.borderWidths.has_value() && !(focused && resolved.focusDefaultsWidth));
+		if (drawStroke) {
 			paint->suffix.push_back(
 				{.kind = stana::rendering::PaintKind::strokeRect,
 					.bounds = node->bounds,
-					.color = stana::rendering::detail::resolvePaint(
-						focused_ == identity ? theming::ColorSource{theming::ColorToken::accent()}
-											 : node->borderColor,
-						environment_,
-						opacity
-					),
-					.cornerRadius = node->cornerRadius,
-					.lineWidth = focused_ == identity ? stana::rendering::detail::focusBorderWidth
-													  : node->borderWidth,
-					.boxGeometry = rich ? std::optional{borderContours} : std::nullopt}
+					.color =
+						stana::rendering::detail::resolvePaint(strokeColor, environment_, opacity),
+					.cornerRadius = resolved.cornerRadius,
+					.lineWidth = strokeWidth,
+					.boxGeometry = rich || (focused && resolved.focusDefaultsWidth && rich)
+						? std::optional{strokeContours}
+						: std::nullopt}
 			);
 		}
 		branch->paint = std::move(paint);
 	}
-	if (previous && !has(node->work.local, Dirty::snapshot) &&
+	if (previous && previous->snapshot && !has(node->work.local, Dirty::snapshot) &&
 		previous->context.visible == context.visible &&
-		previous->context.eligible == context.eligible) {
+		previous->context.eligible == context.eligible &&
+		previous->snapshot->isHovered == hovered && previous->snapshot->isPressed == pressed &&
+		previous->snapshot->isFocused == (focused_ == identity) &&
+		previous->snapshot->isDisabled == visuallyDisabled) {
 		branch->snapshot = previous->snapshot;
 	} else {
 		branch->snapshot = std::make_shared<NodeSnapshot>(NodeSnapshot{
@@ -521,6 +625,9 @@ auto Document::project(
 			.bounds = node->bounds,
 			.isEnabled = context.eligible,
 			.isFocused = focused_ == identity,
+			.isHovered = hovered,
+			.isPressed = pressed,
+			.isDisabled = visuallyDisabled,
 			.accessibilityLabel = node->accessibilityLabel,
 			.editor = node->editor ? std::optional<EditorSnapshot>{{.store = node->editor->buffer.snapshot(),
 				.horizontalScroll = node->editor->scroll, .isActive = focused_ == identity && inputActive_,
@@ -703,6 +810,12 @@ void Document::commit() {
 			isDirty_ = false;
 			failedStamp_.reset();
 			rememberGeometry();
+			if (pointerInside_ || pointerReconcileNeeded_) {
+				syncPointerDuringCommit();
+				if (isDirty_) {
+					continue;
+				}
+			}
 			isCommitting_ = false;
 			if (onPublish_) {
 				onPublish_();

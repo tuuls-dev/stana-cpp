@@ -88,6 +88,62 @@ struct AppearanceProperties {
 	std::optional<bool> clip{};
 };
 
+/// @brief Paint fields a visual state may replace. Layout, visibility, clip, and typography are
+/// absent.
+///
+/// Omitted fields keep the base value or a lower-priority active state. Explicit zeros and empty
+/// shadow lists are values, not omissions. Constants, signals, and computed values all bind.
+struct VisualStateAppearance {
+	/// @brief Optional reactive fill used while this state is the winning source for background.
+	std::optional<::stana::reactive::Property<::stana::theming::ColorSource>> background{};
+	/// @brief Optional reactive local opacity in [0, 1]. Replaces local opacity; ancestors still
+	/// multiply.
+	std::optional<::stana::reactive::Property<Opacity>> opacity{};
+	/// @brief Optional reactive outline color.
+	std::optional<::stana::reactive::Property<::stana::theming::ColorSource>> borderColor{};
+	/// @brief Optional reactive outline thickness in finite, nonnegative logical points.
+	std::optional<::stana::reactive::Property<Points>> borderWidth{};
+	/// @brief Optional reactive rounding radius.
+	std::optional<::stana::reactive::Property<Points>> cornerRadius{};
+	/// @brief Independent elliptical radii; when supplied, take precedence over cornerRadius.
+	std::optional<::stana::reactive::Property<CornerRadii>> cornerRadii{};
+	/// @brief Inward per-edge widths; when supplied, take precedence over borderWidth.
+	std::optional<::stana::reactive::Property<BorderWidths>> borderWidths{};
+	/// @brief Paint-only shadows. An empty list clears shadows while this state wins the field.
+	std::optional<::stana::reactive::Property<std::vector<::stana::rendering::BoxShadow>>>
+		boxShadows{};
+};
+
+/// @brief Foreground override for a visual state. It does not change font metrics or inherit.
+struct VisualStateText {
+	/// @brief Optional reactive text color. Omission keeps the base or theme-derived foreground.
+	std::optional<::stana::reactive::Property<::stana::theming::ColorSource>> foreground{};
+};
+
+/// @brief Sparse appearance and text overrides for one interaction state.
+struct VisualStateProperties {
+	/// @brief Paint overrides. Unsupported appearance members are not part of this type.
+	VisualStateAppearance appearance{};
+	/// @brief Text color override for this occurrence's own text, not descendant content.
+	VisualStateText textStyle{};
+};
+
+/// @brief Occurrence-local visual overrides. Stana owns which states are active.
+///
+/// Fields resolve independently: hovered, then pressed, then focused, then disabled.
+/// A missing field does not clear a lower-priority value. Disabled also suppresses hover,
+/// press, and focus feedback. Omitted states do nothing.
+struct StateProperties {
+	/// @brief Active on the hovered occurrence and its eligible ancestors.
+	VisualStateProperties hovered{};
+	/// @brief Active on the pressed Button or Toggle while that press is visually shown.
+	VisualStateProperties pressed{};
+	/// @brief Active only on the occurrence that owns keyboard focus.
+	VisualStateProperties focused{};
+	/// @brief Active when this occurrence or an ancestor is locally disabled.
+	VisualStateProperties disabled{};
+};
+
 /// @brief Shared enabled and inert policy for a visual subtree.
 ///
 /// Visual components accept .interaction. Ancestor disabled or inert state also
@@ -398,6 +454,8 @@ struct TextLabel {
 	TextProperties textStyle{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
+	/// @brief Sparse hovered, pressed, focused, and disabled paint overrides.
+	StateProperties states{};
 	/// @brief Shared enabled/inert policy for this subtree.
 	InteractionProperties interaction{};
 	/// @brief Explicit semantic naming for this occurrence, independent of diagnostic metadata.
@@ -444,6 +502,8 @@ struct Button {
 	TextProperties textStyle{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
+	/// @brief Sparse hovered, pressed, focused, and disabled paint overrides.
+	StateProperties states{};
 	/// @brief Shared enabled/inert policy for this subtree.
 	InteractionProperties interaction{};
 	/// @brief Explicit semantic naming for this occurrence, independent of diagnostic metadata.
@@ -473,6 +533,8 @@ struct Toggle {
 	TextProperties textStyle{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
+	/// @brief Sparse hovered, pressed, focused, and disabled paint overrides.
+	StateProperties states{};
 	/// @brief Shared enabled/inert policy for this subtree.
 	InteractionProperties interaction{};
 	/// @brief Explicit semantic naming for this occurrence, independent of diagnostic metadata.
@@ -507,7 +569,9 @@ struct CPUCanvas {
 	::stana::layout::LayoutProperties layout{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
-	/// @brief Explicit semantic naming for this occurrence, independent of diagnostic metadata.
+	/// @brief Sparse hovered, pressed, focused, and disabled paint overrides.
+	StateProperties states{};
+	/// @brief Shared enabled/inert policy for this subtree.
 	InteractionProperties interaction{};
 	AccessibilityProperties accessibility{};
 	/// @brief Mount/disposal callbacks and diagnostics owned by this mounted occurrence.
@@ -522,6 +586,8 @@ struct GPUCanvas {
 	::stana::reactive::Property<::stana::rendering::GPUDrawing> drawing{};
 	::stana::layout::LayoutProperties layout{};
 	AppearanceProperties appearance{};
+	/// @brief Sparse hovered, pressed, focused, and disabled paint overrides.
+	StateProperties states{};
 	InteractionProperties interaction{};
 	AccessibilityProperties accessibility{};
 	LifecycleProperties lifecycle{};
@@ -545,6 +611,8 @@ template <typename Children> struct VStack {
 	::stana::layout::LayoutProperties layout{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
+	/// @brief Sparse hovered, pressed, focused, and disabled paint overrides.
+	StateProperties states{};
 	/// @brief Shared enabled/inert policy for this subtree.
 	InteractionProperties interaction{};
 	/// @brief Explicit semantic naming for this occurrence, independent of diagnostic metadata.
@@ -572,6 +640,8 @@ template <typename Children> struct HStack {
 	::stana::layout::LayoutProperties layout{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
+	/// @brief Sparse hovered, pressed, focused, and disabled paint overrides.
+	StateProperties states{};
 	/// @brief Shared enabled/inert policy for this subtree.
 	InteractionProperties interaction{};
 	/// @brief Explicit semantic naming for this occurrence, independent of diagnostic metadata.
@@ -597,6 +667,8 @@ template <typename Children> struct ZStack {
 	::stana::layout::LayoutProperties layout{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
+	/// @brief Sparse hovered, pressed, focused, and disabled paint overrides.
+	StateProperties states{};
 	/// @brief Shared enabled/inert policy for this subtree.
 	InteractionProperties interaction{};
 	/// @brief Explicit semantic naming for this occurrence, independent of diagnostic metadata.
@@ -620,6 +692,8 @@ template <typename Children> struct Box {
 	::stana::layout::LayoutProperties layout{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
+	/// @brief Sparse hovered, pressed, focused, and disabled paint overrides.
+	StateProperties states{};
 	/// @brief Shared enabled/inert policy for this subtree.
 	InteractionProperties interaction{};
 	/// @brief Explicit semantic naming for this occurrence, independent of diagnostic metadata.
@@ -643,6 +717,8 @@ template <typename Content> struct ScrollView {
 	::stana::layout::LayoutProperties layout{};
 	/// @brief Shared fill, border, clipping, opacity and visibility configuration.
 	AppearanceProperties appearance{};
+	/// @brief Sparse hovered, pressed, focused, and disabled paint overrides.
+	StateProperties states{};
 	/// @brief Shared enabled/inert policy for this subtree.
 	InteractionProperties interaction{};
 	/// @brief Explicit semantic naming for this occurrence, independent of diagnostic metadata.
@@ -710,6 +786,7 @@ void applyAppearance(
 	NodeId identity,
 	MountContext &context
 );
+void applyStates(const StateProperties &states, NodeId identity, MountContext &context);
 void applyInteraction(
 	const InteractionProperties &properties,
 	NodeId identity,
@@ -733,6 +810,11 @@ void configure(const Description &description, NodeId identity, MountContext &co
 	}
 	if constexpr (requires { description.appearance; }) {
 		applyAppearance(description.appearance, identity, context);
+	}
+	if constexpr (requires {
+					  { description.states } -> std::convertible_to<const StateProperties &>;
+				  }) {
+		applyStates(description.states, identity, context);
 	}
 	if constexpr (requires { description.interaction; }) {
 		applyInteraction(description.interaction, identity, context);
@@ -792,6 +874,11 @@ template <typename T>
 					  { description.events } -> std::convertible_to<Events>;
 				  }) {
 		::stana::ui::detail::applyEvents(description.events, identity, context);
+	}
+	if constexpr (requires {
+					  { description.states } -> std::convertible_to<const StateProperties &>;
+				  }) {
+		::stana::ui::detail::applyStates(description.states, identity, context);
 	}
 	auto *node = context.document->find(identity);
 	ComponentContext componentContext{
@@ -1057,6 +1144,8 @@ struct Symbol {
 	::stana::reactive::Property<std::optional<Points>> strokeWidth{};
 	::stana::layout::LayoutProperties layout{};
 	::stana::ui::AppearanceProperties appearance{};
+	/// @brief Sparse hovered, pressed, focused, and disabled paint overrides.
+	::stana::ui::StateProperties states{};
 	::stana::ui::InteractionProperties interaction{};
 	::stana::ui::AccessibilityProperties accessibility{};
 	::stana::ui::LifecycleProperties lifecycle{};

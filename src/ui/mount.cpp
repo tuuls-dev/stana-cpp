@@ -336,11 +336,12 @@ void applyTextStyle(const TextProperties &properties, NodeId identity, MountCont
 		);
 	}
 	if (properties.foreground) {
+		auto *document = context.document.get();
 		context.document->bind(
 			identity,
 			*properties.foreground,
-			[](stana::document::detail::Node &node,
-				theming::ColorSource value) -> stana::document::detail::Dirty {
+			[document](stana::document::detail::Node &node, theming::ColorSource value)
+				-> stana::document::detail::Dirty {
 				validateColorSource(value);
 				const bool wasExplicit = node.isForegroundExplicit;
 				const auto changed = stana::ui::detail::assignRetained(
@@ -349,28 +350,88 @@ void applyTextStyle(const TextProperties &properties, NodeId identity, MountCont
 					stana::document::detail::Dirty::paint
 				);
 				node.isForegroundExplicit = true;
-				return wasExplicit ? changed : stana::document::detail::Dirty::paint;
+				if (wasExplicit && changed == stana::document::detail::Dirty::none) {
+					return changed;
+				}
+				return document->paintDomainsForBase(
+					node,
+					stana::document::detail::VisualField::foreground
+				);
 			}
 		);
 	}
 }
+
+namespace {
+template <typename T>
+[[nodiscard]] auto commitBase(
+	stana::document::detail::Document *document,
+	stana::document::detail::Node &node,
+	T &target,
+	const T &value,
+	stana::document::detail::VisualField field
+) -> stana::document::detail::Dirty {
+	const auto changed = assignRetained(target, value, stana::document::detail::Dirty::paint);
+	if (changed == stana::document::detail::Dirty::none) {
+		return changed;
+	}
+	return document->paintDomainsForBase(node, field);
+}
+
+template <typename T>
+[[nodiscard]] auto commitOverride(
+	stana::document::detail::Document *document,
+	stana::document::detail::Node &node,
+	std::optional<T> &target,
+	const T &value,
+	stana::document::detail::VisualLayer layer,
+	stana::document::detail::VisualField field
+) -> stana::document::detail::Dirty {
+	const auto changed =
+		assignRetained(target, std::optional<T>{value}, stana::document::detail::Dirty::paint);
+	if (changed == stana::document::detail::Dirty::none) {
+		return changed;
+	}
+	return document->paintDomainsForOverride(node, layer, field);
+}
+
+[[nodiscard]] auto
+stateSlot(stana::document::detail::Node &node, stana::document::detail::VisualLayer layer)
+	-> stana::document::detail::VisualStateSlot & {
+	using enum stana::document::detail::VisualLayer;
+	switch (layer) {
+	case hovered:
+		return node.hoveredStyle;
+	case pressed:
+		return node.pressedStyle;
+	case focused:
+		return node.focusedStyle;
+	case disabled:
+		return node.disabledStyle;
+	}
+	throw std::logic_error("Unknown visual state");
+}
+} // namespace
 
 void applyAppearance(
 	const AppearanceProperties &properties,
 	NodeId identity,
 	MountContext &context
 ) {
+	auto *document = context.document.get();
 	if (properties.background) {
 		context.document->bind(
 			identity,
 			*properties.background,
-			[](stana::document::detail::Node &node,
-				theming::ColorSource value) -> stana::document::detail::Dirty {
+			[document](stana::document::detail::Node &node, theming::ColorSource value)
+				-> stana::document::detail::Dirty {
 				validateColorSource(value);
-				return stana::ui::detail::assignRetained(
+				return commitBase(
+					document,
+					node,
 					node.background,
 					value,
-					stana::document::detail::Dirty::paint
+					stana::document::detail::VisualField::background
 				);
 			}
 		);
@@ -379,16 +440,18 @@ void applyAppearance(
 		context.document->bind(
 			identity,
 			*properties.opacity,
-			[](stana::document::detail::Node &node,
-				Opacity value) -> stana::document::detail::Dirty {
+			[document](stana::document::detail::Node &node, Opacity value)
+				-> stana::document::detail::Dirty {
 				stana::detail::requireNonnegative(value);
 				if (value.value() > 1) {
 					throw std::invalid_argument("Opacity exceeds one");
 				}
-				return stana::ui::detail::assignRetained(
+				return commitBase(
+					document,
+					node,
 					node.opacity,
 					value,
-					stana::document::detail::Dirty::paint
+					stana::document::detail::VisualField::opacity
 				);
 			}
 		);
@@ -397,13 +460,15 @@ void applyAppearance(
 		context.document->bind(
 			identity,
 			*properties.borderColor,
-			[](stana::document::detail::Node &node,
-				theming::ColorSource value) -> stana::document::detail::Dirty {
+			[document](stana::document::detail::Node &node, theming::ColorSource value)
+				-> stana::document::detail::Dirty {
 				validateColorSource(value);
-				return stana::ui::detail::assignRetained(
+				return commitBase(
+					document,
+					node,
 					node.borderColor,
 					value,
-					stana::document::detail::Dirty::paint
+					stana::document::detail::VisualField::borderColor
 				);
 			}
 		);
@@ -412,13 +477,15 @@ void applyAppearance(
 		context.document->bind(
 			identity,
 			*properties.borderWidth,
-			[](stana::document::detail::Node &node,
-				Points value) -> stana::document::detail::Dirty {
+			[document](stana::document::detail::Node &node, Points value)
+				-> stana::document::detail::Dirty {
 				stana::detail::requireNonnegative(value);
-				return stana::ui::detail::assignRetained(
+				return commitBase(
+					document,
+					node,
 					node.borderWidth,
 					value,
-					stana::document::detail::Dirty::paint
+					stana::document::detail::VisualField::borderWidth
 				);
 			}
 		);
@@ -427,13 +494,15 @@ void applyAppearance(
 		context.document->bind(
 			identity,
 			*properties.cornerRadius,
-			[](stana::document::detail::Node &node,
-				Points value) -> stana::document::detail::Dirty {
+			[document](stana::document::detail::Node &node, Points value)
+				-> stana::document::detail::Dirty {
 				stana::detail::requireNonnegative(value);
-				return stana::ui::detail::assignRetained(
+				return commitBase(
+					document,
+					node,
 					node.cornerRadius,
 					value,
-					stana::document::detail::Dirty::paint
+					stana::document::detail::VisualField::cornerRadius
 				);
 			}
 		);
@@ -442,13 +511,20 @@ void applyAppearance(
 		context.document->bind(
 			identity,
 			*properties.cornerRadii,
-			[](stana::document::detail::Node &node,
-				CornerRadii value) -> stana::document::detail::Dirty {
+			[document](stana::document::detail::Node &node, CornerRadii value)
+				-> stana::document::detail::Dirty {
 				stana::rendering::detail::validateCornerRadii(value);
-				return assignRetained(
+				const auto changed = assignRetained(
 					node.cornerRadii,
 					std::optional{value},
 					stana::document::detail::Dirty::paint
+				);
+				if (changed == stana::document::detail::Dirty::none) {
+					return changed;
+				}
+				return document->paintDomainsForBase(
+					node,
+					stana::document::detail::VisualField::cornerRadii
 				);
 			}
 		);
@@ -457,13 +533,20 @@ void applyAppearance(
 		context.document->bind(
 			identity,
 			*properties.borderWidths,
-			[](stana::document::detail::Node &node,
-				BorderWidths value) -> stana::document::detail::Dirty {
+			[document](stana::document::detail::Node &node, BorderWidths value)
+				-> stana::document::detail::Dirty {
 				stana::rendering::detail::validateBorderWidths(value);
-				return assignRetained(
+				const auto changed = assignRetained(
 					node.borderWidths,
 					std::optional{value},
 					stana::document::detail::Dirty::paint
+				);
+				if (changed == stana::document::detail::Dirty::none) {
+					return changed;
+				}
+				return document->paintDomainsForBase(
+					node,
+					stana::document::detail::VisualField::borderWidths
 				);
 			}
 		);
@@ -472,14 +555,19 @@ void applyAppearance(
 		context.document->bind(
 			identity,
 			*properties.boxShadows,
-			[](stana::document::detail::Node &node,
-				std::vector<stana::rendering::BoxShadow> value) -> stana::document::detail::Dirty {
+			[document](
+				stana::document::detail::Node &node,
+				std::vector<stana::rendering::BoxShadow> value
+			) -> stana::document::detail::Dirty {
 				stana::rendering::detail::validateBoxShadows(value);
 				if (node.boxShadows == value) {
 					return stana::document::detail::Dirty::none;
 				}
 				node.boxShadows = std::move(value);
-				return stana::document::detail::Dirty::paint;
+				return document->paintDomainsForBase(
+					node,
+					stana::document::detail::VisualField::boxShadows
+				);
 			}
 		);
 	}
@@ -487,14 +575,15 @@ void applyAppearance(
 		context.document->bind(
 			identity,
 			*properties.visibility,
-			[](stana::document::detail::Node &node,
-				Visibility value) -> stana::document::detail::Dirty {
+			[document](stana::document::detail::Node &node, Visibility value)
+				-> stana::document::detail::Dirty {
 				if (node.visibility == value) {
 					return stana::document::detail::Dirty::none;
 				}
 				const bool collapsed =
 					node.visibility == Visibility::collapsed || value == Visibility::collapsed;
 				node.visibility = value;
+				document->notePointerReconcile();
 				return collapsed ? stana::document::detail::Dirty::measure |
 						stana::document::detail::Dirty::arrange |
 						stana::document::detail::Dirty::paint |
@@ -509,31 +598,234 @@ void applyAppearance(
 	}
 }
 
+void applyStates(const StateProperties &states, NodeId identity, MountContext &context) {
+	auto *document = context.document.get();
+	const auto bindLayer = [&](const VisualStateProperties &visual,
+							   stana::document::detail::VisualLayer layer) -> void {
+		const auto &appearance = visual.appearance;
+		if (appearance.background) {
+			context.document->bind(
+				identity,
+				*appearance.background,
+				[document, layer](stana::document::detail::Node &node, theming::ColorSource value)
+					-> stana::document::detail::Dirty {
+					validateColorSource(value);
+					return commitOverride(
+						document,
+						node,
+						stateSlot(node, layer).background,
+						value,
+						layer,
+						stana::document::detail::VisualField::background
+					);
+				}
+			);
+		}
+		if (appearance.opacity) {
+			context.document->bind(
+				identity,
+				*appearance.opacity,
+				[document, layer](stana::document::detail::Node &node, Opacity value)
+					-> stana::document::detail::Dirty {
+					stana::detail::requireNonnegative(value);
+					if (value.value() > 1) {
+						throw std::invalid_argument("Opacity exceeds one");
+					}
+					return commitOverride(
+						document,
+						node,
+						stateSlot(node, layer).opacity,
+						value,
+						layer,
+						stana::document::detail::VisualField::opacity
+					);
+				}
+			);
+		}
+		if (appearance.borderColor) {
+			context.document->bind(
+				identity,
+				*appearance.borderColor,
+				[document, layer](stana::document::detail::Node &node, theming::ColorSource value)
+					-> stana::document::detail::Dirty {
+					validateColorSource(value);
+					return commitOverride(
+						document,
+						node,
+						stateSlot(node, layer).borderColor,
+						value,
+						layer,
+						stana::document::detail::VisualField::borderColor
+					);
+				}
+			);
+		}
+		if (appearance.borderWidth) {
+			context.document->bind(
+				identity,
+				*appearance.borderWidth,
+				[document, layer](stana::document::detail::Node &node, Points value)
+					-> stana::document::detail::Dirty {
+					stana::detail::requireNonnegative(value);
+					return commitOverride(
+						document,
+						node,
+						stateSlot(node, layer).borderWidth,
+						value,
+						layer,
+						stana::document::detail::VisualField::borderWidth
+					);
+				}
+			);
+		}
+		if (appearance.cornerRadius) {
+			context.document->bind(
+				identity,
+				*appearance.cornerRadius,
+				[document, layer](stana::document::detail::Node &node, Points value)
+					-> stana::document::detail::Dirty {
+					stana::detail::requireNonnegative(value);
+					return commitOverride(
+						document,
+						node,
+						stateSlot(node, layer).cornerRadius,
+						value,
+						layer,
+						stana::document::detail::VisualField::cornerRadius
+					);
+				}
+			);
+		}
+		if (appearance.cornerRadii) {
+			context.document->bind(
+				identity,
+				*appearance.cornerRadii,
+				[document, layer](stana::document::detail::Node &node, CornerRadii value)
+					-> stana::document::detail::Dirty {
+					stana::rendering::detail::validateCornerRadii(value);
+					return commitOverride(
+						document,
+						node,
+						stateSlot(node, layer).cornerRadii,
+						value,
+						layer,
+						stana::document::detail::VisualField::cornerRadii
+					);
+				}
+			);
+		}
+		if (appearance.borderWidths) {
+			context.document->bind(
+				identity,
+				*appearance.borderWidths,
+				[document, layer](stana::document::detail::Node &node, BorderWidths value)
+					-> stana::document::detail::Dirty {
+					stana::rendering::detail::validateBorderWidths(value);
+					return commitOverride(
+						document,
+						node,
+						stateSlot(node, layer).borderWidths,
+						value,
+						layer,
+						stana::document::detail::VisualField::borderWidths
+					);
+				}
+			);
+		}
+		if (appearance.boxShadows) {
+			context.document->bind(
+				identity,
+				*appearance.boxShadows,
+				[document, layer](
+					stana::document::detail::Node &node,
+					std::vector<stana::rendering::BoxShadow> value
+				) -> stana::document::detail::Dirty {
+					stana::rendering::detail::validateBoxShadows(value);
+					auto &slot = stateSlot(node, layer).boxShadows;
+					if (slot && *slot == value) {
+						return stana::document::detail::Dirty::none;
+					}
+					slot = std::move(value);
+					return document->paintDomainsForOverride(
+						node,
+						layer,
+						stana::document::detail::VisualField::boxShadows
+					);
+				}
+			);
+		}
+		if (visual.textStyle.foreground) {
+			context.document->bind(
+				identity,
+				*visual.textStyle.foreground,
+				[document, layer](stana::document::detail::Node &node, theming::ColorSource value)
+					-> stana::document::detail::Dirty {
+					validateColorSource(value);
+					return commitOverride(
+						document,
+						node,
+						stateSlot(node, layer).foreground,
+						value,
+						layer,
+						stana::document::detail::VisualField::foreground
+					);
+				}
+			);
+		}
+	};
+	using enum stana::document::detail::VisualLayer;
+	bindLayer(states.hovered, hovered);
+	bindLayer(states.pressed, pressed);
+	bindLayer(states.focused, focused);
+	bindLayer(states.disabled, disabled);
+}
+
 void applyInteraction(
 	const InteractionProperties &properties,
 	NodeId identity,
 	MountContext &context
 ) {
+	auto *document = context.document.get();
 	context.document->bind(
 		identity,
 		properties.isEnabled,
-		[](stana::document::detail::Node &node, bool value) -> stana::document::detail::Dirty {
-			return stana::ui::detail::assignRetained(
+		[document](stana::document::detail::Node &node, bool value)
+			-> stana::document::detail::Dirty {
+			const auto changed = stana::ui::detail::assignRetained(
 				node.isEnabled,
 				value,
 				stana::document::detail::Dirty::paint | stana::document::detail::Dirty::snapshot
 			);
+			if (changed == stana::document::detail::Dirty::none) {
+				return changed;
+			}
+			document->invalidateDescendants(
+				node.id,
+				stana::document::detail::Dirty::paint | stana::document::detail::Dirty::snapshot
+			);
+			document->notePointerReconcile();
+			return changed;
 		}
 	);
 	context.document->bind(
 		identity,
 		properties.inert,
-		[](stana::document::detail::Node &node, bool value) -> stana::document::detail::Dirty {
-			return assignRetained(
+		[document](stana::document::detail::Node &node, bool value)
+			-> stana::document::detail::Dirty {
+			const auto changed = assignRetained(
 				node.inert,
 				value,
 				stana::document::detail::Dirty::paint | stana::document::detail::Dirty::snapshot
 			);
+			if (changed == stana::document::detail::Dirty::none) {
+				return changed;
+			}
+			document->invalidateDescendants(
+				node.id,
+				stana::document::detail::Dirty::paint | stana::document::detail::Dirty::snapshot
+			);
+			document->notePointerReconcile();
+			return changed;
 		}
 	);
 }

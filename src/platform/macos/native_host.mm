@@ -588,6 +588,9 @@ namespace {
 }
 
 - (void)windowDidResignKey:(NSNotification *)notification {
+	if (state_ && state_->callbacks.releaseInput) {
+		state_->callbacks.releaseInput();
+	}
 	if (state_ && state_->callbacks.textInput.active) {
 		state_->callbacks.textInput.active(false);
 	}

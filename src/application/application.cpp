@@ -551,9 +551,19 @@ auto runWindows(std::vector<WindowSession> &sessions) -> int {
 						return;
 					}
 					document->setHostVisible(visible);
+					if (!visible) {
+						document->releaseTransientInput();
+					}
 					document->commit();
 				},
-				.animation = animation
+				.animation = animation,
+				.releaseInput = [weakDocument]() -> void {
+					const auto document = weakDocument.lock();
+					if (!document) {
+						return;
+					}
+					document->releaseTransientInput();
+				}
 			};
 			installSessionController(window, runtime);
 			windows.push_back(std::move(window));
